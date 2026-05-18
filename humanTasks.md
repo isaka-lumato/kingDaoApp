@@ -129,7 +129,29 @@ Recommended: **GitHub**.
 
 ---
 
-## H-007 — Decide the production sender email & domain (later, before launch)
+## H-007 — Authenticate Supabase CLI & link to dev project
+
+**Why:** Claude can't run `supabase login` (it's an interactive browser OAuth flow). The CLI needs to be authenticated before we can push migrations or generate types from the cloud schema. We block Phase 1 (database) on this.
+**Status:** [ ]
+
+Run these two commands in PowerShell:
+
+```powershell
+# 1. Opens a browser; click Authorize.
+supabase login
+
+# 2. Link this repo to the dev project. Will prompt for the DB password
+#    you set when creating kdl-tracker-dev (the one in your password manager).
+supabase link --project-ref vmkhiahoytuqnjpcxwrb
+```
+
+When done, you should see a file `supabase/.temp/project-ref` containing your dev project ref.
+
+**Tell Claude when done:** "H-007 done" — Claude will start Phase 1 (database migrations).
+
+---
+
+## H-008 — Decide the production sender email & domain (later, before launch)
 
 **Why:** For credible-looking alerts, emails should come from `@kingdao.co.tz` (or whatever domain you control), not Resend's sandbox.
 **Status:** [ ] (defer until ready to deploy)
@@ -142,7 +164,7 @@ When ready:
 
 ---
 
-## H-008 — Add team members (after deploy)
+## H-009 — Add team members (after deploy)
 
 **Why:** Operators need accounts.
 **Status:** [ ] (defer until app is deployed and you've tested it yourself)

@@ -320,4 +320,15 @@ kingdaoLogistics/
 
 **Why:** `create-next-app` defaults to Next 16 now. Pinning to 15 would mean fighting the tooling. No breaking changes that affect our planned architecture. Turbopack is now stable and the default — though I disabled it during scaffolding (`--no-turbopack`) for stability on Windows; we can flip it on later if dev startup feels slow.
 
+## D-023 — shadcn/ui on Base UI primitives (not Radix UI)
+
+**Date:** 2026-05-18
+**Status:** Active — updates D-001
+
+**Decision:** The shadcn/ui CLI now defaults to the **`base-nova`** preset built on **Base UI** (`@base-ui/react`), not Radix UI. We adopt this default.
+
+**Why:** Base UI is from the same authors as Radix UI and is the actively-developed successor (Radix UI is now in maintenance mode). The current shadcn/ui registry, theming system, and component implementations all assume Base UI. Fighting the default is pointless.
+
+**API differences vs Radix:** Component import paths differ (`@base-ui/react/dialog` instead of `@radix-ui/react-dialog`) but the props and slots-pattern API are intentionally similar.
+
 <!-- Append new decisions below this line. Number sequentially. -->

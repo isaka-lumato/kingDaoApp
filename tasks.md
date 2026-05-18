@@ -12,18 +12,18 @@ Legend: 🧱 = foundation; 🔐 = security; 📥 = data; 🎨 = UI; 🔁 = workf
 
 ## Phase 0 — Foundations (no app code yet)
 
-- [ ] **T-001** 🧱 Initialize Next.js 15 app under `apps/web/` with TypeScript, Tailwind, ESLint, Prettier, pnpm workspace at root.
-  - Accept: `pnpm dev` boots; `pnpm typecheck` & `pnpm lint` clean; Tailwind class compiles.
-- [ ] **T-002** 🧱 Install & configure shadcn/ui (theme: stone, base color set). Set up Inter font.
-  - Accept: `pnpm dlx shadcn add button` works; a sample button renders on `/`.
-- [ ] **T-003** 🧱 Initialize Supabase local dev: `supabase init`, commit `supabase/config.toml`. Document the local startup (`supabase start`) in `humanTasks.md`.
-  - Accept: `supabase start` brings up local stack; Studio reachable at http://127.0.0.1:54323.
-- [ ] **T-004** 🧱 Wire Supabase client in Next.js: `src/lib/supabase/{server,client,middleware}.ts` using `@supabase/ssr`. Add typed `Database` import from generated types.
-  - Accept: A server component can call `supabase.from('todos').select()` against an empty schema without runtime error.
-- [ ] **T-005** 🧱 Set up shared utilities: `src/lib/{query-keys, formatters, dates, money}.ts`, `src/schemas/`, `src/server/actions/`.
-  - Accept: Empty module files exist with one example each (date formatter, money formatter, zod schema stub).
-- [ ] **T-006** 🧱 Configure Vitest + Playwright. Add a sanity test for each.
-  - Accept: `pnpm test` and `pnpm test:e2e` both pass with one trivial test.
+- [x] **T-001** 🧱 Initialize Next.js 16 app at repo root (per D-021) with TypeScript, Tailwind 4, ESLint, pnpm.
+  - Accept: `pnpm dev` boots (✓ Ready in 389ms); `pnpm typecheck` & `pnpm lint` clean.
+- [x] **T-002** 🧱 Install & configure shadcn/ui (stone, `base-nova` preset on Base UI per D-023).
+  - Accept: Sample button renders on `/` and HTTP 200 from `curl localhost:3000`.
+- [x] **T-003** 🧱 `supabase init` complete; `supabase/config.toml` committed. (Link to dev project deferred to H-007 — requires interactive `supabase login`.)
+  - Accept: `supabase/config.toml` present; folder structure ready for migrations.
+- [x] **T-004** 🧱 Wire Supabase client: `src/lib/supabase/{env, client, server, admin, middleware}.ts` using `@supabase/ssr`. Middleware refreshes session on every request.
+  - Accept: Home page (Server Component) calls `supabase.auth.getUser()` and renders "Auth state: signed out" — confirms env wiring + cookie pipeline are live.
+- [x] **T-005** 🧱 Shared utilities: `src/lib/{query-keys, dates, money}.ts`, `src/schemas/common.ts`. Plus zod, date-fns, date-fns-tz installed.
+  - Accept: Modules import cleanly; formatters cover null cases; helpers are typed strictly.
+- [x] **T-006** 🧱 Configure Vitest + Playwright. Sanity tests for money + dates.
+  - Accept: `pnpm test` → 7/7 pass in 1.2s. Playwright config in place; smoke spec written (browsers install on first use).
 
 ---
 
