@@ -1,0 +1,178 @@
+# Tasks — KDL Tracker Build
+
+**How to use:**
+- Tasks are ordered. Work top-down unless dependencies say otherwise.
+- Status: `[ ]` pending, `[~]` in progress, `[x]` done, `[!]` blocked (with reason).
+- Each task names its **acceptance**: the concrete observable result that means "done."
+- A task is only `[x]` when its `validation.md` row passes.
+
+Legend: 🧱 = foundation; 🔐 = security; 📥 = data; 🎨 = UI; 🔁 = workflow; 📊 = reports; 🚚 = deploy.
+
+---
+
+## Phase 0 — Foundations (no app code yet)
+
+- [ ] **T-001** 🧱 Initialize Next.js 15 app under `apps/web/` with TypeScript, Tailwind, ESLint, Prettier, pnpm workspace at root.
+  - Accept: `pnpm dev` boots; `pnpm typecheck` & `pnpm lint` clean; Tailwind class compiles.
+- [ ] **T-002** 🧱 Install & configure shadcn/ui (theme: stone, base color set). Set up Inter font.
+  - Accept: `pnpm dlx shadcn add button` works; a sample button renders on `/`.
+- [ ] **T-003** 🧱 Initialize Supabase local dev: `supabase init`, commit `supabase/config.toml`. Document the local startup (`supabase start`) in `humanTasks.md`.
+  - Accept: `supabase start` brings up local stack; Studio reachable at http://127.0.0.1:54323.
+- [ ] **T-004** 🧱 Wire Supabase client in Next.js: `src/lib/supabase/{server,client,middleware}.ts` using `@supabase/ssr`. Add typed `Database` import from generated types.
+  - Accept: A server component can call `supabase.from('todos').select()` against an empty schema without runtime error.
+- [ ] **T-005** 🧱 Set up shared utilities: `src/lib/{query-keys, formatters, dates, money}.ts`, `src/schemas/`, `src/server/actions/`.
+  - Accept: Empty module files exist with one example each (date formatter, money formatter, zod schema stub).
+- [ ] **T-006** 🧱 Configure Vitest + Playwright. Add a sanity test for each.
+  - Accept: `pnpm test` and `pnpm test:e2e` both pass with one trivial test.
+
+---
+
+## Phase 1 — Database schema & RLS
+
+- [ ] **T-010** 🧱 Migration: enums for pipeline statuses (manifest, shipping_batch, tanesws, assessment, tbs_loading, tbs_debit, manifest_comp, duty, inspection_file, release), container_type, role names.
+  - Accept: `supabase db reset` succeeds; enums visible via `\dT+` in psql.
+- [ ] **T-011** 🧱 Migration: `clients`, `icds` tables with soft-delete column and seed of all PRD §13 reference values.
+  - Accept: Seed runs cleanly; `select count(*) from clients` returns ≥ 24; `select count(*) from icds` returns ≥ 30.
+- [ ] **T-012** 🧱 Migration: `consignments` table with every field from PRD §5.1 + §5.2, all FKs, `deleted_at`, `updated_by`, `created_at`, `updated_at`. NO triggers yet.
+  - Accept: Schema matches PRD §5; unique constraint on `(ref_no, year)`; unique constraint on `(bl_number, year)`.
+- [ ] **T-013** 🧱 Migration: `in_ref_batches` table per D-012. FK from `consignments.in_ref_batch_id`.
+  - Accept: Inserting two consignments with the same batch returns the same `efd_code` when joined through the view.
+- [ ] **T-014** 🧱 Migration: `efd_records` table per PRD §5.3 (codes, time, flags) + `efd_record_consignments` join (since one EFD can cover many consignments).
+  - Accept: Many-to-many works; cascade rules: deleting consignment doesn't delete EFD record.
+- [ ] **T-015** 🧱 Migration: `guta_pairs` table per D-011 + trigger to auto-pair on consignment insert/update where `goods_description` matches the pattern.
+  - Accept: Inserting "073C - GUTA PARTS" then "073C - FRAMES" (same vessel, same client) auto-creates a `guta_pairs` row linking both.
+- [ ] **T-016** 🧱 Migration: `stage_history` table — every stage advancement logged with `from_value`, `to_value`, `actor_id`, `occurred_at`.
+  - Accept: Table exists, indexed on `(consignment_id, occurred_at desc)`.
+- [ ] **T-017** 🧱 Migration: `audit_log` + generic trigger function `log_table_change()` attached to consignments, efd_records, clients, icds, roles, role_column_permissions, user_roles.
+  - Accept: Updating a consignment field writes a row to `audit_log` with old/new values and actor.
+- [ ] **T-018** 🧱 Migration: `roles`, `role_column_permissions`, `user_roles` tables + SQL function `current_user_can_write(table_name text, column_name text) returns boolean`.
+  - Accept: Function returns true for admin on every column; false for viewer on every write column.
+- [ ] **T-019** 🧱 Migration: seed system roles — `admin`, `operator`, `viewer` — with their default column permission matrix per CLAUDE.md §8.
+  - Accept: `select * from role_column_permissions where role_id = (select id from roles where name = 'viewer')` shows `can_write=false` everywhere.
+- [ ] **T-020** 🔐 Migration: enable RLS on every user-facing table. Write SELECT, INSERT, UPDATE, DELETE policies that consult `current_user_can_write()` and role membership.
+  - Accept: With a `viewer` user JWT, a direct UPDATE on `consignments.amount` is rejected; with `admin` it succeeds.
+- [ ] **T-021** 🔁 Migration: SQL function `advance_stage(consignment_id uuid, stage text, new_value text, reason text default null)` per D-009 — enforces all PRD §8.6–§8.12 prerequisites, writes `stage_history`, auto-propagates TBS Debit Paid → Duty Paid.
+  - Accept: `select advance_stage(<id>, 'tanesws_status', 'Done')` errors with "manifest_status must be Uploaded first" when manifest isn't ready.
+- [ ] **T-022** 🔁 Migration: SQL function `force_set_stage(...)` admin-only escape hatch that bypasses prerequisites and logs reason to audit.
+  - Accept: Calling as operator returns permission denied; calling as admin succeeds and writes audit row with reason.
+- [ ] **T-023** 🔁 Migration: view `stuck_stages` — every consignment × stage where current state is `Action` and has been so for ≥ `stuck_threshold_hours` (read from `settings`).
+  - Accept: Manually backdating a `stage_history` row makes the view return that consignment.
+- [ ] **T-024** 📊 Migration: read-only views for reports — `v_revenue_monthly`, `v_client_volume`, `v_turnaround_by_client`, `v_turnaround_by_icd`, `v_pipeline_funnel`, `v_pending_refunds`.
+  - Accept: Each view returns rows on seed data without error.
+- [ ] **T-025** 🧱 Generate TypeScript types: `pnpm gen:types` script runs `supabase gen types typescript --local > apps/web/src/types/supabase.ts`.
+  - Accept: Generated file imports cleanly; `Database['public']['Tables']['consignments']` resolves.
+
+---
+
+## Phase 2 — Auth & permissions
+
+- [ ] **T-030** 🔐 Build login page (`/login`) using Supabase Auth, email + password. Sign-up disabled — admins invite new users.
+  - Accept: Existing user can log in; non-existent user gets clear error.
+- [ ] **T-031** 🔐 Build session middleware: route protection, redirect to /login when unauth, redirect to / when authed and on /login.
+  - Accept: Hitting `/` unauthenticated lands on `/login`; logged in lands on the kanban.
+- [ ] **T-032** 🔐 Build "Effective permissions" hook + provider — on login, fetch user's roles and resolved per-column permissions, cache in TanStack Query for the session.
+  - Accept: `usePermissions().canWrite('consignments', 'amount')` returns the expected boolean for each role.
+- [ ] **T-033** 🔐 Build `<PermissionGate column="amount" table="consignments">` component that hides/disables children based on the hook.
+  - Accept: A viewer sees the Amount field as read-only; operator sees it editable (per default seed).
+- [ ] **T-034** 🔐 Settings → Users screen: invite by email, assign role(s), deactivate user. Uses Supabase Admin API via a server action (service role, server-only).
+  - Accept: Admin can invite `test@example.com`; the user appears in the user list with chosen role.
+- [ ] **T-035** 🔐 Settings → Roles screen: list system roles (read-only) and custom roles (CRUD). Per-role matrix UI: table × column toggles for read/write.
+  - Accept: Admin clones "operator" → "operator-no-billing", revokes write on `amount`. A user assigned that role cannot edit `amount`.
+
+---
+
+## Phase 3 — Core consignment CRUD
+
+- [ ] **T-040** 🎨 Build the **Kanban board** (`/`) — columns are pipeline stages, cards are consignments. Drag a card to next column → calls `advance_stage`. Drag backward shows admin-only confirm dialog.
+  - Accept: Dragging a card from "TANESWS — Action" to "Assessment — Action" advances `tanesws_status` to Done, refetches; another tab sees the change within 2s via realtime.
+- [ ] **T-041** 🎨 Build the **Action Inbox** (`/inbox`) — list of consignments where the current user has actionable stages, grouped by stage.
+  - Accept: Operator sees only consignments with stages they have write permission on AND that are in `Action` or are stuck.
+- [ ] **T-042** 🎨 Build **consignment table view** (`/consignments`) — TanStack Table with sortable/filterable columns from PRD §9.2.
+  - Accept: 500 seeded rows render in < 2s; filters (year, client, ICD, stage, container type, "stuck only", "unreleased only", "this week's arrivals") all work.
+- [ ] **T-043** 🎨 Build **consignment detail view** (`/consignments/[id]`) — all fields + visual pipeline + audit log tab + linked GUTA pair + linked in_ref batch + EFD records.
+  - Accept: Every field from PRD §5 is shown; pipeline visual matches current state; audit log shows last 50 changes.
+- [ ] **T-044** 🎨 Build **new consignment form** with zod-validated react-hook-form. Client → ICD auto-suggest per PRD §8.16. Container type → amount range helper per PRD §8.18.
+  - Accept: All hard validations from PRD §8 trigger correctly; soft validations show yellow warnings; submitting creates a row.
+- [ ] **T-045** 🎨 Build **edit consignment** flow (per-field, inline where sensible). Edits respect column permissions.
+  - Accept: Editing `amount` as an operator-no-billing user is blocked at both UI and API levels.
+- [ ] **T-046** 🎨 Build **duplicate consignment** action (PRD §6.1) — useful for GUTA pairs.
+  - Accept: Duplicating "073C - GUTA PARTS" prefills a new form with cleared `ref_no`/`tansad_no` and goods description "073C - FRAMES" suggested.
+- [ ] **T-047** 🎨 Build **delete (soft) flow** with admin confirmation + reason.
+  - Accept: Soft-delete sets `deleted_at`; the row vanishes from default lists; admin can view it in `/admin/archive`.
+
+---
+
+## Phase 4 — EFD, batches, GUTA, alerts
+
+- [ ] **T-050** 🎨 Build **EFD management screen** (`/efd`) — list, create, edit. Supports PRIVATE/TRANSIT/SHARED + linking to one or many consignments.
+  - Accept: Creating one EFD record for an `in_ref` batch with 3 consignments shows the EFD on all 3 detail views.
+- [ ] **T-051** 🎨 Build **in_ref batch view** — clicking an `in_ref` link opens a side panel with all B/Ls, total containers, total amount, combined release status.
+  - Accept: Clicking `TZ3` in a consignment row opens the panel showing all 3 consignments and TSh 700,000 total.
+- [ ] **T-052** 🎨 Build **GUTA pair linkage UI** — on the detail view of a paired consignment, show the sibling. Red warning if one is released and the other isn't.
+  - Accept: Releasing "073C - GUTA PARTS" while "073C - FRAMES" is still in TBS shows the warning on both detail pages.
+- [ ] **T-053** 🔁 Build the **alerts edge function** (Supabase scheduled): every 30 min, find newly-stuck stages, email admins via Resend.
+  - Accept: Backdating a stage to 49h ago and waiting 30 min results in an email; deployed function logs show the run.
+- [ ] **T-054** 🎨 Build the **dashboard** (`/dashboard`) — active jobs count, pipeline funnel, arrivals this week, revenue this month, top clients, overdue jobs (PRD §6.3).
+  - Accept: Numbers match SQL queries run against seed data.
+
+---
+
+## Phase 5 — Excel import
+
+- [ ] **T-060** 📥 Build the **Excel parser** (`src/server/import/parse-tracker.ts`) — handles year separators, decimal time, Excel serial dates, multiple EFD codes per cell, empty-row skipping, REF No left-padding.
+  - Accept: Unit tests cover every parsing rule from PRD §10.3 + §8.20; given a sample of `TRACKER_--_KDL.xlsx`, returns the expected row count.
+- [ ] **T-061** 📥 Build the **import UI** (`/import`) — file upload, preview table with per-row validation, "Confirm" commits via server action, "Cancel" discards.
+  - Accept: Uploading a malformed row shows the error inline; only valid rows commit when confirmed; an `import_jobs` audit row is created.
+- [ ] **T-062** 📥 Build the **CLI importer** (`scripts/import-tracker.ts`) — same parser, designed for the initial bulk historical load.
+  - Accept: `pnpm tsx scripts/import-tracker.ts ./TRACKER_--_KDL.xlsx` runs end-to-end on local Supabase with all PRD §13 reference data already seeded.
+
+---
+
+## Phase 6 — Reports & exports
+
+- [ ] **T-070** 📊 Reports screen (`/reports`) with selector + date range picker. All views from T-024 exposed.
+  - Accept: Each report renders; data matches direct SQL.
+- [ ] **T-071** 📊 Export to XLSX (exceljs) for every report.
+  - Accept: Downloaded file opens in Excel with headers, formatted dates, formatted money.
+- [ ] **T-072** 📊 Export to PDF (@react-pdf/renderer) for every report.
+  - Accept: PDF opens, has Kingdao logo header, paginated correctly.
+
+---
+
+## Phase 7 — Polish, hardening, deploy
+
+- [ ] **T-080** 🎨 Mobile responsive pass on Kanban, Inbox, Detail, Form (PRD §11 mobile requirement).
+  - Accept: Manual test on a 375px-wide viewport — all flows complete without horizontal scroll.
+- [ ] **T-081** 🔐 Security review: RLS coverage audit (`audit_rls.sql`), env var review, ensure service role never in client bundles.
+  - Accept: Audit query shows every public table has RLS enabled; bundle analyzer confirms no service key string in client chunks.
+- [ ] **T-082** 🚚 CI: GitHub Actions running `pnpm typecheck`, `pnpm lint`, `pnpm test`, `supabase db reset` (fresh schema must apply), `pnpm test:e2e`.
+  - Accept: Push to a branch triggers CI; all jobs green on a clean repo.
+- [ ] **T-083** 🚚 Deploy: link Supabase Cloud project, set env vars in Vercel, deploy. Apply migrations via `supabase db push`.
+  - Accept: Production URL serves the app; an admin can log in; one test consignment created end-to-end.
+- [ ] **T-084** 🚚 Production data import: run the importer against production with the real `TRACKER_--_KDL.xlsx`. Spot-check 10 random rows for correctness.
+  - Accept: Production row count matches source row count; 10/10 spot checks correct.
+- [ ] **T-085** 📋 README.md generated (public project overview) + operator quick-start guide saved as `docs/operator-guide.md`.
+  - Accept: A new operator can complete login + advance a stage following only the guide.
+
+---
+
+## Dependencies
+
+- T-001..T-006 block everything.
+- T-010..T-025 block Phase 2+ (no auth without DB).
+- T-021 (advance_stage function) blocks T-040, T-041 (kanban + inbox).
+- T-032 (permissions hook) blocks T-033..T-035, T-045.
+- T-060 (parser) blocks T-061, T-062.
+- T-082 (CI) and T-083 (deploy) are last.
+
+---
+
+## Not yet scheduled (v2 candidates)
+
+These were marked out-of-scope in PRD §12 or surfaced during planning:
+
+- Client-facing portal.
+- TRA/TANCIS direct integration.
+- Generated PDF invoices (we only export reports as PDF; invoices come later).
+- Mobile native app.
+- Multi-company support.
