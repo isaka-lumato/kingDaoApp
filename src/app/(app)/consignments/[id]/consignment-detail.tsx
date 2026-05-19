@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useActionState } from "react";
 import Link from "next/link";
-import { PIPELINE_STAGES } from "@/lib/pipeline";
+import { PIPELINE_STAGES, isStageComplete, type StageField } from "@/lib/pipeline";
 import { formatTzs } from "@/lib/money";
 import { usePermissions } from "@/hooks/use-permissions";
 import {
@@ -66,11 +66,16 @@ const STATUS_STYLES: Record<string, string> = {
   Waiting: "bg-muted/60 text-muted-foreground border border-border",
 };
 
-function StageBadge({ status }: { status: string }) {
+function StageBadge({ field, status }: { field: StageField; status: string }) {
+  const done = isStageComplete(field, status);
+  const isAction = status === "Action";
+  const cls = done
+    ? "bg-stage-done/15 text-stage-done border border-stage-done/40"
+    : isAction
+    ? "bg-stage-action/15 text-stage-action border border-stage-action/40"
+    : "bg-muted/60 text-muted-foreground border border-border";
   return (
-    <span
-      className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${STATUS_STYLES[status] ?? STATUS_STYLES.Waiting}`}
-    >
+    <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${cls}`}>
       {status}
     </span>
   );
@@ -128,9 +133,9 @@ export default function ConsignmentDetail({ consignment, auditLog }: Props) {
     release_status: consignment.release_status,
   };
 
-  const isReleased = consignment.release_status === "Done";
+  const isReleased = consignment.release_status === "Released";
   const doneCount = PIPELINE_STAGES.filter(
-    (s) => stageValues[s.field] === "Done"
+    (s) => isStageComplete(s.field, stageValues[s.field] ?? "")
   ).length;
   const progress = Math.round((doneCount / PIPELINE_STAGES.length) * 100);
 
@@ -337,10 +342,10 @@ export default function ConsignmentDetail({ consignment, auditLog }: Props) {
         <div className="space-y-2">
           {PIPELINE_STAGES.map((stage, idx) => {
             const status = stageValues[stage.field] ?? "Waiting";
-            const isDone = status === "Done";
+            const isDone = isStageComplete(stage.field, status);
             const isActive = !isDone && PIPELINE_STAGES
               .slice(0, idx)
-              .every((s) => stageValues[s.field] === "Done");
+              .every((s) => isStageComplete(s.field, stageValues[s.field] ?? ""));
 
             return (
               <div
@@ -382,7 +387,7 @@ export default function ConsignmentDetail({ consignment, auditLog }: Props) {
                   </p>
                 </div>
 
-                <StageBadge status={status} />
+                <StageBadge field={stage.field} status={status} />
               </div>
             );
           })}

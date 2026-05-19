@@ -25,10 +25,13 @@ type Consignment = {
 };
 
 type Props = {
-  consignment: Consignment;
+  consignment: Consignment & {
+    clients: { id: string; name: string } | null;
+    icds: { id: string; name: string; code: string } | null;
+  };
   clients: Client[];
   icds: ICD[];
-  canWrite: (col: string) => boolean;
+  writableCols: readonly string[];
 };
 
 const CONTAINER_TYPES = ["40FT", "20FT", "CAR", "COIL"] as const;
@@ -52,15 +55,15 @@ function SubmitButton() {
 function Field({
   label,
   col,
-  canWrite,
+  writableCols,
   children,
 }: {
   label: string;
   col: string;
-  canWrite: (col: string) => boolean;
+  writableCols: readonly string[];
   children: (disabled: boolean) => React.ReactNode;
 }) {
-  const disabled = !canWrite(col);
+  const disabled = !writableCols.includes(col);
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-2">
@@ -76,7 +79,7 @@ function Field({
   );
 }
 
-export default function EditConsignmentForm({ consignment, clients, icds, canWrite }: Props) {
+export default function EditConsignmentForm({ consignment, clients, icds, writableCols }: Props) {
   const [state, action] = useActionState(editConsignmentAction, null);
 
   return (
@@ -121,7 +124,7 @@ export default function EditConsignmentForm({ consignment, clients, icds, canWri
             Core details
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Client" col="client_id" canWrite={canWrite}>
+            <Field label="Client" col="client_id" writableCols={writableCols}>
               {(disabled) => (
                 <select
                   name="client_id"
@@ -137,7 +140,7 @@ export default function EditConsignmentForm({ consignment, clients, icds, canWri
               )}
             </Field>
 
-            <Field label="ICD" col="icd_id" canWrite={canWrite}>
+            <Field label="ICD" col="icd_id" writableCols={writableCols}>
               {(disabled) => (
                 <select
                   name="icd_id"
@@ -155,7 +158,7 @@ export default function EditConsignmentForm({ consignment, clients, icds, canWri
               )}
             </Field>
 
-            <Field label="Goods description" col="goods_description" canWrite={canWrite}>
+            <Field label="Goods description" col="goods_description" writableCols={writableCols}>
               {(disabled) => (
                 <textarea
                   name="goods_description"
@@ -167,7 +170,7 @@ export default function EditConsignmentForm({ consignment, clients, icds, canWri
               )}
             </Field>
 
-            <Field label="Amount (TZS)" col="amount" canWrite={canWrite}>
+            <Field label="Amount (TZS)" col="amount" writableCols={writableCols}>
               {(disabled) => (
                 <input
                   name="amount"
@@ -189,7 +192,7 @@ export default function EditConsignmentForm({ consignment, clients, icds, canWri
             Vessel &amp; shipping
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="B/L Number" col="bl_number" canWrite={canWrite}>
+            <Field label="B/L Number" col="bl_number" writableCols={writableCols}>
               {(disabled) => (
                 <input
                   name="bl_number"
@@ -201,7 +204,7 @@ export default function EditConsignmentForm({ consignment, clients, icds, canWri
               )}
             </Field>
 
-            <Field label="TANSAD No" col="tansad_no" canWrite={canWrite}>
+            <Field label="TANSAD No" col="tansad_no" writableCols={writableCols}>
               {(disabled) => (
                 <input
                   name="tansad_no"
@@ -213,7 +216,7 @@ export default function EditConsignmentForm({ consignment, clients, icds, canWri
               )}
             </Field>
 
-            <Field label="Vessel name" col="vessel_name" canWrite={canWrite}>
+            <Field label="Vessel name" col="vessel_name" writableCols={writableCols}>
               {(disabled) => (
                 <input
                   name="vessel_name"
@@ -225,7 +228,7 @@ export default function EditConsignmentForm({ consignment, clients, icds, canWri
               )}
             </Field>
 
-            <Field label="Arrival date" col="arrival_date" canWrite={canWrite}>
+            <Field label="Arrival date" col="arrival_date" writableCols={writableCols}>
               {(disabled) => (
                 <input
                   name="arrival_date"
@@ -237,7 +240,7 @@ export default function EditConsignmentForm({ consignment, clients, icds, canWri
               )}
             </Field>
 
-            <Field label="Container count" col="container_count" canWrite={canWrite}>
+            <Field label="Container count" col="container_count" writableCols={writableCols}>
               {(disabled) => (
                 <input
                   name="container_count"
@@ -250,7 +253,7 @@ export default function EditConsignmentForm({ consignment, clients, icds, canWri
               )}
             </Field>
 
-            <Field label="Container type" col="container_type" canWrite={canWrite}>
+            <Field label="Container type" col="container_type" writableCols={writableCols}>
               {(disabled) => (
                 <select
                   name="container_type"
@@ -273,7 +276,7 @@ export default function EditConsignmentForm({ consignment, clients, icds, canWri
           <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Remarks
           </h2>
-          <Field label="Internal remarks" col="remarks" canWrite={canWrite}>
+          <Field label="Internal remarks" col="remarks" writableCols={writableCols}>
             {(disabled) => (
               <textarea
                 name="remarks"

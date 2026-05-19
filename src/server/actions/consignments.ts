@@ -52,7 +52,7 @@ export async function fetchKanbanData(year?: number): Promise<{
     )
     .eq("year", targetYear)
     .is("deleted_at", null)
-    .neq("release_status", "Done")
+    .neq("release_status", "Released")
     .order("updated_at", { ascending: false })
     .limit(500);
 
