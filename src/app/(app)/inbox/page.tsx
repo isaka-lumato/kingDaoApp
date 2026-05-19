@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getServerPermissions } from "@/lib/permissions";
 import { PIPELINE_STAGES, type StageField } from "@/lib/pipeline";
 import Link from "next/link";
@@ -20,7 +20,7 @@ type InboxItem = {
 };
 
 export default async function InboxPage() {
-  const supabase = await getSupabaseServerClient();
+  const supabase = getSupabaseAdminClient();
   const perms = await getServerPermissions();
 
   // Determine which stage fields this user can write.

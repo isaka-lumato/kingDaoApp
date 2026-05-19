@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import ConsignmentsClient from "./consignments-client";
 
 export const metadata: Metadata = { title: "Consignments — KDL Tracker" };
@@ -21,7 +21,7 @@ export default async function ConsignmentsPage({
   const pageSize = 50;
   const from = (page - 1) * pageSize;
 
-  const supabase = await getSupabaseServerClient();
+  const supabase = getSupabaseAdminClient();
 
   // Fetch clients for filter dropdown.
   const { data: clients } = await supabase

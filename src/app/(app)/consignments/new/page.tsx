@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import NewConsignmentForm from "./new-consignment-form";
 
 export const metadata: Metadata = { title: "New Consignment — KDL Tracker" };
 
 export default async function NewConsignmentPage() {
-  const supabase = await getSupabaseServerClient();
+  const supabase = getSupabaseAdminClient();
 
   const [{ data: clients }, { data: icds }] = await Promise.all([
     supabase

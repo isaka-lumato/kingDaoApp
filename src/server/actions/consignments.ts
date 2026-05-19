@@ -35,7 +35,9 @@ export async function fetchKanbanData(year?: number): Promise<{
   byStage: Record<StageField, KanbanConsignment[]>;
   error?: string;
 }> {
-  const supabase = await getSupabaseServerClient();
+  // Use admin client so the clients(name) join bypasses RLS.
+  // This is a server-only read, behind auth middleware.
+  const supabase = getSupabaseAdminClient();
   const targetYear = year ?? new Date().getFullYear();
 
   const { data, error } = await supabase
