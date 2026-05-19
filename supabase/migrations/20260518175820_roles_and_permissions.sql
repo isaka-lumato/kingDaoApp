@@ -7,6 +7,59 @@
 --                 EXCEPT amount and client_id (admin-only after creation)
 --   viewer    — read everything, write nothing
 
+-- Fix: audit_log.row_id → nullable (needed before rcp_audit trigger fires) ---
+-- role_column_permissions has a composite PK (no `id` column), so the generic
+-- log_table_change() trigger produced a NULL row_id that violated the NOT NULL
+-- constraint written in migration 175744. We drop the constraint here (before
+-- the trigger is attached) and replace the function with a safe version.
+alter table public.audit_log
+  alter column row_id drop not null;
+
+create or replace function public.log_table_change()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_actor_id    uuid;
+  v_actor_email text;
+  v_row_id      uuid;  -- null for composite-PK tables; intentional
+  k             text;
+  old_val       jsonb;
+  new_val       jsonb;
+begin
+  begin v_actor_id    := (auth.uid())::uuid;        exception when others then v_actor_id    := null; end;
+  begin v_actor_email := (auth.jwt() ->> 'email');  exception when others then v_actor_email := null; end;
+
+  if (TG_OP = 'DELETE') then
+    begin v_row_id := (to_jsonb(OLD) ->> 'id')::uuid; exception when others then v_row_id := null; end;
+    insert into public.audit_log (table_name, row_id, column_name, old_value, new_value, actor_id, actor_email)
+    values (TG_TABLE_NAME, v_row_id, '_deleted', to_jsonb(OLD), null, v_actor_id, v_actor_email);
+    return OLD;
+  end if;
+
+  begin v_row_id := (to_jsonb(NEW) ->> 'id')::uuid; exception when others then v_row_id := null; end;
+
+  if (TG_OP = 'INSERT') then
+    insert into public.audit_log (table_name, row_id, column_name, old_value, new_value, actor_id, actor_email)
+    values (TG_TABLE_NAME, v_row_id, '_inserted', null, to_jsonb(NEW), v_actor_id, v_actor_email);
+    return NEW;
+  end if;
+
+  for k in select jsonb_object_keys(to_jsonb(NEW)) loop
+    old_val := to_jsonb(OLD) -> k;
+    new_val := to_jsonb(NEW) -> k;
+    if old_val is distinct from new_val then
+      insert into public.audit_log (table_name, row_id, column_name, old_value, new_value, actor_id, actor_email)
+      values (TG_TABLE_NAME, v_row_id, k, old_val, new_val, v_actor_id, v_actor_email);
+    end if;
+  end loop;
+  return NEW;
+end;
+$$;
+-- End audit fix ---------------------------------------------------------------
+
 create table public.roles (
   id          uuid        primary key default gen_random_uuid(),
   name        text        not null unique,

@@ -8,11 +8,11 @@
 
 | Field | Value |
 |---|---|
-| **Phase** | 0 — Foundations ✅ COMPLETE |
-| **Last updated** | 2026-05-18 |
-| **Last task completed** | T-006 (test setup) |
-| **Current task in progress** | — (Phase 0 ends here) |
-| **Blocked tasks** | T-010..T-025 (Phase 1) blocked on H-007 (interactive `supabase login`) |
+| **Phase** | 1 — Database schema (in progress) |
+| **Last updated** | 2026-05-19 |
+| **Last task completed** | T-010, T-011, T-018, T-019 (migrations live on dev) |
+| **Current task in progress** | T-012 (consignments table) |
+| **Blocked tasks** | None — CLI linked, types generated |
 | **Production deployed?** | No |
 | **Approach** | Cloud-only Supabase per D-019; flat Next.js repo per D-021 |
 | **Stack confirmed running** | Next 16.2 · React 19.2 · Tailwind 4 · TypeScript 5 · Supabase JS 2.106 · zod 4.4 · date-fns 4.2 · Vitest 4.1 · Playwright 1.60 |
@@ -28,17 +28,20 @@
 ### Code
 - Next.js 16 app at repo root (App Router, TypeScript, Tailwind 4)
 - shadcn/ui initialized on Base UI primitives (`base-nova` preset)
-- `src/lib/supabase/{env,client,server,admin,middleware}.ts` — full client/server/admin/middleware wiring with the new publishable/secret keys
+- `src/lib/supabase/{env,client,server,admin,middleware}.ts` — full client/server/admin/middleware wiring
 - `src/middleware.ts` — refreshes Supabase session on every request
 - `src/lib/{money,dates,query-keys}.ts` — shared formatters and centralized query keys
 - `src/schemas/common.ts` — zod fragments (refNo, tansadNo, blNumber, year, amountTzs)
-- `src/types/supabase.ts` — stub (regenerated after first migration)
-- `supabase/config.toml` — CLI initialized
+- `src/types/supabase.ts` — **generated from live dev DB** (regenerate after each migration)
+- `supabase/config.toml` — CLI initialized and **linked to kdl-tracker-dev**
+- `supabase/migrations/` — 4 migrations applied to dev:
+  - `175744` helpers + audit log (with composite-PK fix inlined in `175820`)
+  - `175800` enums (T-010)
+  - `175810` clients + ICDs tables (T-011)
+  - `175820` roles, role_column_permissions, user_roles, seed (T-018/T-019) + audit fix
 - `tests/unit/{money,dates}.test.ts` — 7/7 passing
 - `tests/e2e/smoke.spec.ts` + `playwright.config.ts`
-- `.env.local` (with dev URL + publishable key; secret key still TODO from Baraka)
-- `.env.example` (committed template)
-- Git repo initialized on `main`, one commit so far
+- `.env.local` (dev URL + publishable key; secret key still TODO from Baraka)
 
 ### Operational
 - `fixtures/TRACKER -- KDL.xlsx` — historical data (gitignored)
@@ -63,16 +66,21 @@
 | 2026-05-18 | T-004 done — full Supabase client wiring (browser/server/admin/middleware); homepage SSR confirms env wiring works against dev project. |
 | 2026-05-18 | T-005 done — money/date/query-keys utilities + zod schema fragments; deps installed. |
 | 2026-05-18 | T-006 done — Vitest config + 7 passing unit tests; Playwright config + smoke spec. |
+| 2026-05-19 | H-007 done — `supabase login` + `supabase link` to kdl-tracker-dev (vmkhiahoytuqnjpcxwrb). |
+| 2026-05-19 | T-010 done — enums migration applied (`175800`). |
+| 2026-05-19 | T-011 done — clients + icds tables applied (`175810`). |
+| 2026-05-19 | T-018/T-019 done — roles, user_roles, role_column_permissions + system role seed applied (`175820`). Bugfix: audit_log.row_id made nullable for composite-PK tables. |
+| 2026-05-19 | T-025 done — `src/types/supabase.ts` regenerated from live dev DB. |
 
 ---
 
 ## Next 5 things, in order
 
-1. **Baraka** runs H-007 (`supabase login` + `supabase link --project-ref vmkhiahoytuqnjpcxwrb`).
-2. **Baraka** pastes the dev project's `sb_secret_...` into line 7 of `.env.local`. (Optional for now — only needed once we use the admin client for invites etc.)
-3. **T-010** — enums migration (pipeline statuses, container types, role names).
-4. **T-011** — `clients` + `icds` tables + seed of PRD §13 reference values.
-5. **T-012** — `consignments` table with all PRD §5 fields + uniqueness constraints.
+1. **T-012** — `consignments` table with all PRD §5 fields, FKs, uniqueness constraints.
+2. **T-013** — `in_ref_batches` table.
+3. **T-014** — `efd_records` + `efd_record_consignments` join table.
+4. **T-015** — `guta_pairs` table + auto-pair trigger.
+5. **T-016/T-017** — `stage_history` table + attach audit triggers.
 
 ---
 
