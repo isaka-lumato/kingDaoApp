@@ -331,4 +331,26 @@ kingdaoLogistics/
 
 **API differences vs Radix:** Component import paths differ (`@base-ui/react/dialog` instead of `@radix-ui/react-dialog`) but the props and slots-pattern API are intentionally similar.
 
+## D-024 — `shared_with_consignment_id` (FK), not `shared_primary_ref` (text)
+
+**Date:** 2026-05-18
+**Status:** Active — refines PRD §8.9
+
+**Decision:** When `tbs_debit_status = 'SHARED'`, the link to the paying consignment is a UUID FK column `shared_with_consignment_id` on `consignments`, not the textual `ref_no` the PRD suggests.
+
+**Why:** FK gives us referential integrity, survives any `ref_no` corrections, and lets the UI join cleanly to show "shared with REF 9900042". A text column would silently break if ref_no was ever fixed in the source row.
+
+The UI still displays the linked ref_no via `consignments c left join consignments p on c.shared_with_consignment_id = p.id`.
+
+---
+
+## D-025 — Audit log: no partitioning or pruning in v1
+
+**Date:** 2026-05-18
+**Status:** Active
+
+**Decision:** `audit_log` is a single unpartitioned table with no automatic pruning. Index on `(table_name, row_id, occurred_at desc)`.
+
+**Why:** Volume estimate is ~8,000 rows/year (400 consignments × ~20 mutations each). Postgres handles millions of rows in a single table trivially. Partitioning, archival, and pruning are premature for v1. Revisit if we ever pass 10M rows.
+
 <!-- Append new decisions below this line. Number sequentially. -->
