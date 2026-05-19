@@ -33,17 +33,17 @@ Legend: 🧱 = foundation; 🔐 = security; 📥 = data; 🎨 = UI; 🔁 = workf
   - Accept: `supabase db reset` succeeds; enums visible via `\dT+` in psql.
 - [ ] **T-011** 🧱 Migration: `clients`, `icds` tables with soft-delete column and seed of all PRD §13 reference values.
   - Accept: Seed runs cleanly; `select count(*) from clients` returns ≥ 24; `select count(*) from icds` returns ≥ 30.
-- [ ] **T-012** 🧱 Migration: `consignments` table with every field from PRD §5.1 + §5.2, all FKs, `deleted_at`, `updated_by`, `created_at`, `updated_at`. NO triggers yet.
+- [x] **T-012** 🧱 Migration: `consignments` table with every field from PRD §5.1 + §5.2, all FKs, `deleted_at`, `updated_by`, `created_at`, `updated_at`. NO triggers yet.
   - Accept: Schema matches PRD §5; unique constraint on `(ref_no, year)`; unique constraint on `(bl_number, year)`.
-- [ ] **T-013** 🧱 Migration: `in_ref_batches` table per D-012. FK from `consignments.in_ref_batch_id`.
+- [x] **T-013** 🧱 Migration: `in_ref_batches` table per D-012. FK from `consignments.in_ref_batch_id`.
   - Accept: Inserting two consignments with the same batch returns the same `efd_code` when joined through the view.
-- [ ] **T-014** 🧱 Migration: `efd_records` table per PRD §5.3 (codes, time, flags) + `efd_record_consignments` join (since one EFD can cover many consignments).
+- [x] **T-014** 🧱 Migration: `efd_records` table per PRD §5.3 (codes, time, flags) + `efd_record_consignments` join (since one EFD can cover many consignments).
   - Accept: Many-to-many works; cascade rules: deleting consignment doesn't delete EFD record.
-- [ ] **T-015** 🧱 Migration: `guta_pairs` table per D-011 + trigger to auto-pair on consignment insert/update where `goods_description` matches the pattern.
+- [x] **T-015** 🧱 Migration: `guta_pairs` table per D-011 + trigger to auto-pair on consignment insert/update where `goods_description` matches the pattern.
   - Accept: Inserting "073C - GUTA PARTS" then "073C - FRAMES" (same vessel, same client) auto-creates a `guta_pairs` row linking both.
-- [ ] **T-016** 🧱 Migration: `stage_history` table — every stage advancement logged with `from_value`, `to_value`, `actor_id`, `occurred_at`.
+- [x] **T-016** 🧱 Migration: `stage_history` table — every stage advancement logged with `from_value`, `to_value`, `actor_id`, `occurred_at`.
   - Accept: Table exists, indexed on `(consignment_id, occurred_at desc)`.
-- [ ] **T-017** 🧱 Migration: `audit_log` + generic trigger function `log_table_change()` attached to consignments, efd_records, clients, icds, roles, role_column_permissions, user_roles.
+- [x] **T-017** 🧱 Migration: `audit_log` + generic trigger function `log_table_change()` attached to consignments, efd_records, clients, icds, roles, role_column_permissions, user_roles.
   - Accept: Updating a consignment field writes a row to `audit_log` with old/new values and actor.
 - [ ] **T-018** 🧱 Migration: `roles`, `role_column_permissions`, `user_roles` tables + SQL function `current_user_can_write(table_name text, column_name text) returns boolean`.
   - Accept: Function returns true for admin on every column; false for viewer on every write column.
@@ -51,15 +51,15 @@ Legend: 🧱 = foundation; 🔐 = security; 📥 = data; 🎨 = UI; 🔁 = workf
   - Accept: `select * from role_column_permissions where role_id = (select id from roles where name = 'viewer')` shows `can_write=false` everywhere.
 - [ ] **T-020** 🔐 Migration: enable RLS on every user-facing table. Write SELECT, INSERT, UPDATE, DELETE policies that consult `current_user_can_write()` and role membership.
   - Accept: With a `viewer` user JWT, a direct UPDATE on `consignments.amount` is rejected; with `admin` it succeeds.
-- [ ] **T-021** 🔁 Migration: SQL function `advance_stage(consignment_id uuid, stage text, new_value text, reason text default null)` per D-009 — enforces all PRD §8.6–§8.12 prerequisites, writes `stage_history`, auto-propagates TBS Debit Paid → Duty Paid.
+- [x] **T-021** 🔁 Migration: SQL function `advance_stage(consignment_id uuid, stage text, new_value text, reason text default null)` per D-009 — enforces all PRD §8.6–§8.12 prerequisites, writes `stage_history`, auto-propagates TBS Debit Paid → Duty Paid.
   - Accept: `select advance_stage(<id>, 'tanesws_status', 'Done')` errors with "manifest_status must be Uploaded first" when manifest isn't ready.
-- [ ] **T-022** 🔁 Migration: SQL function `force_set_stage(...)` admin-only escape hatch that bypasses prerequisites and logs reason to audit.
+- [x] **T-022** 🔁 Migration: SQL function `force_set_stage(...)` admin-only escape hatch that bypasses prerequisites and logs reason to audit.
   - Accept: Calling as operator returns permission denied; calling as admin succeeds and writes audit row with reason.
-- [ ] **T-023** 🔁 Migration: view `stuck_stages` — every consignment × stage where current state is `Action` and has been so for ≥ `stuck_threshold_hours` (read from `settings`).
+- [x] **T-023** 🔁 Migration: view `stuck_stages` — every consignment × stage where current state is `Action` and has been so for ≥ `stuck_threshold_hours` (read from `settings`).
   - Accept: Manually backdating a `stage_history` row makes the view return that consignment.
-- [ ] **T-024** 📊 Migration: read-only views for reports — `v_revenue_monthly`, `v_client_volume`, `v_turnaround_by_client`, `v_turnaround_by_icd`, `v_pipeline_funnel`, `v_pending_refunds`.
+- [x] **T-024** 📊 Migration: read-only views for reports — `v_revenue_monthly`, `v_client_volume`, `v_turnaround_by_client`, `v_turnaround_by_icd`, `v_pipeline_funnel`, `v_pending_refunds`.
   - Accept: Each view returns rows on seed data without error.
-- [ ] **T-025** 🧱 Generate TypeScript types: `pnpm gen:types` script runs `supabase gen types typescript --local > apps/web/src/types/supabase.ts`.
+- [x] **T-025** 🧱 Generate TypeScript types: `pnpm gen:types` script runs `supabase gen types typescript --local > apps/web/src/types/supabase.ts`.
   - Accept: Generated file imports cleanly; `Database['public']['Tables']['consignments']` resolves.
 
 ---

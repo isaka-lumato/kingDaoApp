@@ -8,11 +8,11 @@
 
 | Field | Value |
 |---|---|
-| **Phase** | 1 — Database schema (in progress) |
+| **Phase** | 1 — Database schema ✅ COMPLETE |
 | **Last updated** | 2026-05-19 |
-| **Last task completed** | T-010, T-011, T-018, T-019 (migrations live on dev) |
-| **Current task in progress** | T-012 (consignments table) |
-| **Blocked tasks** | None — CLI linked, types generated |
+| **Last task completed** | T-024 (reporting views) + T-025 (types) |
+| **Current task in progress** | — (Phase 1 complete; Phase 2 starts next) |
+| **Blocked tasks** | None |
 | **Production deployed?** | No |
 | **Approach** | Cloud-only Supabase per D-019; flat Next.js repo per D-021 |
 | **Stack confirmed running** | Next 16.2 · React 19.2 · Tailwind 4 · TypeScript 5 · Supabase JS 2.106 · zod 4.4 · date-fns 4.2 · Vitest 4.1 · Playwright 1.60 |
@@ -34,11 +34,18 @@
 - `src/schemas/common.ts` — zod fragments (refNo, tansadNo, blNumber, year, amountTzs)
 - `src/types/supabase.ts` — **generated from live dev DB** (regenerate after each migration)
 - `supabase/config.toml` — CLI initialized and **linked to kdl-tracker-dev**
-- `supabase/migrations/` — 4 migrations applied to dev:
-  - `175744` helpers + audit log (with composite-PK fix inlined in `175820`)
+- `supabase/migrations/` — 11 migrations applied to dev (Phase 1 complete):
+  - `175744` helpers + audit log
   - `175800` enums (T-010)
-  - `175810` clients + ICDs tables (T-011)
-  - `175820` roles, role_column_permissions, user_roles, seed (T-018/T-019) + audit fix
+  - `175810` clients + ICDs + seed (T-011)
+  - `175820` roles, permissions, system role seed (T-018/T-019) + audit fix
+  - `005000` consignments table (T-012)
+  - `005200` efd_records + efd_record_consignments (T-014)
+  - `005250` v_in_ref_batches view (T-013)
+  - `005300` guta_pairs + auto-pair trigger (T-015)
+  - `005400` stage_history + settings singleton (T-016/T-017)
+  - `005500` advance_stage() + force_set_stage() (T-021/T-022)
+  - `005600` v_stuck_stages + 6 reporting views (T-023/T-024)
 - `tests/unit/{money,dates}.test.ts` — 7/7 passing
 - `tests/e2e/smoke.spec.ts` + `playwright.config.ts`
 - `.env.local` (dev URL + publishable key; secret key still TODO from Baraka)
@@ -70,17 +77,24 @@
 | 2026-05-19 | T-010 done — enums migration applied (`175800`). |
 | 2026-05-19 | T-011 done — clients + icds tables applied (`175810`). |
 | 2026-05-19 | T-018/T-019 done — roles, user_roles, role_column_permissions + system role seed applied (`175820`). Bugfix: audit_log.row_id made nullable for composite-PK tables. |
-| 2026-05-19 | T-025 done — `src/types/supabase.ts` regenerated from live dev DB. |
+| 2026-05-19 | T-012 done — consignments table (all PRD §5 fields, FKs, RLS, audit trigger, uniqueness constraints). |
+| 2026-05-19 | T-013 done — v_in_ref_batches view (computed, not a table, per D-012). |
+| 2026-05-19 | T-014 done — efd_records + efd_record_consignments M:M join. |
+| 2026-05-19 | T-015 done — guta_pairs table + auto_detect_guta_pair() trigger. |
+| 2026-05-19 | T-016/T-017 done — stage_history + settings singleton + audit triggers. |
+| 2026-05-19 | T-021/T-022 done — advance_stage() + force_set_stage() with full PRD §8 prerequisites. |
+| 2026-05-19 | T-023/T-024 done — v_stuck_stages + 6 reporting views. |
+| 2026-05-19 | T-025 done — supabase.ts regenerated from full Phase 1 schema. |
 
 ---
 
 ## Next 5 things, in order
 
-1. **T-012** — `consignments` table with all PRD §5 fields, FKs, uniqueness constraints.
-2. **T-013** — `in_ref_batches` table.
-3. **T-014** — `efd_records` + `efd_record_consignments` join table.
-4. **T-015** — `guta_pairs` table + auto-pair trigger.
-5. **T-016/T-017** — `stage_history` table + attach audit triggers.
+1. **T-030** — Login page (`/login`) — email + password, sign-up disabled (admin invites only).
+2. **T-031** — Session middleware: protect all routes, redirect unauthenticated → `/login`.
+3. **T-032** — `usePermissions()` hook: fetch and cache user's resolved column permissions.
+4. **T-033** — `<PermissionGate>` component that hides/disables fields based on the hook.
+5. **T-034** — Settings → Users screen: invite by email, assign role, deactivate.
 
 ---
 
