@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getServerPermissions } from "@/lib/permissions";
 import EditConsignmentForm from "./edit-consignment-form";
 
@@ -12,7 +12,7 @@ export default async function EditConsignmentPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const supabase = await getSupabaseServerClient();
+  const supabase = getSupabaseAdminClient();
   const perms = await getServerPermissions();
 
   const { data: consignment, error } = await supabase

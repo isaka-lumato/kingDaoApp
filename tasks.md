@@ -95,9 +95,9 @@ Legend: 🧱 = foundation; 🔐 = security; 📥 = data; 🎨 = UI; 🔁 = workf
   - Accept: All hard validations from PRD §8 trigger correctly; soft validations show yellow warnings; submitting creates a row.
 - [x] **T-045** 🎨 Build **edit consignment** flow (per-field, inline where sensible). Edits respect column permissions.
   - Accept: Editing `amount` as an operator-no-billing user is blocked at both UI and API levels.
-- [ ] **T-046** 🎨 Build **duplicate consignment** action (PRD §6.1) — useful for GUTA pairs.
+- [x] **T-046** 🎨 Build **duplicate consignment** action (PRD §6.1) — useful for GUTA pairs.
   - Accept: Duplicating "073C - GUTA PARTS" prefills a new form with cleared `ref_no`/`tansad_no` and goods description "073C - FRAMES" suggested.
-- [ ] **T-047** 🎨 Build **delete (soft) flow** with admin confirmation + reason.
+- [x] **T-047** 🎨 Build **delete (soft) flow** with admin confirmation + reason.
   - Accept: Soft-delete sets `deleted_at`; the row vanishes from default lists; admin can view it in `/admin/archive`.
 
 ---

@@ -1,9 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition, useActionState } from "react";
 import Link from "next/link";
 import { PIPELINE_STAGES } from "@/lib/pipeline";
 import { formatTzs } from "@/lib/money";
+import { usePermissions } from "@/hooks/use-permissions";
+import {
+  duplicateConsignmentAction,
+  softDeleteConsignmentAction,
+} from "@/server/actions/consignment-actions";
 
 type Client = { id: string; name: string };
 type ICD = { id: string; name: string; code: string };
@@ -82,6 +87,25 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
 
 export default function ConsignmentDetail({ consignment, auditLog }: Props) {
   const [tab, setTab] = useState<"overview" | "pipeline" | "audit">("overview");
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteReason, setDeleteReason] = useState("");
+  const [deleteState, deleteAction] = useActionState<
+    { error?: string; success?: boolean } | null,
+    FormData
+  >(
+    async (_prev, fd) => softDeleteConsignmentAction(_prev, fd),
+    null
+  );
+  const [isDuplicating, startDuplicate] = useTransition();
+  const { isAdmin } = usePermissions();
+
+  function handleDuplicate(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    startDuplicate(() => {
+      void duplicateConsignmentAction(fd);
+    });
+  }
 
   // Normalize relation joins (Supabase may return array or object).
   const client = Array.isArray(consignment.clients)
@@ -135,12 +159,31 @@ export default function ConsignmentDetail({ consignment, auditLog }: Props) {
           </div>
         </div>
         <div className="flex gap-2">
+          <form onSubmit={handleDuplicate}>
+            <input type="hidden" name="id" value={consignment.id} />
+            <button
+              type="submit"
+              disabled={isDuplicating}
+              className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-50"
+              title="Duplicate this consignment"
+            >
+              {isDuplicating ? "Copying…" : "Duplicate"}
+            </button>
+          </form>
           <Link
             href={`/consignments/${consignment.id}/edit`}
             className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
           >
             Edit
           </Link>
+          {isAdmin && (
+            <button
+              onClick={() => setDeleteOpen(true)}
+              className="rounded-lg border border-destructive/40 px-4 py-2 text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors"
+            >
+              Delete
+            </button>
+          )}
         </div>
       </div>
 
@@ -392,6 +435,59 @@ export default function ConsignmentDetail({ consignment, auditLog }: Props) {
               </tbody>
             </table>
           )}
+        </div>
+      )}
+
+      {/* ── Delete confirmation dialog ── */}
+      {deleteOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setDeleteOpen(false)} />
+          <div className="relative z-10 w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-2xl">
+            <h3 className="text-lg font-semibold text-foreground mb-1">Delete consignment</h3>
+            <p className="text-muted-foreground text-sm mb-4">
+              This will soft-delete <strong className="text-foreground">{consignment.ref_no}</strong>.
+              The record is hidden but not erased. This action is logged.
+            </p>
+
+            {deleteState && "error" in deleteState && (
+              <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                {deleteState.error}
+              </div>
+            )}
+
+            <form action={deleteAction} className="space-y-4">
+              <input type="hidden" name="id" value={consignment.id} />
+              <div className="space-y-1.5">
+                <label className="block text-sm font-medium text-foreground">
+                  Reason <span className="text-destructive">*</span>
+                </label>
+                <textarea
+                  name="reason"
+                  value={deleteReason}
+                  onChange={(e) => setDeleteReason(e.target.value)}
+                  placeholder="e.g. Duplicate entry, wrong year assigned"
+                  rows={3}
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+                />
+              </div>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => { setDeleteOpen(false); setDeleteReason(""); }}
+                  className="flex-1 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!deleteReason.trim()}
+                  className="flex-1 rounded-lg bg-destructive px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
+                >
+                  Confirm delete
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>
