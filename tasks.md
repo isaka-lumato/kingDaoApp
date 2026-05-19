@@ -66,17 +66,17 @@ Legend: 🧱 = foundation; 🔐 = security; 📥 = data; 🎨 = UI; 🔁 = workf
 
 ## Phase 2 — Auth & permissions
 
-- [ ] **T-030** 🔐 Build login page (`/login`) using Supabase Auth, email + password. Sign-up disabled — admins invite new users.
+- [x] **T-030** 🔐 Build login page (`/login`) using Supabase Auth, email + password. Sign-up disabled — admins invite new users.
   - Accept: Existing user can log in; non-existent user gets clear error.
-- [ ] **T-031** 🔐 Build session middleware: route protection, redirect to /login when unauth, redirect to / when authed and on /login.
+- [x] **T-031** 🔐 Build session middleware: route protection, redirect to /login when unauth, redirect to / when authed and on /login.
   - Accept: Hitting `/` unauthenticated lands on `/login`; logged in lands on the kanban.
-- [ ] **T-032** 🔐 Build "Effective permissions" hook + provider — on login, fetch user's roles and resolved per-column permissions, cache in TanStack Query for the session.
+- [x] **T-032** 🔐 Build "Effective permissions" hook + provider — on login, fetch user's roles and resolved per-column permissions, cache in TanStack Query for the session.
   - Accept: `usePermissions().canWrite('consignments', 'amount')` returns the expected boolean for each role.
-- [ ] **T-033** 🔐 Build `<PermissionGate column="amount" table="consignments">` component that hides/disables children based on the hook.
+- [x] **T-033** 🔐 Build `<PermissionGate column="amount" table="consignments">` component that hides/disables children based on the hook.
   - Accept: A viewer sees the Amount field as read-only; operator sees it editable (per default seed).
-- [ ] **T-034** 🔐 Settings → Users screen: invite by email, assign role(s), deactivate user. Uses Supabase Admin API via a server action (service role, server-only).
+- [x] **T-034** 🔐 Settings → Users screen: invite by email, assign role(s), deactivate user. Uses Supabase Admin API via a server action (service role, server-only).
   - Accept: Admin can invite `test@example.com`; the user appears in the user list with chosen role.
-- [ ] **T-035** 🔐 Settings → Roles screen: list system roles (read-only) and custom roles (CRUD). Per-role matrix UI: table × column toggles for read/write.
+- [x] **T-035** 🔐 Settings → Roles screen: list system roles (read-only) and custom roles (CRUD). Per-role matrix UI: table × column toggles for read/write.
   - Accept: Admin clones "operator" → "operator-no-billing", revokes write on `amount`. A user assigned that role cannot edit `amount`.
 
 ---

@@ -8,10 +8,10 @@
 
 | Field | Value |
 |---|---|
-| **Phase** | 1 — Database schema ✅ COMPLETE |
+| **Phase** | 2 — Auth & Permissions ✅ COMPLETE |
 | **Last updated** | 2026-05-19 |
-| **Last task completed** | T-024 (reporting views) + T-025 (types) |
-| **Current task in progress** | — (Phase 1 complete; Phase 2 starts next) |
+| **Last task completed** | T-035 (Settings → Roles + Permissions matrix) |
+| **Current task in progress** | — (Phase 2 complete; Phase 3 starts next) |
 | **Blocked tasks** | None |
 | **Production deployed?** | No |
 | **Approach** | Cloud-only Supabase per D-019; flat Next.js repo per D-021 |
@@ -90,11 +90,11 @@
 
 ## Next 5 things, in order
 
-1. **T-030** — Login page (`/login`) — email + password, sign-up disabled (admin invites only).
-2. **T-031** — Session middleware: protect all routes, redirect unauthenticated → `/login`.
-3. **T-032** — `usePermissions()` hook: fetch and cache user's resolved column permissions.
-4. **T-033** — `<PermissionGate>` component that hides/disables fields based on the hook.
-5. **T-034** — Settings → Users screen: invite by email, assign role, deactivate.
+1. **T-040** — Kanban board (`/`) — pipeline columns, consignment cards, drag to advance stage.
+2. **T-041** — Action Inbox (`/inbox`) — per-user actionable stage list, grouped by stage.
+3. **T-042** — Consignments table view (`/consignments`) — TanStack Table with full filter set.
+4. **T-043** — Consignment detail view (`/consignments/[id]`) — all fields + audit log tab.
+5. **T-044** — New consignment form — zod-validated, client/ICD auto-suggest.
 
 ---
 
