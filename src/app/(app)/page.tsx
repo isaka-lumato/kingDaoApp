@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { fetchKanbanData } from "@/server/actions/consignments";
+import { type StageField } from "@/lib/pipeline";
 import KanbanBoard from "./kanban-board";
 
 export const metadata: Metadata = { title: "Pipeline — KDL Tracker" };

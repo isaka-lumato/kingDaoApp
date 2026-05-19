@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getServerPermissions } from "@/lib/permissions";
-import { PIPELINE_STAGES, type StageField } from "@/server/actions/consignments";
+import { PIPELINE_STAGES, type StageField } from "@/lib/pipeline";
 import Link from "next/link";
 
 export const metadata: Metadata = { title: "Action Inbox — KDL Tracker" };

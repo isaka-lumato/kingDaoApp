@@ -2,7 +2,7 @@
 
 import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import type { StageField, KanbanConsignment } from "@/server/actions/consignments";
+import type { StageField, KanbanConsignment } from "@/lib/pipeline";
 import KanbanCard from "./kanban-card";
 
 const STAGE_COLORS: Record<string, string> = {

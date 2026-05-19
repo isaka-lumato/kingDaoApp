@@ -3,7 +3,7 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import Link from "next/link";
-import type { KanbanConsignment } from "@/server/actions/consignments";
+import type { KanbanConsignment } from "@/lib/pipeline";
 
 type Props = {
   card: KanbanConsignment;

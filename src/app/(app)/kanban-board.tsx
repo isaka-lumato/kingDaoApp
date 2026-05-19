@@ -13,10 +13,12 @@ import {
 } from "@dnd-kit/core";
 import {
   PIPELINE_STAGES,
-  advanceStageAction,
-  forceSetStageAction,
   type StageField,
   type KanbanConsignment,
+} from "@/lib/pipeline";
+import {
+  advanceStageAction,
+  forceSetStageAction,
 } from "@/server/actions/consignments";
 import { usePermissions } from "@/hooks/use-permissions";
 import KanbanCard from "./kanban-card";
