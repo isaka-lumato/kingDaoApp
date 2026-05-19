@@ -13,7 +13,7 @@ const editSchema = z.object({
   vessel_name: z.string().max(200).nullable().optional(),
   arrival_date: z.string().nullable().optional(),
   container_count: z.coerce.number().int().min(1).nullable().optional(),
-  container_type: z.enum(["20GP", "40GP", "40HC", "LCL", "BULK"]).nullable().optional(),
+  container_type: z.enum(["40FT", "20FT", "CAR", "COIL"]).nullable().optional(),
   goods_description: z.string().max(1000).nullable().optional(),
   icd_id: z.uuid().nullable().optional(),
   amount: z.coerce.number().int().min(0).nullable().optional(),

@@ -10,7 +10,7 @@ type Props = {
   icds: { id: string; name: string; code: string }[];
 };
 
-const CONTAINER_TYPES = ["20GP", "40GP", "40HC", "LCL", "BULK"] as const;
+const CONTAINER_TYPES = ["40FT", "20FT", "CAR", "COIL"] as const;
 const CURRENT_YEAR = new Date().getFullYear();
 const YEAR_OPTIONS = [CURRENT_YEAR - 1, CURRENT_YEAR, CURRENT_YEAR + 1];
 

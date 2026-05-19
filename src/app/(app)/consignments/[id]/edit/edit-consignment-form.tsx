@@ -31,7 +31,7 @@ type Props = {
   canWrite: (col: string) => boolean;
 };
 
-const CONTAINER_TYPES = ["20GP", "40GP", "40HC", "LCL", "BULK"] as const;
+const CONTAINER_TYPES = ["40FT", "20FT", "CAR", "COIL"] as const;
 
 const inputCls =
   "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 disabled:cursor-not-allowed";

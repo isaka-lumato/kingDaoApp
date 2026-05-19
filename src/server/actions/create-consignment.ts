@@ -13,7 +13,7 @@ const newConsignmentSchema = z.object({
   vessel_name: z.string().max(200).optional().or(z.literal("")),
   arrival_date: z.string().optional().or(z.literal("")),
   container_count: z.coerce.number().int().min(1).optional().or(z.literal("")),
-  container_type: z.enum(["20GP", "40GP", "40HC", "LCL", "BULK"]).optional(),
+  container_type: z.enum(["40FT", "20FT", "CAR", "COIL"]).optional(),
   goods_description: z.string().max(1000).optional().or(z.literal("")),
   icd_id: z.uuid().optional().or(z.literal("")),
   amount: z.coerce.number().int().min(0).optional().or(z.literal("")),
@@ -43,9 +43,25 @@ export async function createConsignmentAction(
   const d = parsed.data;
   const supabase = await getSupabaseServerClient();
 
+  // Auto-generate serial_no (next for this year) and ref_no.
+  const { data: lastSerial } = await supabase
+    .from("consignments")
+    .select("serial_no")
+    .eq("year", d.year)
+    .order("serial_no", { ascending: false })
+    .limit(1)
+    .single();
+
+  const nextSerial = (lastSerial?.serial_no ?? 0) + 1;
+  // ref_no format: YYXXXXX e.g. 260001 for year 2026, serial 1
+  const yearSuffix = String(d.year).slice(2);
+  const ref_no = `${yearSuffix}${String(nextSerial).padStart(4, "0")}`;
+
   const { data, error } = await supabase
     .from("consignments")
     .insert({
+      ref_no,
+      serial_no: nextSerial,
       client_id: d.client_id,
       year: d.year,
       bl_number: d.bl_number || null,
