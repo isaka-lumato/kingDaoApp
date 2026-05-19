@@ -24,9 +24,10 @@ export default async function ConsignmentPage({
 
   const { data: auditLog } = await supabase
     .from("audit_log")
-    .select("id, changed_at, changed_by, field_name, old_value, new_value, notes")
-    .eq("consignment_id", id)
-    .order("changed_at", { ascending: false })
+    .select("id, occurred_at, actor_email, column_name, old_value, new_value")
+    .eq("row_id", id)
+    .eq("table_name", "consignments")
+    .order("occurred_at", { ascending: false })
     .limit(50);
 
   return (

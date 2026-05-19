@@ -43,12 +43,11 @@ type Consignment = {
 
 type AuditEntry = {
   id: string;
-  changed_at: string;
-  changed_by: string | null;
-  field_name: string;
+  occurred_at: string;
+  actor_email: string | null;
+  column_name: string | null;
   old_value: string | null;
   new_value: string | null;
-  notes: string | null;
 };
 
 type Props = {
@@ -359,34 +358,34 @@ export default function ConsignmentDetail({ consignment, auditLog }: Props) {
               <thead>
                 <tr className="border-b border-border bg-muted/40">
                   <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">When</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">By</th>
                   <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Field</th>
                   <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Old</th>
                   <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">New</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground hidden md:table-cell">Notes</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {auditLog.map((entry) => (
                   <tr key={entry.id} className="hover:bg-muted/20 transition-colors">
                     <td className="px-4 py-2.5 text-xs text-muted-foreground whitespace-nowrap">
-                      {new Date(entry.changed_at).toLocaleDateString("en-GB", {
+                      {new Date(entry.occurred_at).toLocaleDateString("en-GB", {
                         day: "2-digit",
                         month: "short",
                         hour: "2-digit",
                         minute: "2-digit",
                       })}
                     </td>
+                    <td className="px-4 py-2.5 text-xs text-muted-foreground max-w-[140px] truncate">
+                      {entry.actor_email ?? "system"}
+                    </td>
                     <td className="px-4 py-2.5 text-xs font-mono text-foreground">
-                      {entry.field_name}
+                      {entry.column_name ?? "—"}
                     </td>
                     <td className="px-4 py-2.5 text-xs text-muted-foreground">
                       {entry.old_value ?? "—"}
                     </td>
                     <td className="px-4 py-2.5 text-xs font-medium text-foreground">
                       {entry.new_value ?? "—"}
-                    </td>
-                    <td className="px-4 py-2.5 text-xs text-muted-foreground hidden md:table-cell">
-                      {entry.notes ?? "—"}
                     </td>
                   </tr>
                 ))}

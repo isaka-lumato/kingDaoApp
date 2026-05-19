@@ -201,6 +201,35 @@
   body {
     @apply min-h-full;
   }
+
+  /*
+   * Force all native form elements to inherit theme colours.
+   * Browsers apply their own OS-level colours to inputs/selects/textareas
+   * by default, which breaks dark mode — text appears black on a dark bg.
+   */
+  input,
+  select,
+  textarea,
+  button {
+    color: inherit;
+    font-family: inherit;
+  }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  select,
+  textarea {
+    background-color: var(--background);
+    color: var(--foreground);
+  }
+  /* Placeholder text — should be muted, not invisible */
+  ::placeholder {
+    color: var(--muted-foreground);
+    opacity: 1;
+  }
+  /* Select arrow colour fix on dark */
+  select option {
+    background-color: var(--card);
+    color: var(--foreground);
+  }
 }
 
 /* ─── KDL utility classes ─────────────────────────────────────────────────── */

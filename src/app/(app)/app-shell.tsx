@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { usePathname } from "next/navigation";
+import Image from "next/image";
 import { logoutAction } from "@/server/actions/auth";
 import { usePermissions } from "@/hooks/use-permissions";
 import { NavLinks } from "./nav-links";
@@ -103,12 +104,15 @@ export default function AppShell({
       {/* ── Desktop sidebar ─────────────────────────────────────────────── */}
       <aside className="hidden md:flex w-60 shrink-0 flex-col bg-sidebar border-r border-sidebar-border">
         {/* Brand */}
-        <div className="flex items-center gap-3 px-5 py-5 border-b border-sidebar-border">
-          <div className="w-8 h-8 rounded-lg bg-brand flex items-center justify-center shrink-0 shadow-lg shadow-brand/30">
-            <svg viewBox="0 0 24 24" fill="none" className="w-[18px] h-[18px] text-white" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-            </svg>
-          </div>
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-sidebar-border">
+          <Image
+            src="/KINGDAO_LOGO.png"
+            alt="Kingdao Logistics"
+            width={36}
+            height={36}
+            className="rounded-lg object-contain shrink-0"
+            priority
+          />
           <div>
             <p className="text-sidebar-foreground font-bold text-sm leading-none">KDL Tracker</p>
             <p className="text-brand text-[10px] font-medium tracking-widest uppercase mt-0.5">Kingdao Logistics</p>
@@ -151,8 +155,17 @@ export default function AppShell({
             onClick={() => setSidebarOpen(false)}
           />
           <aside className="relative z-50 flex w-64 flex-col bg-sidebar border-r border-sidebar-border shadow-xl">
-            <div className="flex items-center justify-between px-5 py-5 border-b border-sidebar-border">
-              <span className="text-sidebar-foreground font-bold text-sm">KDL Tracker</span>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-sidebar-border">
+              <div className="flex items-center gap-2">
+                <Image
+                  src="/KINGDAO_LOGO.png"
+                  alt="Kingdao Logistics"
+                  width={28}
+                  height={28}
+                  className="rounded object-contain"
+                />
+                <span className="text-sidebar-foreground font-bold text-sm">KDL Tracker</span>
+              </div>
               <button onClick={() => setSidebarOpen(false)} className="text-muted-foreground hover:text-foreground">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-5 h-5">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
