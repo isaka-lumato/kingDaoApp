@@ -83,15 +83,15 @@ Legend: 🧱 = foundation; 🔐 = security; 📥 = data; 🎨 = UI; 🔁 = workf
 
 ## Phase 3 — Core consignment CRUD
 
-- [ ] **T-040** 🎨 Build the **Kanban board** (`/`) — columns are pipeline stages, cards are consignments. Drag a card to next column → calls `advance_stage`. Drag backward shows admin-only confirm dialog.
+- [x] **T-040** 🎨 Build the **Kanban board** (`/`) — columns are pipeline stages, cards are consignments. Drag a card to next column → calls `advance_stage`. Drag backward shows admin-only confirm dialog.
   - Accept: Dragging a card from "TANESWS — Action" to "Assessment — Action" advances `tanesws_status` to Done, refetches; another tab sees the change within 2s via realtime.
 - [x] **T-041** 🎨 Build the **Action Inbox** (`/inbox`) — list of consignments where the current user has actionable stages, grouped by stage.
   - Accept: Operator sees only consignments with stages they have write permission on AND that are in `Action` or are stuck.
 - [x] **T-042** 🎨 Build **consignment table view** (`/consignments`) — TanStack Table with sortable/filterable columns from PRD §9.2.
   - Accept: 500 seeded rows render in < 2s; filters (year, client, ICD, stage, container type, "stuck only", "unreleased only", "this week's arrivals") all work.
-- [ ] **T-043** 🎨 Build **consignment detail view** (`/consignments/[id]`) — all fields + visual pipeline + audit log tab + linked GUTA pair + linked in_ref batch + EFD records.
+- [x] **T-043** 🎨 Build **consignment detail view** (`/consignments/[id]`) — all fields + visual pipeline + audit log tab + linked GUTA pair + linked in_ref batch + EFD records.
   - Accept: Every field from PRD §5 is shown; pipeline visual matches current state; audit log shows last 50 changes.
-- [ ] **T-044** 🎨 Build **new consignment form** with zod-validated react-hook-form. Client → ICD auto-suggest per PRD §8.16. Container type → amount range helper per PRD §8.18.
+- [x] **T-044** 🎨 Build **new consignment form** with zod-validated react-hook-form. Client → ICD auto-suggest per PRD §8.16. Container type → amount range helper per PRD §8.18.
   - Accept: All hard validations from PRD §8 trigger correctly; soft validations show yellow warnings; submitting creates a row.
 - [ ] **T-045** 🎨 Build **edit consignment** flow (per-field, inline where sensible). Edits respect column permissions.
   - Accept: Editing `amount` as an operator-no-billing user is blocked at both UI and API levels.
