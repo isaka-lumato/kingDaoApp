@@ -11,7 +11,7 @@ import {
 } from "@/server/actions/consignment-actions";
 
 type Client = { id: string; name: string };
-type ICD = { id: string; name: string; code: string };
+type ICD = { id: string; name: string; location: string | null };
 
 type Consignment = {
   id: string;
@@ -243,7 +243,7 @@ export default function ConsignmentDetail({ consignment, auditLog }: Props) {
               <Field label="Serial No" value={consignment.serial_no} />
               <Field label="B/L Number" value={consignment.bl_number} />
               <Field label="TANSAD No" value={consignment.tansad_no} />
-              <Field label="ICD" value={icd ? `${icd.name} (${icd.code})` : null} />
+              <Field label="ICD" value={icd ? `${icd.name}${icd.location ? ` (${icd.location})` : ""}` : null} />
               <Field
                 label="Goods"
                 value={

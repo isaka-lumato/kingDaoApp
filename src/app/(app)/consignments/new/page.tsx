@@ -15,7 +15,7 @@ export default async function NewConsignmentPage() {
       .order("name"),
     supabase
       .from("icds")
-      .select("id, name, code")
+      .select("id, name, location")
       .order("name"),
   ]);
 

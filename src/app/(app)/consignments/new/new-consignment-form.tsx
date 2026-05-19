@@ -7,7 +7,7 @@ import { createConsignmentAction } from "@/server/actions/create-consignment";
 
 type Props = {
   clients: { id: string; name: string }[];
-  icds: { id: string; name: string; code: string }[];
+  icds: { id: string; name: string; location: string | null }[];
 };
 
 const CONTAINER_TYPES = ["40FT", "20FT", "CAR", "COIL"] as const;
@@ -185,7 +185,7 @@ export default function NewConsignmentForm({ clients, icds }: Props) {
                 <option value="">Select ICD…</option>
                 {icds.map((icd) => (
                   <option key={icd.id} value={icd.id}>
-                    {icd.name} ({icd.code})
+                    {icd.name}{icd.location ? ` (${icd.location})` : ""}
                   </option>
                 ))}
               </select>

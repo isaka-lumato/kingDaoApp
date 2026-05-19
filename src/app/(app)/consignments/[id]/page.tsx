@@ -44,7 +44,7 @@ export default async function ConsignmentPage({
   const { data: icdData } = consignment.icd_id
     ? await supabase
         .from("icds")
-        .select("id, name, code")
+        .select("id, name, location")
         .eq("id", consignment.icd_id)
         .single()
     : { data: null };

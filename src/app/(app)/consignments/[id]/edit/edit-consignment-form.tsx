@@ -6,7 +6,7 @@ import Link from "next/link";
 import { editConsignmentAction } from "@/server/actions/edit-consignment";
 
 type Client = { id: string; name: string };
-type ICD = { id: string; name: string; code: string };
+type ICD = { id: string; name: string; location: string | null };
 type Consignment = {
   id: string;
   ref_no: string;
@@ -27,7 +27,7 @@ type Consignment = {
 type Props = {
   consignment: Consignment & {
     clients: { id: string; name: string } | null;
-    icds: { id: string; name: string; code: string } | null;
+    icds: { id: string; name: string; location: string | null } | null;
   };
   clients: Client[];
   icds: ICD[];
@@ -151,7 +151,7 @@ export default function EditConsignmentForm({ consignment, clients, icds, writab
                   <option value="">Select ICD…</option>
                   {icds.map((icd) => (
                     <option key={icd.id} value={icd.id}>
-                      {icd.name} ({icd.code})
+                      {icd.name}{icd.location ? ` (${icd.location})` : ""}
                     </option>
                   ))}
                 </select>

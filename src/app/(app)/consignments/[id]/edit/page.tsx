@@ -40,12 +40,12 @@ export default async function EditConsignmentPage({
     : { data: null };
 
   const { data: icdData } = consignment.icd_id
-    ? await supabase.from("icds").select("id, name, code").eq("id", consignment.icd_id).single()
+    ? await supabase.from("icds").select("id, name, location").eq("id", consignment.icd_id).single()
     : { data: null };
 
   const [{ data: clients }, { data: icds }] = await Promise.all([
     supabase.from("clients").select("id, name").is("deleted_at", null).order("name"),
-    supabase.from("icds").select("id, name, code").order("name"),
+    supabase.from("icds").select("id, name, location").order("name"),
   ]);
 
   // Serialize permissions as a plain object — functions can't cross the
