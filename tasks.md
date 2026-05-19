@@ -93,7 +93,7 @@ Legend: 🧱 = foundation; 🔐 = security; 📥 = data; 🎨 = UI; 🔁 = workf
   - Accept: Every field from PRD §5 is shown; pipeline visual matches current state; audit log shows last 50 changes.
 - [x] **T-044** 🎨 Build **new consignment form** with zod-validated react-hook-form. Client → ICD auto-suggest per PRD §8.16. Container type → amount range helper per PRD §8.18.
   - Accept: All hard validations from PRD §8 trigger correctly; soft validations show yellow warnings; submitting creates a row.
-- [ ] **T-045** 🎨 Build **edit consignment** flow (per-field, inline where sensible). Edits respect column permissions.
+- [x] **T-045** 🎨 Build **edit consignment** flow (per-field, inline where sensible). Edits respect column permissions.
   - Accept: Editing `amount` as an operator-no-billing user is blocked at both UI and API levels.
 - [ ] **T-046** 🎨 Build **duplicate consignment** action (PRD §6.1) — useful for GUTA pairs.
   - Accept: Duplicating "073C - GUTA PARTS" prefills a new form with cleared `ref_no`/`tansad_no` and goods description "073C - FRAMES" suggested.
