@@ -40,7 +40,7 @@ export default function UsersClient({ users, roles, fetchError }: Props) {
       if (res && "error" in res) {
         setInviteError(res.error ?? null);
       } else if (res?.success) {
-        setInviteSuccess(`Invite sent to ${res.email}`);
+        setInviteSuccess(`User ${res.email} created successfully`);
         setInviteOpen(false);
         (e.target as HTMLFormElement).reset();
       }
@@ -128,7 +128,7 @@ export default function UsersClient({ users, roles, fetchError }: Props) {
         </table>
       </div>
 
-      {/* Invite modal */}
+      {/* Create user modal */}
       {inviteOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
@@ -136,9 +136,9 @@ export default function UsersClient({ users, roles, fetchError }: Props) {
             onClick={() => setInviteOpen(false)}
           />
           <div className="relative z-10 w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl">
-            <h3 className="text-lg font-semibold text-foreground mb-1">Invite user</h3>
+            <h3 className="text-lg font-semibold text-foreground mb-1">Add user</h3>
             <p className="text-muted-foreground text-sm mb-5">
-              An invite email will be sent. The user sets their own password on first sign-in.
+              Create an account with a temporary password. Share it with the colleague directly.
             </p>
 
             {inviteError && (
@@ -160,6 +160,24 @@ export default function UsersClient({ users, roles, fetchError }: Props) {
                   placeholder="colleague@kingdao.co.tz"
                   className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                 />
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="invite-password" className="block text-sm font-medium text-foreground">
+                  Temporary password
+                </label>
+                <input
+                  id="invite-password"
+                  name="password"
+                  type="text"
+                  required
+                  minLength={6}
+                  placeholder="Min 6 characters"
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Visible so you can share it. The user should change it after first login.
+                </p>
               </div>
 
               <div className="space-y-1.5">
@@ -195,7 +213,7 @@ export default function UsersClient({ users, roles, fetchError }: Props) {
                   disabled={isPending}
                   className="flex-1 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60 transition-opacity"
                 >
-                  {isPending ? "Sending…" : "Send invite"}
+                  {isPending ? "Creating…" : "Create user"}
                 </button>
               </div>
             </form>

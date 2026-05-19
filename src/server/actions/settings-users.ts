@@ -17,8 +17,9 @@ async function requireAdmin() {
 
 // ── Schemas ────────────────────────────────────────────────────────────────
 
-const inviteSchema = z.object({
+const createUserSchema = z.object({
   email: z.email("Valid email required"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
   roleId: z.uuid("Role ID required"),
 });
 
@@ -30,48 +31,70 @@ const assignRoleSchema = z.object({
 // ── Actions ────────────────────────────────────────────────────────────────
 
 /**
- * T-034: Invite a new user by email and immediately assign a role.
- * Uses the Supabase Admin API (secret key) — never called from client bundles.
+ * T-034: Create a new user with email + temporary password, assign a role.
+ * Admin tells the colleague the password directly (internal tool — no SMTP needed).
+ * If the user already exists, just assigns the role.
  */
 export async function inviteUserAction(formData: FormData) {
   await requireAdmin();
 
   const raw = {
     email: formData.get("email"),
+    password: formData.get("password"),
     roleId: formData.get("roleId"),
   };
 
-  const parsed = inviteSchema.safeParse(raw);
+  const parsed = createUserSchema.safeParse(raw);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
 
   const admin = getSupabaseAdminClient();
 
-  // Invite via Supabase Auth Admin API — sends a magic-link invite email.
-  const { data: invited, error: inviteErr } =
-    await admin.auth.admin.inviteUserByEmail(parsed.data.email, {
-      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/auth/confirm`,
+  // Try to create the user with password auth (confirmed immediately).
+  const { data: created, error: createErr } =
+    await admin.auth.admin.createUser({
+      email: parsed.data.email,
+      password: parsed.data.password,
+      email_confirm: true, // skip email verification — admin is vouching
     });
 
-  if (inviteErr) {
-    if (inviteErr.message.toLowerCase().includes("already been registered")) {
-      return { error: "A user with this email already exists." };
+  let userId: string;
+
+  if (createErr) {
+    // If user already exists, find them and just assign the role.
+    if (createErr.message.toLowerCase().includes("already been registered") ||
+        createErr.message.toLowerCase().includes("already exists")) {
+      const { data: listData } = await admin.auth.admin.listUsers({ perPage: 500 });
+      const existing = listData?.users.find(
+        (u) => u.email?.toLowerCase() === parsed.data.email.toLowerCase()
+      );
+      if (!existing) {
+        return { error: "User reportedly exists but could not be found." };
+      }
+      userId = existing.id;
+    } else {
+      return { error: createErr.message };
     }
-    return { error: inviteErr.message };
+  } else {
+    if (!created.user?.id) {
+      return { error: "User creation succeeded but no user ID returned." };
+    }
+    userId = created.user.id;
   }
 
-  if (!invited.user?.id) {
-    return { error: "Invite succeeded but no user ID returned." };
-  }
-
-  // Assign the selected role.
+  // Assign the selected role (ignore if already assigned).
   const { error: roleErr } = await admin
     .from("user_roles")
-    .insert({ user_id: invited.user.id, role_id: parsed.data.roleId });
+    .insert({ user_id: userId, role_id: parsed.data.roleId });
 
   if (roleErr) {
-    return { error: `User invited but role assignment failed: ${roleErr.message}` };
+    if (roleErr.code === "23505") {
+      // Role already assigned — not an error.
+      revalidatePath("/settings/users");
+      return { success: true, email: parsed.data.email, note: "Role was already assigned." };
+    }
+    return { error: `User created but role assignment failed: ${roleErr.message}` };
   }
 
   revalidatePath("/settings/users");
