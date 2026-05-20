@@ -8,6 +8,7 @@ import {
   PIPELINE_STAGES,
   STAGE_FIELDS,
   resolveActiveStage,
+  stageFieldToDbEnum,
   type StageField,
   type KanbanConsignment,
 } from "@/lib/pipeline";
@@ -111,15 +112,26 @@ export async function fetchKanbanData(year?: number): Promise<{
 
 // ── Mutations ──────────────────────────────────────────────────────────────
 
+// Validate that `stage` is one of the known `StageField` values. The kanban
+// passes a column-name (`manifest_status`); we convert to the DB enum value
+// (`manifest`) below via `stageFieldToDbEnum`.
+const stageFieldSchema = z.enum(STAGE_FIELDS as [StageField, ...StageField[]]);
+
 const advanceSchema = z.object({
   consignmentId: z.uuid(),
-  stage: z.string(),
+  stage: stageFieldSchema,
   newValue: z.string(),
 });
 
 /**
  * Advance a pipeline stage via the `advance_stage()` SQL function.
  * Enforces all PRD §8 prerequisites at the DB level.
+ *
+ * The DB function signature is:
+ *   advance_stage(p_id uuid, p_stage pipeline_stage, p_new_value text, p_reason text)
+ * Note: param name is `p_id` (not `p_consignment_id`), and `p_stage` is the
+ * short DB enum value (`manifest`, `tanesws`, ...), not the column name
+ * (`manifest_status`, `tanesws_status`, ...). See lib/pipeline.ts.
  */
 export async function advanceStageAction(formData: FormData) {
   const parsed = advanceSchema.safeParse({
@@ -131,8 +143,8 @@ export async function advanceStageAction(formData: FormData) {
 
   const supabase = await getSupabaseServerClient();
   const { error } = await supabase.rpc("advance_stage", {
-    p_consignment_id: parsed.data.consignmentId,
-    p_stage: parsed.data.stage,
+    p_id: parsed.data.consignmentId,
+    p_stage: stageFieldToDbEnum(parsed.data.stage),
     p_new_value: parsed.data.newValue,
   });
 
@@ -144,13 +156,14 @@ export async function advanceStageAction(formData: FormData) {
 
 const forceSchema = z.object({
   consignmentId: z.uuid(),
-  stage: z.string(),
+  stage: stageFieldSchema,
   newValue: z.string(),
   reason: z.string().min(1, "Reason is required for force-set"),
 });
 
 /**
  * Admin-only: force-set a stage bypassing prerequisites.
+ * Same param/enum convention as `advance_stage` above.
  */
 export async function forceSetStageAction(formData: FormData) {
   const perms = await getServerPermissions();
@@ -166,8 +179,8 @@ export async function forceSetStageAction(formData: FormData) {
 
   const admin = getSupabaseAdminClient();
   const { error } = await admin.rpc("force_set_stage", {
-    p_consignment_id: parsed.data.consignmentId,
-    p_stage: parsed.data.stage,
+    p_id: parsed.data.consignmentId,
+    p_stage: stageFieldToDbEnum(parsed.data.stage),
     p_new_value: parsed.data.newValue,
     p_reason: parsed.data.reason,
   });

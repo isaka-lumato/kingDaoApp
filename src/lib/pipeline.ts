@@ -157,3 +157,17 @@ export function resolveActiveStage(row: Record<string, string>): StageField {
 export function isStageComplete(field: StageField, value: string): boolean {
   return value === STAGE_DONE_VALUE[field];
 }
+
+/**
+ * Converts a `StageField` (the column name, e.g. `"manifest_status"`) to the
+ * `public.pipeline_stage` DB enum value the `advance_stage()` / `force_set_stage()`
+ * functions expect (e.g. `"manifest"`). The enum values are simply the field
+ * names with the `_status` suffix removed.
+ *
+ * Per migration 20260519005500_advance_stage.sql:
+ *   manifest, shipping_batch, tanesws, assessment, tbs_loading, tbs_debit,
+ *   manifest_comp, duty, inspection_file, release
+ */
+export function stageFieldToDbEnum(field: StageField): string {
+  return field.replace(/_status$/, "");
+}
