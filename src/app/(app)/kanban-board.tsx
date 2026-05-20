@@ -14,6 +14,7 @@ import {
 } from "@dnd-kit/core";
 import {
   PIPELINE_STAGES,
+  STAGE_DONE_VALUE,
   type StageField,
   type KanbanConsignment,
 } from "@/lib/pipeline";
@@ -76,11 +77,20 @@ export default function KanbanBoard({ byStage, year, fetchError }: Props) {
       return;
     }
 
-    // Forward move — call advance_stage
+    // Forward move — "advance one stage at a time" semantics.
+    // Per the Kanban product model, a forward drag means "I'm done with the
+    // CURRENT active stage." We mark the source stage as done (Uploaded /
+    // Closed / Paid / Done / Released — see STAGE_DONE_VALUE) and let the
+    // server's resolveActiveStage recompute which column the card belongs in
+    // on refetch. The drop target column is intentionally ignored beyond
+    // direction (forward vs backward) — if the user overshoots, the card
+    // moves one column forward and they can drag again. The DB function
+    // enforces PRD §7.1 (stages must complete in order); since we only
+    // advance the active stage, prereqs are by definition satisfied.
     const fd = new FormData();
     fd.set("consignmentId", card.id);
-    fd.set("stage", toField);
-    fd.set("newValue", "Action");
+    fd.set("stage", card.active_stage);
+    fd.set("newValue", STAGE_DONE_VALUE[card.active_stage]);
     startTransition(async () => {
       const res = await advanceStageAction(fd);
       if (res?.error) setError(res.error);
