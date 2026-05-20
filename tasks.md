@@ -106,7 +106,7 @@ Legend: 🧱 = foundation; 🔐 = security; 📥 = data; 🎨 = UI; 🔁 = workf
 
 Two cleanup tasks identified during the post-Phase-3 audit. Both must be done before Phase 4 work begins so the perf/security posture is right for the EFD and dashboard screens.
 
-- [ ] **T-048** 🔐 Revert RLS bypass on server-side read paths (per D-026).
+- [~] **T-048** 🔐 Revert RLS bypass on server-side read paths (per D-026). Code complete; manual viewer/operator/admin verification still pending.
   - Swap `getSupabaseAdminClient()` → `getSupabaseServerClient()` on the 7 read-only call sites:
     `src/app/(app)/page.tsx` (via `fetchKanbanData` in `server/actions/consignments.ts`),
     `src/app/(app)/inbox/page.tsx`,

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getServerPermissions } from "@/lib/permissions";
 import { STAGE_FIELDS } from "@/lib/pipeline";
 import EditConsignmentForm from "./edit-consignment-form";
@@ -22,7 +22,8 @@ export default async function EditConsignmentPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const supabase = getSupabaseAdminClient();
+  // Per T-048 / D-026: user-bound server client; RLS enforced.
+  const supabase = await getSupabaseServerClient();
   const perms = await getServerPermissions();
 
   const { data: consignment, error } = await supabase
@@ -45,7 +46,7 @@ export default async function EditConsignmentPage({
 
   const [{ data: clients }, { data: icds }] = await Promise.all([
     supabase.from("clients").select("id, name").is("deleted_at", null).order("name"),
-    supabase.from("icds").select("id, name, location").order("name"),
+    supabase.from("icds").select("id, name, location").is("deleted_at", null).order("name"),
   ]);
 
   // Serialize permissions as a plain object — functions can't cross the

@@ -8,10 +8,10 @@
 
 | Field | Value |
 |---|---|
-| **Phase** | 3 — Core Consignment CRUD ✅ COMPLETE (Phase 3.5 cleanup pending) |
+| **Phase** | 3.5 — Trial-branch cleanup (T-048 in progress, T-049 pending) |
 | **Last updated** | 2026-05-20 |
 | **Last task completed** | T-047 (Soft-delete flow with admin reason) |
-| **Current task in progress** | — (Phase 3 done; Phase 3.5 cleanup next: T-048, T-049) |
+| **Current task in progress** | T-048 — RLS bypass revert: **code complete + validation gates green**; manual viewer/operator/admin verification still owed by Baraka before marking `[x]` |
 | **Blocked tasks** | None |
 | **Production deployed?** | No |
 | **Active branch** | `trial` (not yet merged to `main`) |
@@ -103,13 +103,15 @@
 | 2026-05-19 | Schema bugfix — corrected `container_type` enum values to `40FT/20FT/CAR/COIL` and auto-generate `ref_no` + `serial_no` on insert (D-028). |
 | 2026-05-19 | T-046/T-047 done — duplicate + soft-delete actions. Phase 3 complete. |
 | 2026-05-20 | **Trial-branch audit by Baraka + Claude** — identified RLS-bypass-on-reads pattern across 7 server pages (see D-026); logged as T-048 cleanup. Identified perf regression from 3 serial `auth.getUser()` round-trips per request; logged as T-049. Documentation hygiene caught up (`status.md`, `decisions.md`, `tasks.md`, `validation.md`). |
+| 2026-05-20 | T-048 code complete — swapped `getSupabaseAdminClient()` → `getSupabaseServerClient()` on 7 page files + `fetchKanbanData`. Added `.is("deleted_at", null)` on the `icds` reads that were missing it. Side-fix: replaced `<a href="/consignments/new">` with `<Link>` in `kanban-board.tsx` (was blocking the lint gate). Validation: `grep -rn getSupabaseAdminClient src/` returns only the 4 permitted call sites; typecheck + lint + tests all green. Manual viewer/operator/admin verification still owed before marking T-048 `[x]`. |
 
 ---
 
 ## Open issues / known compromises
 
-- **RLS bypass on read paths** — 7 server pages currently use the admin client for SELECT queries to make `clients(name)` / `icds(location)` joins work and to defeat a soft-delete visibility quirk. Logged as **D-026** and tracked by **T-048**. Must be fixed before Phase 4 (EFD/GUTA UI), and definitely before T-081 (security review).
+- **T-048 manual verification pending.** Code-level RLS bypass is reverted (see Recent activity 2026-05-20). Still need to walk through the app as a viewer, an operator, and an admin to confirm each role sees only what they should and that joined columns (`clients.name`, `icds.location`) render correctly through user JWT.
 - **Page latency** — Server-rendered pages currently make 3 serial `auth.getUser()` calls + 3 serial permission queries per request. From Tanzania → Supabase EU region this stacks to ~1.5–2s of latency before render. Tracked by **T-049**. Fix is `getClaims()` swap + React `cache()` wrapping + parallelizing the permission queries.
+- **Column-level UPDATE policy is app-layer only.** The `consignments_update` RLS policy from migration `005000` lets any operator/admin update any column — it does not call `can_user_write(table, column)` per-column as CLAUDE.md §8 envisioned. The DB function exists; no policy uses it. The application layer (server actions + `PermissionGate`) currently carries the enforcement. Worth tightening before T-081 (security review).
 
 ---
 

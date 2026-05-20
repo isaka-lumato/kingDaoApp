@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import {
   DndContext,
@@ -137,7 +138,7 @@ export default function KanbanBoard({ byStage, year, fetchError }: Props) {
               </a>
             ))}
           </div>
-          <a
+          <Link
             href="/consignments/new"
             className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 transition-opacity"
           >
@@ -145,7 +146,7 @@ export default function KanbanBoard({ byStage, year, fetchError }: Props) {
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
             </svg>
             New
-          </a>
+          </Link>
         </div>
       </div>
 

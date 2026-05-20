@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getSupabaseServerClient } from "@/lib/supabase/server";
 import ConsignmentDetail from "./consignment-detail";
 
 export const metadata: Metadata = { title: "Consignment — KDL Tracker" };
@@ -16,7 +16,10 @@ export default async function ConsignmentPage({
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   if (!UUID_RE.test(id)) notFound();
 
-  const supabase = getSupabaseAdminClient();
+  // Per T-048 / D-026: user-bound server client; RLS enforced.
+  // `deleted_at IS NULL` is now enforced both by the consignments_select RLS
+  // policy and by the .is() filter below — defense in depth.
+  const supabase = await getSupabaseServerClient();
 
   // Fetch main record — separate from joins to isolate any join error.
   const { data: consignment, error } = await supabase
