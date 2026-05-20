@@ -102,6 +102,33 @@ Legend: 🧱 = foundation; 🔐 = security; 📥 = data; 🎨 = UI; 🔁 = workf
 
 ---
 
+## Phase 3.5 — Trial-branch cleanup (logged 2026-05-20)
+
+Two cleanup tasks identified during the post-Phase-3 audit. Both must be done before Phase 4 work begins so the perf/security posture is right for the EFD and dashboard screens.
+
+- [ ] **T-048** 🔐 Revert RLS bypass on server-side read paths (per D-026).
+  - Swap `getSupabaseAdminClient()` → `getSupabaseServerClient()` on the 7 read-only call sites:
+    `src/app/(app)/page.tsx` (via `fetchKanbanData` in `server/actions/consignments.ts`),
+    `src/app/(app)/inbox/page.tsx`,
+    `src/app/(app)/consignments/page.tsx`,
+    `src/app/(app)/consignments/[id]/page.tsx`,
+    `src/app/(app)/consignments/[id]/edit/page.tsx`,
+    `src/app/(app)/consignments/new/page.tsx`,
+    `src/app/(app)/settings/users/page.tsx`.
+  - Verify joined columns (`clients(name)`, `icds(location)`) resolve through user JWT now that migration `025325` has SELECT policies on both reference tables.
+  - Add explicit `.is("deleted_at", null)` on every consignment read (detail + edit currently rely on URL scope only).
+  - Manually test with viewer, operator, and admin accounts that each sees what they should and nothing more.
+  - Add a V-PERM check in `validation.md` that flags any new use of `getSupabaseAdminClient` outside the permitted call sites listed in D-026.
+  - Accept: `grep -rn "getSupabaseAdminClient" src/` returns only the four permitted call sites (`lib/supabase/admin.ts`, `server/actions/settings-users.ts`, `server/actions/settings-roles.ts`, and `forceSetStageAction` in `server/actions/consignments.ts`). A viewer hitting the detail URL of a soft-deleted consignment gets a 404, not the row data.
+
+- [ ] **T-049** ⚡ Phase 3.5 perf pass — eliminate redundant auth round-trips.
+  - Replace `auth.getUser()` with `auth.getClaims()` inside `(app)/layout.tsx` so the layout doesn't pay the network round-trip (the middleware already calls `getUser()` per request, which is the canonical session refresh point).
+  - Wrap `getServerPermissions()` in React `cache()` so child Server Components reuse the layout's result instead of refetching.
+  - Inside `getServerPermissions()`: collapse the `user_roles → roles → role_column_permissions` chain. Use a single `user_roles` query that joins through to `role_column_permissions` directly, or run the role-id resolution and the column-permission fetch in `Promise.all`.
+  - Accept: Wall-clock latency on `/` for an authenticated user drops by ≥ 50% (measure with browser devtools Network panel against dev project). Page renders identically. No new `npm` deps.
+
+---
+
 ## Phase 4 — EFD, batches, GUTA, alerts
 
 - [ ] **T-050** 🎨 Build **EFD management screen** (`/efd`) — list, create, edit. Supports PRIVATE/TRANSIT/SHARED + linking to one or many consignments.
@@ -162,8 +189,11 @@ Legend: 🧱 = foundation; 🔐 = security; 📥 = data; 🎨 = UI; 🔁 = workf
 - T-010..T-025 block Phase 2+ (no auth without DB).
 - T-021 (advance_stage function) blocks T-040, T-041 (kanban + inbox).
 - T-032 (permissions hook) blocks T-033..T-035, T-045.
+- **T-048 (RLS bypass cleanup) blocks all Phase 4 tasks** — fix the read-path posture before adding more screens that would inherit the bypass pattern.
+- **T-049 (perf pass) blocks T-053 (alerts edge function)** — the edge function should not be added on top of a layout that's already taking 1.5s; we want a clean baseline to compare against.
 - T-060 (parser) blocks T-061, T-062.
 - T-082 (CI) and T-083 (deploy) are last.
+- T-081 (security review) cannot pass until T-048 lands.
 
 ---
 

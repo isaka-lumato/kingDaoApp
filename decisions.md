@@ -353,4 +353,64 @@ The UI still displays the linked ref_no via `consignments c left join consignmen
 
 **Why:** Volume estimate is ~8,000 rows/year (400 consignments × ~20 mutations each). Postgres handles millions of rows in a single table trivially. Partitioning, archival, and pruning are premature for v1. Revisit if we ever pass 10M rows.
 
+## D-026 — Server-side reads via admin client (TEMPORARY — to be reverted in T-048)
+
+**Date:** 2026-05-19 (logged retroactively 2026-05-20)
+**Status:** Active **but expedient** — must be reverted before Phase 4 production data and before T-081 security review. Tracked by T-048.
+
+**Decision:** Seven server-rendered Next.js pages (`/`, `/inbox`, `/consignments`, `/consignments/[id]`, `/consignments/[id]/edit`, `/consignments/new`, `/settings/users`) and the `fetchKanbanData` server action currently use the **admin Supabase client** (service-role key, RLS-bypassing) for SELECT queries rather than the JWT-bound user client.
+
+**Why it happened:** During Phase 3 build-out, joined queries of the form `select id, ..., clients(name), icds(location) from consignments` returned `null` for the joined columns because `clients` and `icds` had RLS enabled but no SELECT policy for authenticated users. The shortcut taken was to switch the page-level reads to the admin client. A correct fix landed later in migration `025325` (SELECT policies for `clients` and `icds`), but the page-level reads were not switched back.
+
+**Why this is a compromise, not the intended pattern:**
+1. **Violates CLAUDE.md §3.2** — the operating doc explicitly says the service-role key is only for "trusted server actions / edge functions" with elevated privileges, not routine reads.
+2. **Soft-delete becomes app-enforced, not DB-enforced.** The `consignments_select` RLS policy hides `deleted_at IS NOT NULL` rows from non-admins. The admin client doesn't. Any read path that forgets `.is("deleted_at", null)` will leak archived consignments to viewers. Detail and edit pages currently rely on URL-scope-by-ID, so a viewer with a stale URL can read a soft-deleted row.
+3. **Defeats future column-level read permissions** (D-004). If we ever seed `viewer` with `can_read=false` on `amount`, admin-client reads still return `amount` — the UI hides it via `PermissionGate`, but the value reaches the React tree and the network response.
+
+**Cleanup plan (T-048):**
+1. Swap `getSupabaseAdminClient()` → `getSupabaseServerClient()` on the 7 read-only call sites.
+2. Verify joins return non-null columns (RLS for `clients` and `icds` is in place since migration `025325`, so this should "just work").
+3. Add explicit `.is("deleted_at", null)` on every read where it's missing.
+4. Manually verify with a viewer, operator, and admin account: each can see what they should and nothing more.
+5. Add a `validation.md` V-PERM check that greps for `getSupabaseAdminClient` and lists the only permitted call sites.
+
+**Permitted permanent uses of the admin client** (after T-048):
+- `settings/users` mutations (Supabase Admin API requires service role to create users).
+- `forceSetStageAction` (admin-only RPC bypassing prerequisites; the function itself is `security definer`, but routing through admin client is consistent with the elevated-operation intent).
+- Future Resend / scheduled-edge-function jobs (no end-user JWT to bind to).
+
+**Alternative considered:** `SECURITY DEFINER` views that pre-join the FK lookups. Cleaner long-term and would also solve the future column-level-read story. Deferred to Phase 4+ if needed — Option B (above) is the 1-day fix; the view layer is a refactor we don't need to make today.
+
+---
+
+## D-027 — Pipeline state-machine constants live in `lib/pipeline.ts`, not in server actions
+
+**Date:** 2026-05-19
+**Status:** Active
+
+**Decision:** Pipeline enum values, ordered stage list (`PIPELINE_STAGES`), stage-field array (`STAGE_FIELDS`), and the `resolveActiveStage(rowValues)` helper live in `src/lib/pipeline.ts`. They are imported by both client components (`KanbanBoard`, `KanbanCard`, `KanbanColumn`) and server actions (`consignments.ts`).
+
+**Why:** Next.js App Router enforces that a module marked `"use server"` may only export **async functions** (server actions). Non-serializable exports — constants, types, sync helpers — produce a build error. The original Phase 3 attempt put the stage constants in `server/actions/consignments.ts`, which broke as soon as a client component tried to import them. Splitting them into a shared `lib/` module is the canonical fix.
+
+**Convention:** Any "shared between client and server" types, constants, or pure helpers go in `src/lib/`. The `src/server/` tree is reserved for code that touches the secret key or executes server-only effects (revalidation, redirects, server actions).
+
+---
+
+## D-028 — `ref_no` and `serial_no` auto-generated on insert via DB-side defaults
+
+**Date:** 2026-05-19
+**Status:** Active — refines PRD §5.1 and §8.20
+
+**Decision:** When a consignment is created via the new-consignment UI, the user does **not** enter a `ref_no` or `serial_no`. The server action computes the next `serial_no` (max + 1 for the current year) and derives `ref_no` from it (left-padded to 7 digits, prefixed `99` for new app-created rows so they're visually distinguishable from imported historical refs). The UI shows the assigned values after submit.
+
+**Why:** PRD §8.20 specifies a REF-padding rule for the **Excel importer** (anything shorter than 7 digits is left-padded with `9` and flagged for review). PRD §5.1 lists `ref_no` and `serial_no` as required fields but does not specify how they're entered. In the original sheet workflow, the operator typed them — but in the app workflow, manually allocating an unused S/N is error-prone (race conditions when two operators create at once, gaps from typos) and adds a step the user doesn't care about. DB-side allocation is correct.
+
+**Importer behavior is unchanged** — historical rows keep their original `ref_no` exactly as in the spreadsheet. Only new-via-UI inserts auto-generate.
+
+**Unique-index protection** — `consignments_ref_no_year_uq (ref_no, year) WHERE deleted_at IS NULL` still applies. If two simultaneous inserts ever collide on serial allocation, the second one fails the unique constraint and the server action retries.
+
+**Alternative considered:** A Postgres sequence per year. Rejected because Postgres sequences are non-transactional (gaps on rollback) and don't easily reset per year without a maintenance job. The "max + 1" lookup is fine at our volume (~400/year).
+
+---
+
 <!-- Append new decisions below this line. Number sequentially. -->

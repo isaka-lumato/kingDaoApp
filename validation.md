@@ -61,6 +61,13 @@ Each rule needs at least one Vitest or SQL test in `tests/unit/pipeline/`.
 - [ ] UI `PermissionGate` hides the field exactly when the API rejects writes.
 - [ ] System roles (admin/operator/viewer) cannot be deleted (`is_system = true` enforced via trigger).
 - [ ] A non-admin cannot mutate any row in `roles`, `role_column_permissions`, `user_roles`.
+- [ ] **RLS-bypass audit (per D-026).** Run `grep -rn "getSupabaseAdminClient" src/` and confirm every match is one of the permitted call sites:
+  - `src/lib/supabase/admin.ts` — definition itself.
+  - `src/server/actions/settings-users.ts` — Supabase Admin API user CRUD (legitimately requires service role).
+  - `src/server/actions/settings-roles.ts` — role/permission matrix mutations (admin-only, RLS would allow it, but admin-client makes the intent explicit).
+  - `src/server/actions/consignments.ts` — **only** inside `forceSetStageAction` (admin escape hatch).
+  Any other match is a regression and must be fixed before the task is marked done.
+- [ ] **Soft-delete leak audit.** Every read path that doesn't use the admin client must include `.is("deleted_at", null)` in the SELECT clause. Manual check: a viewer hitting the detail URL of a soft-deleted consignment gets a 404, not the row.
 
 ---
 
