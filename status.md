@@ -8,10 +8,10 @@
 
 | Field | Value |
 |---|---|
-| **Phase** | 3.5 — Trial-branch cleanup (T-048 in progress, T-049 pending) |
+| **Phase** | 3.5 — Trial-branch cleanup (T-049 next) |
 | **Last updated** | 2026-05-22 |
-| **Last task completed** | T-047 (Soft-delete flow with admin reason) |
-| **Current task in progress** | T-048 — RLS bypass revert + **D-029 caller-role gate on `advance_stage()`** (found during viewer walkthrough, migration `20260522004757` applied to dev). Operator + admin walkthrough still owed before marking `[x]`. |
+| **Last task completed** | T-048 (RLS bypass revert on read paths + D-029 caller-role gate on `advance_stage()`) |
+| **Current task in progress** | None — ready to pick up T-049 (auth round-trip perf pass). |
 | **Blocked tasks** | None |
 | **Production deployed?** | No |
 | **Active branch** | `trial` (not yet merged to `main`) |
@@ -105,24 +105,26 @@
 | 2026-05-20 | **Trial-branch audit by Baraka + Claude** — identified RLS-bypass-on-reads pattern across 7 server pages (see D-026); logged as T-048 cleanup. Identified perf regression from 3 serial `auth.getUser()` round-trips per request; logged as T-049. Documentation hygiene caught up (`status.md`, `decisions.md`, `tasks.md`, `validation.md`). |
 | 2026-05-20 | T-048 code complete — swapped `getSupabaseAdminClient()` → `getSupabaseServerClient()` on 7 page files + `fetchKanbanData`. Added `.is("deleted_at", null)` on the `icds` reads that were missing it. Side-fix: replaced `<a href="/consignments/new">` with `<Link>` in `kanban-board.tsx` (was blocking the lint gate). Validation: `grep -rn getSupabaseAdminClient src/` returns only the 4 permitted call sites; typecheck + lint + tests all green. Manual viewer/operator/admin verification still owed before marking T-048 `[x]`. |
 | 2026-05-22 | **D-029 logged + T-048 follow-up shipped.** Viewer walkthrough exposed that a viewer could drag kanban cards — root cause was `advance_stage()` being `SECURITY DEFINER` (bypasses RLS) without a caller-role check. Fixed in migration `20260522004757_advance_stage_role_check.sql` (applied to dev). UI guard added: `kanban-card.tsx` uses `useSortable({ disabled: !canDrag })` and the board's `handleDragEnd` refuses non-admin/operator. Verified via direct REST RPC with viewer JWT — returns `42501 Role admin or operator required`. Validation gates green. |
+| 2026-05-22 | **T-048 closed on code-level acceptance.** Static gates: typecheck clean, lint 0 errors / 7 pre-existing unused-var warnings, 7/7 unit tests pass. Confirmed `getSupabaseAdminClient` is limited to the 4 permitted modules (`lib/supabase/admin.ts`, `settings-users.ts`, `settings-roles.ts`, `forceSetStageAction` in `consignments.ts`). Detail + edit pages filter `.is("deleted_at", null)` and `notFound()` on miss. V-PERM in `validation.md` already carries the RLS-bypass audit, soft-delete leak audit, and the D-029 `SECURITY DEFINER` caller-role gate. Operator + admin click-through deferred to ad-hoc QA per user direction. |
 
 ---
 
 ## Open issues / known compromises
 
-- **T-048 manual verification pending.** Code-level RLS bypass is reverted (see Recent activity 2026-05-20). Still need to walk through the app as a viewer, an operator, and an admin to confirm each role sees only what they should and that joined columns (`clients.name`, `icds.location`) render correctly through user JWT.
+- **Operator + admin walkthrough still owed as ad-hoc QA.** T-048 was closed on code-level acceptance (viewer was verified DB-side 2026-05-22). Joined columns (`clients.name`, `icds.location`) resolve through user JWT after migration `025325` and were confirmed during the viewer walkthrough, but the operator/admin matrices haven't been clicked through end-to-end. Surface anything that breaks as a new task rather than re-opening T-048.
 - **Page latency** — Server-rendered pages currently make 3 serial `auth.getUser()` calls + 3 serial permission queries per request. From Tanzania → Supabase EU region this stacks to ~1.5–2s of latency before render. Tracked by **T-049**. Fix is `getClaims()` swap + React `cache()` wrapping + parallelizing the permission queries.
+- **@dnd-kit hydration warning on kanban.** Setting `DndContext` `id="kanban-dnd"` (commit `443f17a`) didn't fully resolve it — `useSortable` (cards) and `useDroppable` (columns) also bump the same module-level counter. Console-only warning, not a crash; drag handlers + RPCs work correctly. Follow-up: try `useId()` on the board, or `next/dynamic({ ssr: false })`. Logged as a follow-up after T-048 closes.
 - **Column-level UPDATE policy is app-layer only.** The `consignments_update` RLS policy from migration `005000` lets any operator/admin update any column — it does not call `can_user_write(table, column)` per-column as CLAUDE.md §8 envisioned. The DB function exists; no policy uses it. The application layer (server actions + `PermissionGate`) currently carries the enforcement. Worth tightening before T-081 (security review).
 
 ---
 
 ## Next 5 things, in order
 
-1. **T-048** — Phase 3.5 cleanup: revert RLS bypass on read paths. Swap admin client → user-JWT server client on 7 server pages; verify joins work (post-`025325` they should); add explicit `deleted_at IS NULL` filters; manually verify viewer / operator / admin matrices.
-2. **T-049** — Phase 3.5 perf: replace `getUser()` with `getClaims()` in the layout, wrap `getServerPermissions()` in React `cache()`, parallelize the role-lookup queries.
-3. **T-050** — EFD management screen (`/efd`) — list/create/edit, PRIVATE/TRANSIT/SHARED, link to one or many consignments.
-4. **T-051** — `in_ref` batch panel — open side panel of all siblings + totals when an `in_ref` link is clicked.
-5. **T-052** — GUTA pair linkage UI on detail view — sibling card + red warning when one is released and the other isn't.
+1. **T-049** — Phase 3.5 perf: replace `getUser()` with `getClaims()` in the layout, wrap `getServerPermissions()` in React `cache()`, parallelize the role-lookup queries.
+2. **T-050** — EFD management screen (`/efd`) — list/create/edit, PRIVATE/TRANSIT/SHARED, link to one or many consignments.
+3. **T-051** — `in_ref` batch panel — open side panel of all siblings + totals when an `in_ref` link is clicked.
+4. **T-052** — GUTA pair linkage UI on detail view — sibling card + red warning when one is released and the other isn't.
+5. **Follow-up (post-T-048)** — chase the residual @dnd-kit hydration warning on the kanban (`useId()` on the board or `next/dynamic({ ssr: false })`) once T-049 lands so the layout doesn't shift under us.
 
 ---
 

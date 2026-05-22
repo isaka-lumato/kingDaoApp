@@ -106,7 +106,7 @@ Legend: 🧱 = foundation; 🔐 = security; 📥 = data; 🎨 = UI; 🔁 = workf
 
 Two cleanup tasks identified during the post-Phase-3 audit. Both must be done before Phase 4 work begins so the perf/security posture is right for the EFD and dashboard screens.
 
-- [~] **T-048** 🔐 Revert RLS bypass on server-side read paths (per D-026) **+ caller-role gate on `advance_stage()`** (D-029, found during V1 walkthrough 2026-05-22). Code complete on both fronts; manual operator + admin walkthrough still pending. Viewer V1 verified DB rejection via direct REST call.
+- [x] **T-048** 🔐 Revert RLS bypass on server-side read paths (per D-026) **+ caller-role gate on `advance_stage()`** (D-029, found during V1 walkthrough 2026-05-22). Closed 2026-05-22 on code-level acceptance: admin-client grep limited to the 4 permitted call sites, detail/edit pages enforce `.is("deleted_at", null)` + `notFound()`, viewer JWT direct REST POST to `/rpc/advance_stage` returns `42501`, kanban UI disables drag for viewers, V-PERM gates added in `validation.md`. Operator + admin click-through deferred to ad-hoc QA.
   - Swap `getSupabaseAdminClient()` → `getSupabaseServerClient()` on the 7 read-only call sites:
     `src/app/(app)/page.tsx` (via `fetchKanbanData` in `server/actions/consignments.ts`),
     `src/app/(app)/inbox/page.tsx`,
