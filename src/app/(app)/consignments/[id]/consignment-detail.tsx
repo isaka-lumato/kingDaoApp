@@ -51,9 +51,43 @@ type AuditEntry = {
   occurred_at: string;
   actor_email: string | null;
   column_name: string | null;
-  old_value: string | null;
-  new_value: string | null;
+  // audit_log.old_value / new_value are jsonb — can be a string, number,
+  // boolean, null, or the full row object (for _inserted / _deleted
+  // sentinels). React cannot render objects directly, so renderAuditValue()
+  // below collapses them to a printable string.
+  old_value: unknown;
+  new_value: unknown;
 };
+
+/**
+ * Stringify a jsonb audit value for display. Truncates long object dumps
+ * (the _inserted / _deleted sentinel rows write the entire consignment row
+ * into new_value / old_value respectively).
+ */
+function renderAuditValue(v: unknown, maxLen = 60): string {
+  if (v === null || v === undefined) return "—";
+  if (typeof v === "string") return v.length > maxLen ? v.slice(0, maxLen) + "…" : v;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  try {
+    const s = JSON.stringify(v);
+    return s.length > maxLen ? s.slice(0, maxLen) + "…" : s;
+  } catch {
+    return "[unrenderable]";
+  }
+}
+
+/**
+ * Human-readable label for the column_name field. The audit trigger uses
+ * `_inserted` and `_deleted` sentinels for row-level events; everything else
+ * is a real column name.
+ */
+function renderColumnLabel(col: string | null): string {
+  if (!col) return "—";
+  if (col === "_inserted") return "Row created";
+  if (col === "_deleted") return "Row deleted";
+  if (col === "FORCED_STAGE_CHANGE") return "Forced stage change";
+  return col;
+}
 
 type Props = {
   consignment: Consignment;
@@ -413,30 +447,40 @@ export default function ConsignmentDetail({ consignment, auditLog }: Props) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {auditLog.map((entry) => (
-                  <tr key={entry.id} className="hover:bg-muted/20 transition-colors">
-                    <td className="px-4 py-2.5 text-xs text-muted-foreground whitespace-nowrap">
-                      {new Date(entry.occurred_at).toLocaleDateString("en-GB", {
-                        day: "2-digit",
-                        month: "short",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </td>
-                    <td className="px-4 py-2.5 text-xs text-muted-foreground max-w-[140px] truncate">
-                      {entry.actor_email ?? "system"}
-                    </td>
-                    <td className="px-4 py-2.5 text-xs font-mono text-foreground">
-                      {entry.column_name ?? "—"}
-                    </td>
-                    <td className="px-4 py-2.5 text-xs text-muted-foreground">
-                      {entry.old_value ?? "—"}
-                    </td>
-                    <td className="px-4 py-2.5 text-xs font-medium text-foreground">
-                      {entry.new_value ?? "—"}
-                    </td>
-                  </tr>
-                ))}
+                {auditLog.map((entry) => {
+                  // Sentinel rows (_inserted / _deleted) hold the entire row
+                  // object in new/old — not useful in the tiny Old/New
+                  // columns. Show "—" for those and let the Field column
+                  // carry the meaning.
+                  const isSentinel =
+                    entry.column_name === "_inserted" ||
+                    entry.column_name === "_deleted" ||
+                    entry.column_name === "FORCED_STAGE_CHANGE";
+                  return (
+                    <tr key={entry.id} className="hover:bg-muted/20 transition-colors">
+                      <td className="px-4 py-2.5 text-xs text-muted-foreground whitespace-nowrap">
+                        {new Date(entry.occurred_at).toLocaleDateString("en-GB", {
+                          day: "2-digit",
+                          month: "short",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </td>
+                      <td className="px-4 py-2.5 text-xs text-muted-foreground max-w-[140px] truncate">
+                        {entry.actor_email ?? "system"}
+                      </td>
+                      <td className="px-4 py-2.5 text-xs font-mono text-foreground">
+                        {renderColumnLabel(entry.column_name)}
+                      </td>
+                      <td className="px-4 py-2.5 text-xs text-muted-foreground break-all">
+                        {isSentinel ? "—" : renderAuditValue(entry.old_value)}
+                      </td>
+                      <td className="px-4 py-2.5 text-xs font-medium text-foreground break-all">
+                        {isSentinel ? "—" : renderAuditValue(entry.new_value)}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
