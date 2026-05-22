@@ -146,8 +146,11 @@ Two cleanup tasks identified during the post-Phase-3 audit. Both must be done be
   - CTA wiring: drawer's "Create EFD for this batch" links to `/efd/new?from_batch=…&client=…&year=…`; the page pre-selects every sibling in the picker on render.
   - Types regenerated via `pnpm gen:types:dev` — `v_in_ref_batches` now present in `Database['public']['Views']`.
   - V-BATCH added to `validation.md`. Gates: typecheck clean, lint 0 errors / 7 pre-existing warnings, 7/7 unit tests. Admin-client allowlist (D-026) stays at 3 sites.
-- [ ] **T-052** 🎨 Build **GUTA pair linkage UI** — on the detail view of a paired consignment, show the sibling. Red warning if one is released and the other isn't.
-  - Accept: Releasing "073C - GUTA PARTS" while "073C - FRAMES" is still in TBS shows the warning on both detail pages.
+- [x] **T-052** 🎨 Build **GUTA pair linkage UI** — on the detail view of a paired consignment, show the sibling. Red warning if one is released and the other isn't. Done 2026-05-23.
+  - Accept: Releasing "073C - GUTA PARTS" while "073C - FRAMES" is still in TBS shows the warning on both detail pages. ✓ Section renders on the Overview tab between "Vessel & shipping" and "Linked EFD records". Warning compares `consignment.release_status === "Released"` against the sibling's; fires when exactly one side is released, with text naming the unreleased sibling by REF No.
+  - Built: `consignments/[id]/page.tsx` fetches `guta_pairs` by id (uses user-bound `getSupabaseServerClient`, then resolves the sibling via the non-matching `parts_consignment_id`/`frames_consignment_id`, filtered with `.is("deleted_at", null)`). `consignment-detail.tsx` accepts a new `gutaPair` prop (batch code, this-side role, sibling fields) and renders the "GUTA pair" section: indigo batch badge, red-bordered warning banner on asymmetric release, and a clickable sibling card with REF No, B/L, container count × type, amount, and release date.
+  - Safety: soft-deleted siblings cause the section to be hidden (single-row fetch fails with `.is("deleted_at", null)`). No new admin-client uses (D-026 allowlist stays at 3 sites).
+  - V-GUTA added to `validation.md`. Gates: typecheck clean, lint 0 errors / 6 pre-existing warnings, 7/7 unit tests.
 - [ ] **T-053** 🔁 Build the **alerts edge function** (Supabase scheduled): every 30 min, find newly-stuck stages, email admins via Resend.
   - Accept: Backdating a stage to 49h ago and waiting 30 min results in an email; deployed function logs show the run.
 - [ ] **T-054** 🎨 Build the **dashboard** (`/dashboard`) — active jobs count, pipeline funnel, arrivals this week, revenue this month, top clients, overdue jobs (PRD §6.3).

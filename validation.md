@@ -111,6 +111,22 @@ T-051 gates. Run when touching `_batch-panel/`, `src/components/batch-link.tsx`,
 
 ---
 
+## V-GUTA — GUTA pair linkage UI (`/consignments/[id]`)
+
+T-052 gates. Run when touching the GUTA pair section in `consignment-detail.tsx`, the pair fetch in `consignments/[id]/page.tsx`, or the `auto_detect_guta_pair()` trigger.
+
+- [ ] On a consignment with `guta_pair_id` set, the Overview tab shows a "GUTA pair" section with the batch code badge, the sibling's REF No (linked to its detail page), B/L, container count × type, amount, and release status badge.
+- [ ] The badge correctly identifies which role this record plays ("this is PARTS" or "this is FRAMES"), determined from `guta_pairs.parts_consignment_id` vs `frames_consignment_id`.
+- [ ] On a consignment with no pair (`guta_pair_id IS NULL`), the section is hidden — no empty card.
+- [ ] **Red warning fires when exactly one of the two is released.** Releasing "073C - GUTA PARTS" while "073C - FRAMES" is still in TBS shows the warning on **both** detail pages. Warning message names the unreleased sibling by REF No.
+- [ ] When **both** are released or **neither** is released, no warning shows.
+- [ ] Clicking the sibling card navigates to `/consignments/<sibling-id>` (next.js `<Link>`).
+- [ ] **Soft-delete safety:** if the sibling has been soft-deleted, the sibling fetch returns no row and the section does not render (no broken link, no crash).
+- [ ] **RLS sanity (D-026):** the pair + sibling queries on `consignments/[id]/page.tsx` use `getSupabaseServerClient` (user JWT), not `getSupabaseAdminClient`. Admin-client allowlist stays at 3 sites.
+- [ ] **Auto-pair trigger still works:** inserting "073X - GUTA PARTS" then "073X - FRAMES" (same client + vessel + year) creates a `guta_pairs` row and backfills `guta_pair_id` on both consignments. Section appears on both detail pages on next load.
+
+---
+
 ## V-AUDIT — Audit trail
 
 - [ ] Every UPDATE on a tracked table produces one row per changed column in `audit_log`.

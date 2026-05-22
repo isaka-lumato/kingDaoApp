@@ -95,6 +95,55 @@ export default async function ConsignmentPage({
     })
     .filter((x): x is NonNullable<typeof x> => x !== null);
 
+  // GUTA pair sibling (T-052, PRD §8.15). The auto-pair trigger sets
+  // `guta_pair_id` on both rows when the FRAMES/PARTS sibling is detected.
+  let gutaPair: {
+    batchCode: string;
+    thisRole: "PARTS" | "FRAMES";
+    sibling: {
+      id: string;
+      ref_no: string;
+      bl_number: string | null;
+      container_count: number | null;
+      container_type: string | null;
+      amount: number | null;
+      release_status: string;
+      release_date: string | null;
+      goods_description: string | null;
+    };
+  } | null = null;
+
+  if (consignment.guta_pair_id) {
+    const { data: pair } = await supabase
+      .from("guta_pairs")
+      .select("id, batch_code, parts_consignment_id, frames_consignment_id")
+      .eq("id", consignment.guta_pair_id)
+      .single();
+
+    if (pair) {
+      const thisIsParts = pair.parts_consignment_id === id;
+      const siblingId = thisIsParts
+        ? pair.frames_consignment_id
+        : pair.parts_consignment_id;
+      const { data: sibling } = await supabase
+        .from("consignments")
+        .select(
+          "id, ref_no, bl_number, container_count, container_type, amount, release_status, release_date, goods_description"
+        )
+        .eq("id", siblingId)
+        .is("deleted_at", null)
+        .single();
+
+      if (sibling) {
+        gutaPair = {
+          batchCode: pair.batch_code,
+          thisRole: thisIsParts ? "PARTS" : "FRAMES",
+          sibling,
+        };
+      }
+    }
+  }
+
   const batchInRef = sp.batch?.trim();
   const batchClientId = sp.bc?.trim();
   const batchYear = sp.by ? parseInt(sp.by, 10) : NaN;
@@ -107,6 +156,7 @@ export default async function ConsignmentPage({
         consignment={{ ...consignment, clients: clientData, icds: icdData }}
         auditLog={auditLog ?? []}
         linkedEfds={linkedEfds}
+        gutaPair={gutaPair}
       />
       {showBatch && (
         <BatchPanel inRef={batchInRef!}>

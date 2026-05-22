@@ -102,10 +102,27 @@ type LinkedEfd = {
   created_at: string;
 };
 
+type GutaPair = {
+  batchCode: string;
+  thisRole: "PARTS" | "FRAMES";
+  sibling: {
+    id: string;
+    ref_no: string;
+    bl_number: string | null;
+    container_count: number | null;
+    container_type: string | null;
+    amount: number | null;
+    release_status: string;
+    release_date: string | null;
+    goods_description: string | null;
+  };
+};
+
 type Props = {
   consignment: Consignment;
   auditLog: AuditEntry[];
   linkedEfds: LinkedEfd[];
+  gutaPair: GutaPair | null;
 };
 
 const STATUS_STYLES: Record<string, string> = {
@@ -138,7 +155,7 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-export default function ConsignmentDetail({ consignment, auditLog, linkedEfds }: Props) {
+export default function ConsignmentDetail({ consignment, auditLog, linkedEfds, gutaPair }: Props) {
   const [tab, setTab] = useState<"overview" | "pipeline" | "audit">("overview");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteReason, setDeleteReason] = useState("");
@@ -360,6 +377,101 @@ export default function ConsignmentDetail({ consignment, auditLog, linkedEfds }:
               />
             </div>
           </section>
+
+          {/* GUTA pair (PRD §8.15) */}
+          {gutaPair && (() => {
+            const siblingReleased = gutaPair.sibling.release_status === "Released";
+            const oneReleased = isReleased !== siblingReleased;
+            const siblingRole = gutaPair.thisRole === "PARTS" ? "FRAMES" : "PARTS";
+            return (
+              <section className="rounded-xl border border-border bg-card p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    GUTA pair
+                  </h2>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full border bg-indigo-500/15 text-indigo-600 border-indigo-500/30 font-mono">
+                    {gutaPair.batchCode} · this is {gutaPair.thisRole}
+                  </span>
+                </div>
+
+                {oneReleased && (
+                  <div className="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive flex items-start gap-2">
+                    <span aria-hidden className="text-base leading-none">⚠</span>
+                    <span>
+                      <strong className="font-semibold">Paired consignment not yet released.</strong>{" "}
+                      {isReleased
+                        ? `This ${gutaPair.thisRole} record is released but ${siblingRole} (${gutaPair.sibling.ref_no}) is still ${gutaPair.sibling.release_status}.`
+                        : `${siblingRole} (${gutaPair.sibling.ref_no}) is already released but this ${gutaPair.thisRole} record is still ${consignment.release_status}.`}
+                    </span>
+                  </div>
+                )}
+
+                <Link
+                  href={`/consignments/${gutaPair.sibling.id}`}
+                  className="block rounded-lg border border-border p-4 hover:bg-muted/30 transition-colors"
+                >
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">
+                        Paired with ({siblingRole})
+                      </p>
+                      <p className="font-mono font-bold text-foreground">
+                        {gutaPair.sibling.ref_no}
+                      </p>
+                      {gutaPair.sibling.goods_description && (
+                        <p className="text-xs text-muted-foreground mt-0.5 break-words">
+                          {gutaPair.sibling.goods_description}
+                        </p>
+                      )}
+                    </div>
+                    <span
+                      className={[
+                        "text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap",
+                        siblingReleased
+                          ? STATUS_STYLES.Done
+                          : gutaPair.sibling.release_status === "Action"
+                          ? STATUS_STYLES.Action
+                          : STATUS_STYLES.Waiting,
+                      ].join(" ")}
+                    >
+                      {gutaPair.sibling.release_status}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3">
+                    <Field label="B/L" value={gutaPair.sibling.bl_number} />
+                    <Field
+                      label="Container"
+                      value={
+                        gutaPair.sibling.container_count
+                          ? `${gutaPair.sibling.container_count} × ${gutaPair.sibling.container_type ?? "?"}`
+                          : null
+                      }
+                    />
+                    <Field
+                      label="Amount"
+                      value={
+                        gutaPair.sibling.amount != null
+                          ? formatTzs(gutaPair.sibling.amount)
+                          : null
+                      }
+                    />
+                    <Field
+                      label="Release date"
+                      value={
+                        gutaPair.sibling.release_date
+                          ? new Date(gutaPair.sibling.release_date).toLocaleDateString("en-GB", {
+                              day: "2-digit",
+                              month: "short",
+                              year: "numeric",
+                            })
+                          : null
+                      }
+                    />
+                  </div>
+                </Link>
+              </section>
+            );
+          })()}
 
           {/* Linked EFDs */}
           <section className="rounded-xl border border-border bg-card p-5">
