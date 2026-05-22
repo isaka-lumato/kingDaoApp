@@ -183,6 +183,7 @@ export default function KanbanBoard({ byStage, year, fetchError }: Props) {
       {/* Kanban columns */}
       <div className="flex-1 overflow-x-auto pb-4">
         <DndContext
+          id="kanban-dnd"
           sensors={sensors}
           collisionDetection={closestCenter}
           onDragStart={handleDragStart}
