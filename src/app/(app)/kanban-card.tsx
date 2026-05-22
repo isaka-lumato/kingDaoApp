@@ -8,6 +8,12 @@ import type { KanbanConsignment } from "@/lib/pipeline";
 type Props = {
   card: KanbanConsignment;
   isDragging?: boolean;
+  /**
+   * When false, the card is non-draggable (viewer/other read-only roles).
+   * The board-level handleDragEnd also refuses, and advance_stage() in the
+   * DB rejects unauthorized callers — see D-029.
+   */
+  canDrag?: boolean;
 };
 
 const STATUS_DOT: Record<string, string> = {
@@ -16,7 +22,7 @@ const STATUS_DOT: Record<string, string> = {
   Done: "bg-stage-done",
 };
 
-export default function KanbanCard({ card, isDragging = false }: Props) {
+export default function KanbanCard({ card, isDragging = false, canDrag = true }: Props) {
   const {
     attributes,
     listeners,
@@ -24,7 +30,7 @@ export default function KanbanCard({ card, isDragging = false }: Props) {
     transform,
     transition,
     isDragging: isSortableDragging,
-  } = useSortable({ id: card.id, data: { card } });
+  } = useSortable({ id: card.id, data: { card }, disabled: !canDrag });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -44,9 +50,10 @@ export default function KanbanCard({ card, isDragging = false }: Props) {
       {...attributes}
       {...listeners}
       className={[
-        "rounded-lg border border-border bg-card p-3 space-y-2 cursor-grab active:cursor-grabbing",
-        "hover:border-brand/40 hover:shadow-md transition-all select-none",
-        "group",
+        "rounded-lg border border-border bg-card p-3 space-y-2 select-none group",
+        canDrag
+          ? "cursor-grab active:cursor-grabbing hover:border-brand/40 hover:shadow-md transition-all"
+          : "cursor-default hover:border-border/60 transition-colors",
         isSortableDragging || isDragging
           ? "opacity-40 shadow-2xl scale-105 border-brand/60"
           : "",

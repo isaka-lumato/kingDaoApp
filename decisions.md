@@ -413,4 +413,32 @@ The UI still displays the linked ref_no via `consignments c left join consignmen
 
 ---
 
+## D-029 — `SECURITY DEFINER` RPCs must check caller role explicitly
+
+**Date:** 2026-05-22
+**Status:** Active — refines D-004 (permission model)
+
+**Decision:** Any Postgres function declared `SECURITY DEFINER` that mutates user-facing data **must** check the caller's role inside the function body. RLS policies on the affected tables are not consulted when a `SECURITY DEFINER` function runs (it executes as the function owner), so role enforcement must be coded into the function itself.
+
+**Why this entry exists:** Discovered during T-048 manual verification. A logged-in **viewer** could drag a card on the kanban — the UI had no permission check on forward drags (only on backward drags, which require admin), and `advance_stage()` ran as `SECURITY DEFINER` and bypassed the `consignments_update` RLS policy that would otherwise have refused. The mutation persisted in the DB.
+
+**Fix shipped:** Migration `20260522004757_advance_stage_role_check.sql` added a guard at the top of `advance_stage()` that raises `42501` if the caller is not in `('admin','operator')`. Verified via direct REST RPC: a viewer JWT now returns `"Role admin or operator required to advance pipeline stages"`. Companion UI guard in `kanban-board.tsx` / `kanban-card.tsx` makes cards non-draggable for viewers (`useSortable({ disabled: !canDrag })`).
+
+**Rule going forward:**
+1. Audit every existing `SECURITY DEFINER` function in `supabase/migrations/` for caller-role checks. Current inventory:
+   - `advance_stage()` — fixed in this migration.
+   - `force_set_stage()` — already correct (calls `public.is_admin()` at top).
+   - `log_table_change()` — trigger, runs as definer; reads `auth.uid()` but does not mutate based on caller identity, so no role gate needed.
+   - `auto_detect_guta_pair()` — trigger, only reads/inserts under the same row's authority; no gate needed.
+   - `current_user_can_write()` — pure function, no mutations.
+   - `is_admin()` — pure boolean lookup, no mutations.
+2. Any **new** `SECURITY DEFINER` function added in Phase 4+ must include a `raise exception` role gate as its first executable statement, **before** the row lock or any pre-condition checks. A comment block at the top must state the allowed roles.
+3. `validation.md` V-PERM gains a check: "every `security definer` function that performs INSERT/UPDATE/DELETE on a user-facing table has a caller-role check before the mutation."
+
+**Why the UI guard is not the fix:** Per CLAUDE.md §1, the database is the source of truth for business rules. UI-only guards are bypassable by anyone who can open devtools and call `supabase.rpc()`. The migration is the load-bearing fix; the UI change is UX polish.
+
+**Cost:** Negligible — one `exists` query against `user_roles` and `roles`. The same pattern is already used in `consignments_update`'s `using` clause, so the planner caches it.
+
+---
+
 <!-- Append new decisions below this line. Number sequentially. -->

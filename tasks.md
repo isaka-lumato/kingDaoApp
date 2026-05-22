@@ -106,7 +106,7 @@ Legend: 🧱 = foundation; 🔐 = security; 📥 = data; 🎨 = UI; 🔁 = workf
 
 Two cleanup tasks identified during the post-Phase-3 audit. Both must be done before Phase 4 work begins so the perf/security posture is right for the EFD and dashboard screens.
 
-- [~] **T-048** 🔐 Revert RLS bypass on server-side read paths (per D-026). Code complete; manual viewer/operator/admin verification still pending.
+- [~] **T-048** 🔐 Revert RLS bypass on server-side read paths (per D-026) **+ caller-role gate on `advance_stage()`** (D-029, found during V1 walkthrough 2026-05-22). Code complete on both fronts; manual operator + admin walkthrough still pending. Viewer V1 verified DB rejection via direct REST call.
   - Swap `getSupabaseAdminClient()` → `getSupabaseServerClient()` on the 7 read-only call sites:
     `src/app/(app)/page.tsx` (via `fetchKanbanData` in `server/actions/consignments.ts`),
     `src/app/(app)/inbox/page.tsx`,
@@ -119,7 +119,7 @@ Two cleanup tasks identified during the post-Phase-3 audit. Both must be done be
   - Add explicit `.is("deleted_at", null)` on every consignment read (detail + edit currently rely on URL scope only).
   - Manually test with viewer, operator, and admin accounts that each sees what they should and nothing more.
   - Add a V-PERM check in `validation.md` that flags any new use of `getSupabaseAdminClient` outside the permitted call sites listed in D-026.
-  - Accept: `grep -rn "getSupabaseAdminClient" src/` returns only the four permitted call sites (`lib/supabase/admin.ts`, `server/actions/settings-users.ts`, `server/actions/settings-roles.ts`, and `forceSetStageAction` in `server/actions/consignments.ts`). A viewer hitting the detail URL of a soft-deleted consignment gets a 404, not the row data.
+  - Accept: `grep -rn "getSupabaseAdminClient" src/` returns only the four permitted call sites (`lib/supabase/admin.ts`, `server/actions/settings-users.ts`, `server/actions/settings-roles.ts`, and `forceSetStageAction` in `server/actions/consignments.ts`). A viewer hitting the detail URL of a soft-deleted consignment gets a 404, not the row data. A viewer cannot drag kanban cards (UI) and a direct REST POST to `/rpc/advance_stage` with a viewer JWT returns 42501 (DB).
 
 - [ ] **T-049** ⚡ Phase 3.5 perf pass — eliminate redundant auth round-trips.
   - Replace `auth.getUser()` with `auth.getClaims()` inside `(app)/layout.tsx` so the layout doesn't pay the network round-trip (the middleware already calls `getUser()` per request, which is the canonical session refresh point).

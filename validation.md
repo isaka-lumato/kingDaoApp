@@ -68,6 +68,7 @@ Each rule needs at least one Vitest or SQL test in `tests/unit/pipeline/`.
   - `src/server/actions/consignments.ts` — **only** inside `forceSetStageAction` (admin escape hatch).
   Any other match is a regression and must be fixed before the task is marked done.
 - [ ] **Soft-delete leak audit.** Every read path that doesn't use the admin client must include `.is("deleted_at", null)` in the SELECT clause. Manual check: a viewer hitting the detail URL of a soft-deleted consignment gets a 404, not the row.
+- [ ] **`SECURITY DEFINER` caller-role gate (D-029).** Every `security definer` function in `supabase/migrations/` that performs INSERT/UPDATE/DELETE on a user-facing table has an explicit caller-role check (`raise exception '...' using errcode = '42501'`) as its first executable statement, before row locking or pre-condition checks. Direct REST verification: signing in as a viewer and `POST`ing to `/rest/v1/rpc/<function>` returns `42501`, not `200`. Current inventory: `advance_stage()` ✅, `force_set_stage()` ✅, triggers (`log_table_change`, `auto_detect_guta_pair`) ✅ (no mutations gated on caller). Pure functions (`current_user_can_write`, `is_admin`) — n/a.
 
 ---
 

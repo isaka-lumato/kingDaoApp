@@ -44,6 +44,11 @@ export default function KanbanBoard({ byStage, year, fetchError }: Props) {
   const [isPending, startTransition] = useTransition();
   const perms = usePermissions();
 
+  // Viewer-or-other roles cannot move cards. Admins + operators can.
+  // Caller-role check is also enforced in the advance_stage() DB function
+  // (D-029) — this UI gate is the UX layer.
+  const canDrag = perms.isAdmin || perms.roles.includes("operator");
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
   );
@@ -63,6 +68,13 @@ export default function KanbanBoard({ byStage, year, fetchError }: Props) {
     const toField = e.over?.id as StageField | undefined;
 
     if (!card || !toField || toField === card.active_stage) return;
+
+    // Belt-and-braces: even if a viewer bypasses the card-level `disabled`
+    // flag, refuse here. The DB function rejects too (D-029).
+    if (!canDrag) {
+      setError("Your role cannot move pipeline cards.");
+      return;
+    }
 
     const fromIdx = stageIndex(card.active_stage);
     const toIdx = stageIndex(toField);
@@ -184,13 +196,14 @@ export default function KanbanBoard({ byStage, year, fetchError }: Props) {
                 label={stage.label}
                 cards={byStage[stage.field] ?? []}
                 isPending={isPending}
+                canDrag={canDrag}
               />
             ))}
           </div>
 
           <DragOverlay>
             {activeCard && (
-              <KanbanCard card={activeCard} isDragging />
+              <KanbanCard card={activeCard} isDragging canDrag={canDrag} />
             )}
           </DragOverlay>
         </DndContext>

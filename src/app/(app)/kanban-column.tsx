@@ -23,9 +23,10 @@ type Props = {
   label: string;
   cards: KanbanConsignment[];
   isPending: boolean;
+  canDrag: boolean;
 };
 
-export default function KanbanColumn({ field, label, cards, isPending }: Props) {
+export default function KanbanColumn({ field, label, cards, isPending, canDrag }: Props) {
   const { setNodeRef, isOver } = useDroppable({ id: field });
 
   return (
@@ -60,7 +61,7 @@ export default function KanbanColumn({ field, label, cards, isPending }: Props) 
             </div>
           ) : (
             cards.map((card) => (
-              <KanbanCard key={card.id} card={card} />
+              <KanbanCard key={card.id} card={card} canDrag={canDrag} />
             ))
           )}
         </SortableContext>

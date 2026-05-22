@@ -9,9 +9,9 @@
 | Field | Value |
 |---|---|
 | **Phase** | 3.5 — Trial-branch cleanup (T-048 in progress, T-049 pending) |
-| **Last updated** | 2026-05-20 |
+| **Last updated** | 2026-05-22 |
 | **Last task completed** | T-047 (Soft-delete flow with admin reason) |
-| **Current task in progress** | T-048 — RLS bypass revert: **code complete + validation gates green**; manual viewer/operator/admin verification still owed by Baraka before marking `[x]` |
+| **Current task in progress** | T-048 — RLS bypass revert + **D-029 caller-role gate on `advance_stage()`** (found during viewer walkthrough, migration `20260522004757` applied to dev). Operator + admin walkthrough still owed before marking `[x]`. |
 | **Blocked tasks** | None |
 | **Production deployed?** | No |
 | **Active branch** | `trial` (not yet merged to `main`) |
@@ -104,6 +104,7 @@
 | 2026-05-19 | T-046/T-047 done — duplicate + soft-delete actions. Phase 3 complete. |
 | 2026-05-20 | **Trial-branch audit by Baraka + Claude** — identified RLS-bypass-on-reads pattern across 7 server pages (see D-026); logged as T-048 cleanup. Identified perf regression from 3 serial `auth.getUser()` round-trips per request; logged as T-049. Documentation hygiene caught up (`status.md`, `decisions.md`, `tasks.md`, `validation.md`). |
 | 2026-05-20 | T-048 code complete — swapped `getSupabaseAdminClient()` → `getSupabaseServerClient()` on 7 page files + `fetchKanbanData`. Added `.is("deleted_at", null)` on the `icds` reads that were missing it. Side-fix: replaced `<a href="/consignments/new">` with `<Link>` in `kanban-board.tsx` (was blocking the lint gate). Validation: `grep -rn getSupabaseAdminClient src/` returns only the 4 permitted call sites; typecheck + lint + tests all green. Manual viewer/operator/admin verification still owed before marking T-048 `[x]`. |
+| 2026-05-22 | **D-029 logged + T-048 follow-up shipped.** Viewer walkthrough exposed that a viewer could drag kanban cards — root cause was `advance_stage()` being `SECURITY DEFINER` (bypasses RLS) without a caller-role check. Fixed in migration `20260522004757_advance_stage_role_check.sql` (applied to dev). UI guard added: `kanban-card.tsx` uses `useSortable({ disabled: !canDrag })` and the board's `handleDragEnd` refuses non-admin/operator. Verified via direct REST RPC with viewer JWT — returns `42501 Role admin or operator required`. Validation gates green. |
 
 ---
 
