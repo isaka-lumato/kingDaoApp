@@ -8,10 +8,10 @@
 
 | Field | Value |
 |---|---|
-| **Phase** | 3.5 — Trial-branch cleanup (T-049 next) |
+| **Phase** | 3.5 — complete. Ready to start Phase 4 (T-050: EFD management screen). |
 | **Last updated** | 2026-05-22 |
-| **Last task completed** | T-048 (RLS bypass revert on read paths + D-029 caller-role gate on `advance_stage()`) |
-| **Current task in progress** | None — ready to pick up T-049 (auth round-trip perf pass). |
+| **Last task completed** | T-049 (auth round-trip perf pass + `force_set_stage` admin-bug fix, D-030 logged) |
+| **Current task in progress** | None — ready to pick up T-050 (EFD management screen). |
 | **Blocked tasks** | None |
 | **Production deployed?** | No |
 | **Active branch** | `trial` (not yet merged to `main`) |
@@ -106,13 +106,14 @@
 | 2026-05-20 | T-048 code complete — swapped `getSupabaseAdminClient()` → `getSupabaseServerClient()` on 7 page files + `fetchKanbanData`. Added `.is("deleted_at", null)` on the `icds` reads that were missing it. Side-fix: replaced `<a href="/consignments/new">` with `<Link>` in `kanban-board.tsx` (was blocking the lint gate). Validation: `grep -rn getSupabaseAdminClient src/` returns only the 4 permitted call sites; typecheck + lint + tests all green. Manual viewer/operator/admin verification still owed before marking T-048 `[x]`. |
 | 2026-05-22 | **D-029 logged + T-048 follow-up shipped.** Viewer walkthrough exposed that a viewer could drag kanban cards — root cause was `advance_stage()` being `SECURITY DEFINER` (bypasses RLS) without a caller-role check. Fixed in migration `20260522004757_advance_stage_role_check.sql` (applied to dev). UI guard added: `kanban-card.tsx` uses `useSortable({ disabled: !canDrag })` and the board's `handleDragEnd` refuses non-admin/operator. Verified via direct REST RPC with viewer JWT — returns `42501 Role admin or operator required`. Validation gates green. |
 | 2026-05-22 | **T-048 closed on code-level acceptance.** Static gates: typecheck clean, lint 0 errors / 7 pre-existing unused-var warnings, 7/7 unit tests pass. Confirmed `getSupabaseAdminClient` is limited to the 4 permitted modules (`lib/supabase/admin.ts`, `settings-users.ts`, `settings-roles.ts`, `forceSetStageAction` in `consignments.ts`). Detail + edit pages filter `.is("deleted_at", null)` and `notFound()` on miss. V-PERM in `validation.md` already carries the RLS-bypass audit, soft-delete leak audit, and the D-029 `SECURITY DEFINER` caller-role gate. Operator + admin click-through deferred to ad-hoc QA per user direction. |
+| 2026-05-22 | **T-049 done + D-030 logged.** (1) `(app)/layout.tsx` switched from `auth.getUser()` to `auth.getClaims()` (local JWT verify, no Auth-server RTT). (2) `getServerPermissions()` wrapped in React `cache()` — layout/page/actions in one request share one resolved permission set. (3) Role-lookup chain collapsed from 3 queries to 2 (joined `roles!inner(name)` into `role_column_permissions`). (4) Admin walkthrough surfaced a pre-existing bug: dragging cards *backwards* as admin failed with `force_set_stage requires admin role`. Root cause — `forceSetStageAction` called the RPC via the admin/service-role client, which made `auth.uid()` null inside the `SECURITY DEFINER` function and tripped its own `is_admin()` guard. Fixed by routing the RPC through the user-bound server client (server-action's `perms.isAdmin` check still runs first). This shrinks D-026's admin-client allowlist from 4 → 3 sites; `validation.md` V-PERM updated. **Measured:** `GET /` `application-code` time dropped from ~1.5–2s (pre-T-049 audit) to **31–169ms warm** on dev — past the ≥50% threshold by a wide margin. Gates green: typecheck clean, lint 0 errors / 7 pre-existing warnings, 7/7 unit tests, force-set RPC now returns `200` in the dev-server log. |
 
 ---
 
 ## Open issues / known compromises
 
 - **Operator + admin walkthrough still owed as ad-hoc QA.** T-048 was closed on code-level acceptance (viewer was verified DB-side 2026-05-22). Joined columns (`clients.name`, `icds.location`) resolve through user JWT after migration `025325` and were confirmed during the viewer walkthrough, but the operator/admin matrices haven't been clicked through end-to-end. Surface anything that breaks as a new task rather than re-opening T-048.
-- **Page latency** — Server-rendered pages currently make 3 serial `auth.getUser()` calls + 3 serial permission queries per request. From Tanzania → Supabase EU region this stacks to ~1.5–2s of latency before render. Tracked by **T-049**. Fix is `getClaims()` swap + React `cache()` wrapping + parallelizing the permission queries.
+- ~~**Page latency** — Server-rendered pages currently make 3 serial `auth.getUser()` calls + 3 serial permission queries per request.~~ **Resolved by T-049 on 2026-05-22.** Layout now uses `getClaims()` (local verify), `getServerPermissions()` is `cache()`-memoised per request, and the role-lookup chain is 2 queries instead of 3. `application-code` time on `GET /` is now 31–169ms warm. Middleware's `proxy.ts` time (~300–1500ms in dev logs) is the remaining latency, dominated by the canonical `getUser()` call — that's the security-critical session refresh and stays.
 - **@dnd-kit hydration warning on kanban.** Setting `DndContext` `id="kanban-dnd"` (commit `443f17a`) didn't fully resolve it — `useSortable` (cards) and `useDroppable` (columns) also bump the same module-level counter. Console-only warning, not a crash; drag handlers + RPCs work correctly. Follow-up: try `useId()` on the board, or `next/dynamic({ ssr: false })`. Logged as a follow-up after T-048 closes.
 - **Column-level UPDATE policy is app-layer only.** The `consignments_update` RLS policy from migration `005000` lets any operator/admin update any column — it does not call `can_user_write(table, column)` per-column as CLAUDE.md §8 envisioned. The DB function exists; no policy uses it. The application layer (server actions + `PermissionGate`) currently carries the enforcement. Worth tightening before T-081 (security review).
 
@@ -120,11 +121,11 @@
 
 ## Next 5 things, in order
 
-1. **T-049** — Phase 3.5 perf: replace `getUser()` with `getClaims()` in the layout, wrap `getServerPermissions()` in React `cache()`, parallelize the role-lookup queries.
-2. **T-050** — EFD management screen (`/efd`) — list/create/edit, PRIVATE/TRANSIT/SHARED, link to one or many consignments.
-3. **T-051** — `in_ref` batch panel — open side panel of all siblings + totals when an `in_ref` link is clicked.
-4. **T-052** — GUTA pair linkage UI on detail view — sibling card + red warning when one is released and the other isn't.
-5. **Follow-up (post-T-048)** — chase the residual @dnd-kit hydration warning on the kanban (`useId()` on the board or `next/dynamic({ ssr: false })`) once T-049 lands so the layout doesn't shift under us.
+1. **T-050** — EFD management screen (`/efd`) — list/create/edit, PRIVATE/TRANSIT/SHARED, link to one or many consignments.
+2. **T-051** — `in_ref` batch panel — open side panel of all siblings + totals when an `in_ref` link is clicked.
+3. **T-052** — GUTA pair linkage UI on detail view — sibling card + red warning when one is released and the other isn't.
+4. **T-053** — Alerts edge function (Resend + Supabase scheduled) — newly-stuck stages email admins every 30 min. Unblocked now that T-049 has set a clean latency baseline.
+5. **Follow-up** — chase the residual @dnd-kit hydration warning on the kanban (`useId()` on the board or `next/dynamic({ ssr: false })`). Console-only warning; cosmetic.
 
 ---
 

@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
-import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getServerPermissions } from "@/lib/permissions";
 import {
   PIPELINE_STAGES,
@@ -177,8 +176,12 @@ export async function forceSetStageAction(formData: FormData) {
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
 
-  const admin = getSupabaseAdminClient();
-  const { error } = await admin.rpc("force_set_stage", {
+  // Use the user-bound client so the DB-side `is_admin()` check inside
+  // `force_set_stage()` sees the real `auth.uid()`. (The admin/service-role
+  // client would make `auth.uid()` null and the SECURITY DEFINER guard would
+  // reject the call — see T-049 / D-029 follow-up.)
+  const supabase = await getSupabaseServerClient();
+  const { error } = await supabase.rpc("force_set_stage", {
     p_id: parsed.data.consignmentId,
     p_stage: stageFieldToDbEnum(parsed.data.stage),
     p_new_value: parsed.data.newValue,

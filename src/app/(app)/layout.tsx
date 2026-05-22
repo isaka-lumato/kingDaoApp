@@ -14,12 +14,15 @@ export default async function AppLayout({
   children: React.ReactNode;
 }) {
   const supabase = await getSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+
+  // T-049: local JWT verify, no Auth-server round-trip.
+  // Middleware (src/middleware.ts) is the canonical session refresh point and
+  // already called getUser() this request.
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const claims = claimsData?.claims;
 
   // Middleware handles the redirect, but this is a defense-in-depth check.
-  if (!user) redirect("/login");
+  if (!claims) redirect("/login");
 
   const permissions = await getServerPermissions();
   if (!permissions) redirect("/login");
@@ -33,9 +36,11 @@ export default async function AppLayout({
     columns: permissions.columns,
   };
 
+  const email = (claims.email as string | undefined) ?? "";
+
   return (
     <PermissionsProvider value={clientPerms}>
-      <AppShell user={{ email: user.email ?? "" }}>
+      <AppShell user={{ email }}>
         {children}
       </AppShell>
     </PermissionsProvider>

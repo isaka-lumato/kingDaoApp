@@ -121,11 +121,12 @@ Two cleanup tasks identified during the post-Phase-3 audit. Both must be done be
   - Add a V-PERM check in `validation.md` that flags any new use of `getSupabaseAdminClient` outside the permitted call sites listed in D-026.
   - Accept: `grep -rn "getSupabaseAdminClient" src/` returns only the four permitted call sites (`lib/supabase/admin.ts`, `server/actions/settings-users.ts`, `server/actions/settings-roles.ts`, and `forceSetStageAction` in `server/actions/consignments.ts`). A viewer hitting the detail URL of a soft-deleted consignment gets a 404, not the row data. A viewer cannot drag kanban cards (UI) and a direct REST POST to `/rpc/advance_stage` with a viewer JWT returns 42501 (DB).
 
-- [ ] **T-049** ⚡ Phase 3.5 perf pass — eliminate redundant auth round-trips.
-  - Replace `auth.getUser()` with `auth.getClaims()` inside `(app)/layout.tsx` so the layout doesn't pay the network round-trip (the middleware already calls `getUser()` per request, which is the canonical session refresh point).
-  - Wrap `getServerPermissions()` in React `cache()` so child Server Components reuse the layout's result instead of refetching.
-  - Inside `getServerPermissions()`: collapse the `user_roles → roles → role_column_permissions` chain. Use a single `user_roles` query that joins through to `role_column_permissions` directly, or run the role-id resolution and the column-permission fetch in `Promise.all`.
-  - Accept: Wall-clock latency on `/` for an authenticated user drops by ≥ 50% (measure with browser devtools Network panel against dev project). Page renders identically. No new `npm` deps.
+- [x] **T-049** ⚡ Phase 3.5 perf pass — eliminate redundant auth round-trips. Done 2026-05-22.
+  - `(app)/layout.tsx` now uses `auth.getClaims()` (local JWT verify, no Auth-server RTT). Middleware remains the canonical session refresh point.
+  - `getServerPermissions()` wrapped in React `cache()` — layout, page, and server actions within one request share one resolved permission set.
+  - Collapsed the role-lookup chain from 3 queries to 2: drops the standalone `SELECT id FROM roles WHERE name IN (...)` by joining `roles!inner(name)` directly into `role_column_permissions`.
+  - **Side fix (D-030):** `forceSetStageAction` now calls `force_set_stage` via the user-bound server client instead of the admin client. The DB function is `SECURITY DEFINER` and reads `auth.uid()` for its admin gate; the admin client made that null and the guard always returned `42501`. Shrinks D-026's permanent admin-allowlist from 4 → 3 sites.
+  - Measured: `application-code` time for `GET /` dropped from ~1.5–2s pre-T-049 to **31–169ms warm** (well past the ≥50% threshold). All gates green: typecheck, lint (0 errors, same 7 pre-existing warnings), 7/7 unit tests. Verified force-set bug is fixed in the running dev server log.
 
 ---
 

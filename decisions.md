@@ -441,4 +441,30 @@ The UI still displays the linked ref_no via `consignments c left join consignmen
 
 ---
 
+## D-030 — `getClaims()` for layout auth, React `cache()` for per-request memoisation, user-bound client for `force_set_stage`
+
+**Date:** 2026-05-22
+**Status:** Active — refines D-026 (shrinks the admin-client surface by one site) and supports T-049.
+
+**Decision:** Three small changes to the server-side auth pipeline:
+
+1. **Layout uses `auth.getClaims()`, not `auth.getUser()`.** `getClaims()` verifies the JWT locally and returns the user id + email without an Auth-server round-trip. The canonical session refresh + Auth-server verification already happens once per request in `src/middleware.ts` (the Supabase-SSR pattern). Re-verifying in the layout was redundant and added one EU-region RTT per page load.
+2. **`getServerPermissions()` is wrapped in React `cache()`.** Every Server Component and Server Action within a single render now shares one resolved permission set instead of refetching. `cache()` is per-request, not cross-request, so revoked roles still take effect on the next navigation.
+3. **`forceSetStageAction` calls the RPC via the user-bound server client, not the admin client.** The DB function `force_set_stage()` is `SECURITY DEFINER` and checks `public.is_admin()` at the top — that lookup reads `auth.uid()` from the request JWT. Calling the RPC through the service-role client made `auth.uid()` null, and the guard always rejected with `42501 force_set_stage requires admin role` — including when the actual user was an admin. Server-action-layer permission verification (`perms.isAdmin`) is unchanged and still runs first; the user-client call lets the DB-side guard succeed too. This shrinks the permanent admin-client allowlist from four sites to three (D-026 is amended in place in `validation.md`).
+
+**Why this is a decision, not just a fix:**
+
+- Item 1 changes the contract "the layout independently re-verifies the user with the Auth server" → "the layout trusts the middleware-verified JWT". The middleware is now the only place that hits the Auth server. If we ever stop calling `getUser()` in the middleware (e.g. a future refactor), the layout's `getClaims()` is no longer sufficient and item 1 must be revisited.
+- Item 2 means that mid-request permission changes are invisible — if an admin revokes a role *while* a page is rendering, the in-flight render still sees the old permissions. Acceptable for our cadence (revocations are rare and the next request picks up the change).
+- Item 3 is the inverse of what D-026 said. D-026 listed `forceSetStageAction` as a permitted permanent admin-client use ("admin-only RPC bypassing prerequisites; routing through admin client is consistent with the elevated-operation intent"). T-049's manual verification proved the opposite — routing through the admin client *broke* the DB-side guard. The rule going forward: **`SECURITY DEFINER` RPCs that read `auth.uid()` must be called via the user-bound client, even when the server action has already verified admin status.**
+
+**Measured impact (T-049 acceptance):**
+
+- `GET /` `application-code` time (the layer T-049 targets, distinct from middleware's `proxy.ts` time which is unchanged) dropped from ~1500–2000ms (pre-T-049, observed during the 2026-05-20 audit) to **31–169ms warm** on the dev box against the kdl-tracker-dev project. Far past the ≥50% threshold.
+- `forceSetStageAction` for an admin (drag backward on the kanban) now returns `200` with the row updated, where the prior build returned the `42501 admin role` error.
+
+**Alternative considered:** Cache permissions across requests (e.g. in a session cookie). Rejected because it complicates revocation semantics for a fix that doesn't need it — `cache()` already collapses N permission fetches within one request to one.
+
+---
+
 <!-- Append new decisions below this line. Number sequentially. -->

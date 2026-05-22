@@ -61,11 +61,11 @@ Each rule needs at least one Vitest or SQL test in `tests/unit/pipeline/`.
 - [ ] UI `PermissionGate` hides the field exactly when the API rejects writes.
 - [ ] System roles (admin/operator/viewer) cannot be deleted (`is_system = true` enforced via trigger).
 - [ ] A non-admin cannot mutate any row in `roles`, `role_column_permissions`, `user_roles`.
-- [ ] **RLS-bypass audit (per D-026).** Run `grep -rn "getSupabaseAdminClient" src/` and confirm every match is one of the permitted call sites:
+- [ ] **RLS-bypass audit (per D-026, tightened by D-030).** Run `grep -rn "getSupabaseAdminClient" src/` and confirm every match is one of the permitted call sites:
   - `src/lib/supabase/admin.ts` — definition itself.
   - `src/server/actions/settings-users.ts` — Supabase Admin API user CRUD (legitimately requires service role).
-  - `src/server/actions/settings-roles.ts` — role/permission matrix mutations (admin-only, RLS would allow it, but admin-client makes the intent explicit).
-  - `src/server/actions/consignments.ts` — **only** inside `forceSetStageAction` (admin escape hatch).
+  - `src/server/actions/settings-roles.ts` — role/permission matrix mutations (admin-only).
+  - ~~`src/server/actions/consignments.ts` — `forceSetStageAction`~~ — **removed in T-049 / D-030.** `forceSetStageAction` now calls the RPC via the user-bound server client so the SECURITY DEFINER guard inside `force_set_stage()` can read `auth.uid()`.
   Any other match is a regression and must be fixed before the task is marked done.
 - [ ] **Soft-delete leak audit.** Every read path that doesn't use the admin client must include `.is("deleted_at", null)` in the SELECT clause. Manual check: a viewer hitting the detail URL of a soft-deleted consignment gets a 404, not the row.
 - [ ] **`SECURITY DEFINER` caller-role gate (D-029).** Every `security definer` function in `supabase/migrations/` that performs INSERT/UPDATE/DELETE on a user-facing table has an explicit caller-role check (`raise exception '...' using errcode = '42501'`) as its first executable statement, before row locking or pre-condition checks. Direct REST verification: signing in as a viewer and `POST`ing to `/rest/v1/rpc/<function>` returns `42501`, not `200`. Current inventory: `advance_stage()` ✅, `force_set_stage()` ✅, triggers (`log_table_change`, `auto_detect_guta_pair`) ✅ (no mutations gated on caller). Pure functions (`current_user_can_write`, `is_admin`) — n/a.

@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 export type ColumnPermission = {
@@ -25,21 +26,36 @@ export type UserPermissions = {
  * column permissions from the DB. Used in Server Components and Server Actions.
  *
  * Returns null if the user is not authenticated.
+ *
+ * Perf notes (T-049):
+ *  - Uses `auth.getClaims()` for local JWT verification. The canonical session
+ *    refresh + Auth-server round-trip is done once per request in
+ *    `src/middleware.ts` — this function trusts the verified JWT and stays
+ *    on-machine.
+ *  - The exported binding is wrapped in React `cache()` so every Server
+ *    Component / Server Action within a single request render shares one
+ *    result instead of refetching. `cache()` is per-request, not cross-request,
+ *    so revoked permissions still take effect on the next navigation.
+ *  - The previous 3-step chain (`user_roles` → `roles` → `role_column_permissions`)
+ *    is collapsed to 2 round-trips by joining `roles` directly inside the
+ *    `role_column_permissions` query via `roles!inner(name)`.
  */
-export async function getServerPermissions(): Promise<UserPermissions | null> {
+async function getServerPermissionsImpl(): Promise<UserPermissions | null> {
   const supabase = await getSupabaseServerClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Local JWT verification — no Auth-server round-trip.
+  const { data } = await supabase.auth.getClaims();
+  const claims = data?.claims;
+  if (!claims) return null;
 
-  if (!user) return null;
+  const userId = claims.sub as string;
+  const email = (claims.email as string | undefined) ?? null;
 
   // Fetch roles for this user.
   const { data: userRoles } = await supabase
     .from("user_roles")
     .select("roles(name)")
-    .eq("user_id", user.id);
+    .eq("user_id", userId);
 
   const roles: string[] =
     userRoles?.flatMap((r) => {
@@ -60,38 +76,32 @@ export async function getServerPermissions(): Promise<UserPermissions | null> {
   let columns: ColumnPermission[] = [];
 
   if (!isAdmin && roles.length > 0) {
-    const { data: roleRows } = await supabase
-      .from("roles")
-      .select("id")
-      .in("name", roles);
+    // Single query: filter `role_column_permissions` by the role *name* via an
+    // inner join on `roles`. Saves the prior `SELECT id FROM roles WHERE name IN (...)`
+    // round-trip.
+    const { data: perms } = await supabase
+      .from("role_column_permissions")
+      .select("table_name, column_name, can_read, can_write, roles!inner(name)")
+      .in("roles.name", roles);
 
-    const roleIds = roleRows?.map((r) => r.id) ?? [];
-
-    if (roleIds.length > 0) {
-      const { data: perms } = await supabase
-        .from("role_column_permissions")
-        .select("table_name, column_name, can_read, can_write")
-        .in("role_id", roleIds);
-
-      // Merge: if any role grants write, the user can write.
-      const merged = new Map<string, ColumnPermission>();
-      for (const p of perms ?? []) {
-        const key = `${p.table_name}:${p.column_name}`;
-        const existing = merged.get(key);
-        if (existing) {
-          existing.canRead = existing.canRead || p.can_read;
-          existing.canWrite = existing.canWrite || p.can_write;
-        } else {
-          merged.set(key, {
-            tableName: p.table_name,
-            columnName: p.column_name,
-            canRead: p.can_read,
-            canWrite: p.can_write,
-          });
-        }
+    // Merge: if any role grants write, the user can write.
+    const merged = new Map<string, ColumnPermission>();
+    for (const p of perms ?? []) {
+      const key = `${p.table_name}:${p.column_name}`;
+      const existing = merged.get(key);
+      if (existing) {
+        existing.canRead = existing.canRead || p.can_read;
+        existing.canWrite = existing.canWrite || p.can_write;
+      } else {
+        merged.set(key, {
+          tableName: p.table_name,
+          columnName: p.column_name,
+          canRead: p.can_read,
+          canWrite: p.can_write,
+        });
       }
-      columns = Array.from(merged.values());
     }
+    columns = Array.from(merged.values());
   }
 
   function canWrite(tableName: string, columnName: string): boolean {
@@ -111,8 +121,8 @@ export async function getServerPermissions(): Promise<UserPermissions | null> {
   }
 
   return {
-    userId: user.id,
-    email: user.email ?? null,
+    userId,
+    email,
     roles,
     isAdmin,
     canWrite,
@@ -120,3 +130,10 @@ export async function getServerPermissions(): Promise<UserPermissions | null> {
     columns,
   };
 }
+
+/**
+ * Public binding — memoised for the lifetime of one server render via
+ * React `cache()`. All Server Components and Server Actions within a single
+ * request share one resolved permission set.
+ */
+export const getServerPermissions = cache(getServerPermissionsImpl);
