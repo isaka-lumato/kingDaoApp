@@ -72,6 +72,45 @@ Each rule needs at least one Vitest or SQL test in `tests/unit/pipeline/`.
 
 ---
 
+## V-EFD — EFD management (`/efd`)
+
+T-050 gates. Run when touching `/efd`, `src/server/actions/efd.ts`, the EFD-linkage section on consignment detail, or any code that writes `efd_records` / `efd_record_consignments`.
+
+- [ ] Creating an EFD with `efd_code = "PRIVATE"` persists `is_private = true` regardless of the form checkbox (server-side derivation in `normaliseFlagsFromCode`).
+- [ ] Same for `efd_code = "TRANSIT"` → `is_transit = true`.
+- [ ] `is_shared` reflects link count: `false` for 0 or 1 link, `true` for ≥ 2. Verified after create, link, and unlink (server calls `recomputeIsShared`).
+- [ ] Linking a consignment whose `release_status != 'Released'` still succeeds, but the new-EFD form shows the amber soft-warning under the picker. (PRD §8.14: soft validation, not a hard block.)
+- [ ] Delete button on `/efd/[id]` is hidden for non-admin users; `deleteEfdAction` returns `{ error: "Admin only." }` if a non-admin invokes it directly.
+- [ ] New EFD records do **not** appear in `/efd` for unauthenticated visitors (route protected by middleware) and an unauthenticated direct REST POST to `/rest/v1/efd_records` returns 401.
+- [ ] Viewer JWT direct REST POST to `/rest/v1/efd_records` returns 403 (RLS rejects insert).
+- [ ] Creating one EFD record and linking it to ≥ 2 consignments surfaces a "Linked EFD records" row on each of those consignment detail pages (`/consignments/[id]`), with the SHARED badge.
+- [ ] Unlinking the last consignment leaves the EFD record in place (no cascade) and flips `is_shared` to false.
+- [ ] Deleting an EFD record removes all join rows via FK cascade; the linked consignments are untouched.
+- [ ] `getSupabaseAdminClient` is **not** introduced anywhere under `src/app/(app)/efd/` or `src/server/actions/efd.ts`. The admin-client allowlist in D-026 stays at 3 sites.
+
+---
+
+## V-BATCH — `in_ref` batch panel (`/consignments` drawer)
+
+T-051 gates. Run when touching `_batch-panel/`, `src/components/batch-link.tsx`, the in-ref column on the consignments table, the in-ref Field on consignment detail, or the auto-link path in `src/server/actions/efd.ts`.
+
+- [ ] Clicking the IN REF chip in the consignments table sets `?batch=<inref>&bc=<client_id>&by=<year>` and slides the right drawer in. The underlying list stays visible.
+- [ ] Clicking the IN REF chip in consignment detail opens the same drawer at the detail page URL.
+- [ ] Drawer closes via the X button, the Esc key, and clicking the backdrop. All three clear `batch`, `bc`, `by` from the URL.
+- [ ] Summary card numbers match a direct query: `SELECT consignment_count, total_containers, total_amount FROM v_in_ref_batches WHERE in_ref=$1 AND client_id=$2 AND year=$3`.
+- [ ] Sibling list shows every non-deleted consignment in `(in_ref, client_id, year)`. Soft-deleted siblings are excluded.
+- [ ] "Create EFD for this batch" CTA is hidden for viewers, hidden when `efd_code` already exists on the batch, and visible only for admin/operator otherwise. It links to `/efd/new?from_batch=…&client=…&year=…`.
+- [ ] `/efd/new?from_batch=TZ3&client=…&year=…` pre-selects every sibling in the picker on initial render.
+- [ ] **EFD auto-link (PRD §8.4 line 433):** creating an EFD with **only one** of N siblings selected results in all N consignments being linked. Verified by opening the EFD detail page after save.
+- [ ] `linkConsignmentsAction` from `/efd/[id]` likewise pulls in batch siblings — adding one sibling adds the rest.
+- [ ] **Idempotency:** re-issuing the create with the same IDs produces no duplicate join rows and no error (the `ignoreDuplicates: true` upsert handles it).
+- [ ] **Non-batch consignment** (`in_ref IS NULL`): EFD links exactly the one consignment selected — no spurious expansion.
+- [ ] `is_shared` flips to `true` on any EFD where expansion produced ≥ 2 links (via `recomputeIsShared`).
+- [ ] **RLS sanity (D-026):** `getSupabaseAdminClient` is not introduced anywhere under `src/app/(app)/consignments/_batch-panel/` or in the new code paths of `src/server/actions/efd.ts`. Admin-client allowlist stays at 3 sites.
+- [ ] **Generated types refresh:** `v_in_ref_batches` is present in `Database['public']['Views']` in `src/types/supabase.ts`.
+
+---
+
 ## V-AUDIT — Audit trail
 
 - [ ] Every UPDATE on a tracked table produces one row per changed column in `audit_log`.

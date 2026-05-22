@@ -5,6 +5,7 @@ import Link from "next/link";
 import { PIPELINE_STAGES, isStageComplete, type StageField } from "@/lib/pipeline";
 import { formatTzs } from "@/lib/money";
 import { usePermissions } from "@/hooks/use-permissions";
+import BatchLink from "@/components/batch-link";
 import {
   duplicateConsignmentAction,
   softDeleteConsignmentAction,
@@ -20,6 +21,8 @@ type Consignment = {
   serial_no: number | null;
   tansad_no: string | null;
   bl_number: string | null;
+  in_ref: string | null;
+  client_id: string | null;
   container_count: number | null;
   container_type: string | null;
   goods_description: string | null;
@@ -89,9 +92,20 @@ function renderColumnLabel(col: string | null): string {
   return col;
 }
 
+type LinkedEfd = {
+  id: string;
+  efd_code: string;
+  efd_time: string | null;
+  is_private: boolean;
+  is_transit: boolean;
+  is_shared: boolean;
+  created_at: string;
+};
+
 type Props = {
   consignment: Consignment;
   auditLog: AuditEntry[];
+  linkedEfds: LinkedEfd[];
 };
 
 const STATUS_STYLES: Record<string, string> = {
@@ -124,7 +138,7 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-export default function ConsignmentDetail({ consignment, auditLog }: Props) {
+export default function ConsignmentDetail({ consignment, auditLog, linkedEfds }: Props) {
   const [tab, setTab] = useState<"overview" | "pipeline" | "audit">("overview");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteReason, setDeleteReason] = useState("");
@@ -277,6 +291,18 @@ export default function ConsignmentDetail({ consignment, auditLog }: Props) {
               <Field label="Serial No" value={consignment.serial_no} />
               <Field label="B/L Number" value={consignment.bl_number} />
               <Field label="TANSAD No" value={consignment.tansad_no} />
+              <Field
+                label="In Ref"
+                value={
+                  consignment.in_ref && consignment.client_id ? (
+                    <BatchLink
+                      inRef={consignment.in_ref}
+                      clientId={consignment.client_id}
+                      year={consignment.year}
+                    />
+                  ) : null
+                }
+              />
               <Field label="ICD" value={icd ? `${icd.name}${icd.location ? ` (${icd.location})` : ""}` : null} />
               <Field
                 label="Goods"
@@ -333,6 +359,69 @@ export default function ConsignmentDetail({ consignment, auditLog }: Props) {
                 }
               />
             </div>
+          </section>
+
+          {/* Linked EFDs */}
+          <section className="rounded-xl border border-border bg-card p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Linked EFD records
+              </h2>
+              <Link
+                href={`/efd/new`}
+                className="text-xs text-brand hover:underline"
+              >
+                + New EFD
+              </Link>
+            </div>
+            {linkedEfds.length === 0 ? (
+              <p className="text-sm text-muted-foreground italic">
+                No EFD records linked yet.
+              </p>
+            ) : (
+              <div className="rounded-lg border border-border divide-y divide-border">
+                {linkedEfds.map((e) => (
+                  <Link
+                    key={e.id}
+                    href={`/efd/${e.id}`}
+                    className="flex items-center gap-3 px-3 py-2 text-sm hover:bg-muted/30 transition-colors"
+                  >
+                    <span className="font-mono font-bold text-xs text-brand">
+                      {e.efd_code}
+                    </span>
+                    {e.efd_time && (
+                      <span className="text-[10px] text-muted-foreground font-mono">
+                        {e.efd_time}
+                      </span>
+                    )}
+                    <div className="flex flex-wrap gap-1 flex-1">
+                      {e.is_private && (
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-violet-500/15 text-violet-600 border-violet-500/30">
+                          PRIVATE
+                        </span>
+                      )}
+                      {e.is_transit && (
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-sky-500/15 text-sky-600 border-sky-500/30">
+                          TRANSIT
+                        </span>
+                      )}
+                      {e.is_shared && (
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-amber-500/15 text-amber-600 border-amber-500/30">
+                          SHARED
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-muted-foreground">
+                      {new Date(e.created_at).toLocaleDateString("en-GB", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "2-digit",
+                      })}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            )}
           </section>
 
           {/* Remarks */}

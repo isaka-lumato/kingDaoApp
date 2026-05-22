@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { formatTzs } from "@/lib/money";
+import BatchLink from "@/components/batch-link";
 
 type Client = { id: string; name: string };
 type Row = {
@@ -12,6 +13,8 @@ type Row = {
   serial_no: number | null;
   tansad_no: string | null;
   bl_number: string | null;
+  in_ref: string | null;
+  client_id: string;
   container_count: number | null;
   container_type: string | null;
   goods_description: string | null;
@@ -204,6 +207,7 @@ export default function ConsignmentsClient({
                 <th className="text-left px-4 py-2.5 font-medium text-muted-foreground whitespace-nowrap">Ref No</th>
                 <th className="text-left px-4 py-2.5 font-medium text-muted-foreground whitespace-nowrap">Client</th>
                 <th className="text-left px-4 py-2.5 font-medium text-muted-foreground whitespace-nowrap hidden md:table-cell">B/L</th>
+                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground whitespace-nowrap hidden lg:table-cell">In Ref</th>
                 <th className="text-left px-4 py-2.5 font-medium text-muted-foreground whitespace-nowrap hidden lg:table-cell">Vessel</th>
                 <th className="text-left px-4 py-2.5 font-medium text-muted-foreground whitespace-nowrap hidden lg:table-cell">Arrival</th>
                 <th className="text-left px-4 py-2.5 font-medium text-muted-foreground whitespace-nowrap">Pipeline Stage</th>
@@ -214,7 +218,7 @@ export default function ConsignmentsClient({
             <tbody className="divide-y divide-border">
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-10 text-center text-muted-foreground">
+                  <td colSpan={9} className="px-4 py-10 text-center text-muted-foreground">
                     No consignments found.
                   </td>
                 </tr>
@@ -234,6 +238,20 @@ export default function ConsignmentsClient({
                   </td>
                   <td className="px-4 py-3 text-muted-foreground text-xs hidden md:table-cell font-mono">
                     {row.bl_number ?? "—"}
+                  </td>
+                  <td
+                    className="px-4 py-3 text-xs hidden lg:table-cell whitespace-nowrap"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {row.in_ref ? (
+                      <BatchLink
+                        inRef={row.in_ref}
+                        clientId={row.client_id}
+                        year={row.year}
+                      />
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground text-xs hidden lg:table-cell max-w-[120px] truncate">
                     {row.vessel_name ?? "—"}

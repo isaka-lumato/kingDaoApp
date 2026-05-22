@@ -132,10 +132,20 @@ Two cleanup tasks identified during the post-Phase-3 audit. Both must be done be
 
 ## Phase 4 — EFD, batches, GUTA, alerts
 
-- [ ] **T-050** 🎨 Build **EFD management screen** (`/efd`) — list, create, edit. Supports PRIVATE/TRANSIT/SHARED + linking to one or many consignments.
-  - Accept: Creating one EFD record for an `in_ref` batch with 3 consignments shows the EFD on all 3 detail views.
-- [ ] **T-051** 🎨 Build **in_ref batch view** — clicking an `in_ref` link opens a side panel with all B/Ls, total containers, total amount, combined release status.
-  - Accept: Clicking `TZ3` in a consignment row opens the panel showing all 3 consignments and TSh 700,000 total.
+- [x] **T-050** 🎨 Build **EFD management screen** (`/efd`) — list, create, edit. Supports PRIVATE/TRANSIT/SHARED + linking to one or many consignments. Done 2026-05-23.
+  - Accept: Creating one EFD record for an `in_ref` batch with 3 consignments shows the EFD on all 3 detail views. ✓ Linked-EFDs section added to `consignments/[id]/consignment-detail.tsx` after the Vessel & shipping section; queried in `consignments/[id]/page.tsx` via `efd_record_consignments → efd_records`.
+  - Built: `/efd` list (filter by flag + search by code + pagination), `/efd/new` (form + consignment multi-picker + soft warning for unreleased), `/efd/[id]` (combined detail+edit with add/remove links, admin-only delete).
+  - Server actions in `src/server/actions/efd.ts`: `createEfdAction`, `updateEfdAction`, `deleteEfdAction` (admin-only), `linkConsignmentsAction`, `unlinkConsignmentAction`. Flags derived from code on the server (PRIVATE/TRANSIT auto-set); `is_shared` recomputed via `recomputeIsShared()` whenever links change.
+  - Zod: `src/schemas/efd.ts` (`efdRecordSchema`, `consignmentIdSchema`, `normaliseFlagsFromCode`).
+  - V-EFD added to `validation.md`. Gates: typecheck clean, lint 0 errors / 7 pre-existing warnings, 7/7 unit tests.
+- [x] **T-051** 🎨 Build **in_ref batch view** — clicking an `in_ref` link opens a side panel with all B/Ls, total containers, total amount, combined release status. Done 2026-05-23.
+  - Accept: Clicking `TZ3` in a consignment row opens the panel showing all 3 consignments and TSh 700,000 total. ✓ Right-side drawer driven by `?batch=…&bc=…&by=…` URL params; closes via X, Esc, or backdrop; summary fetched from `v_in_ref_batches`; sibling list from `consignments` filtered by `(in_ref, client_id, year)`.
+  - Built: `src/app/(app)/consignments/_batch-panel/batch-panel.tsx` (client shell), `_batch-panel/batch-panel-content.tsx` (server fetch), `src/components/batch-link.tsx` (clickable chip). Mounted on both `/consignments` and `/consignments/[id]`.
+  - IN REF surfaced as a clickable chip in the consignments table (new column, lg breakpoint) and on detail (Core details, Overview tab).
+  - **PRD §8.4 line 433 implemented:** `expandToBatchSiblings()` in `src/server/actions/efd.ts` auto-pulls every consignment sharing `(in_ref, client_id, year)` whenever `createEfdAction` or `linkConsignmentsAction` runs. Existing `efd_record_consignments` PK + `ignoreDuplicates` upsert keep it idempotent.
+  - CTA wiring: drawer's "Create EFD for this batch" links to `/efd/new?from_batch=…&client=…&year=…`; the page pre-selects every sibling in the picker on render.
+  - Types regenerated via `pnpm gen:types:dev` — `v_in_ref_batches` now present in `Database['public']['Views']`.
+  - V-BATCH added to `validation.md`. Gates: typecheck clean, lint 0 errors / 7 pre-existing warnings, 7/7 unit tests. Admin-client allowlist (D-026) stays at 3 sites.
 - [ ] **T-052** 🎨 Build **GUTA pair linkage UI** — on the detail view of a paired consignment, show the sibling. Red warning if one is released and the other isn't.
   - Accept: Releasing "073C - GUTA PARTS" while "073C - FRAMES" is still in TBS shows the warning on both detail pages.
 - [ ] **T-053** 🔁 Build the **alerts edge function** (Supabase scheduled): every 30 min, find newly-stuck stages, email admins via Resend.

@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import ConsignmentsClient from "./consignments-client";
+import BatchPanel from "./_batch-panel/batch-panel";
+import BatchPanelContent from "./_batch-panel/batch-panel-content";
 
 export const metadata: Metadata = { title: "Consignments — KDL Tracker" };
 
@@ -13,6 +16,9 @@ export default async function ConsignmentsPage({
     stage?: string;
     q?: string;
     page?: string;
+    batch?: string;
+    bc?: string;
+    by?: string;
   }>;
 }) {
   const params = await searchParams;
@@ -35,7 +41,7 @@ export default async function ConsignmentsPage({
   let query = supabase
     .from("consignments")
     .select(
-      `id, ref_no, year, serial_no, tansad_no, bl_number,
+      `id, ref_no, year, serial_no, tansad_no, bl_number, in_ref, client_id,
        container_count, container_type, goods_description, vessel_name,
        arrival_date, amount, release_status, release_date,
        manifest_status, shipping_batch_status, tanesws_status,
@@ -63,17 +69,40 @@ export default async function ConsignmentsPage({
     clients: Array.isArray(row.clients) ? row.clients[0] ?? null : row.clients,
   }));
 
+  const batchInRef = params.batch?.trim();
+  const batchClientId = params.bc?.trim();
+  const batchYear = params.by ? parseInt(params.by, 10) : NaN;
+  const showBatch =
+    !!batchInRef && !!batchClientId && Number.isFinite(batchYear);
+
   return (
-    <ConsignmentsClient
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      rows={normalizedRows as any}
-      total={count ?? 0}
-      page={page}
-      pageSize={pageSize}
-      year={year}
-      clients={clients ?? []}
-      filters={{ client: params.client, stage: params.stage, q: params.q }}
-      fetchError={error?.message}
-    />
+    <>
+      <ConsignmentsClient
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        rows={normalizedRows as any}
+        total={count ?? 0}
+        page={page}
+        pageSize={pageSize}
+        year={year}
+        clients={clients ?? []}
+        filters={{ client: params.client, stage: params.stage, q: params.q }}
+        fetchError={error?.message}
+      />
+      {showBatch && (
+        <BatchPanel inRef={batchInRef!}>
+          <Suspense
+            fallback={
+              <div className="text-sm text-muted-foreground">Loading batch…</div>
+            }
+          >
+            <BatchPanelContent
+              inRef={batchInRef!}
+              clientId={batchClientId!}
+              year={batchYear}
+            />
+          </Suspense>
+        </BatchPanel>
+      )}
+    </>
   );
 }
