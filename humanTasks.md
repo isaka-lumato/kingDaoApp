@@ -217,6 +217,10 @@ supabase functions deploy alerts --project-ref vmkhiahoytuqnjpcxwrb
 
 This uploads `supabase/functions/alerts/index.ts` to the dev project. The first deploy takes ~30 seconds.
 
+`supabase/config.toml` has `[functions.alerts] verify_jwt = false` so the Supabase platform layer won't reject our custom bearer-token requests. (Without that flag, the platform expects every Authorization header to be a Supabase JWT and rejects everything else with `UNAUTHORIZED_INVALID_JWT_FORMAT`.) Auth is enforced *inside* the function via `ALERTS_CRON_SECRET`.
+
+If you deployed before this config change landed, redeploy once (`supabase functions deploy alerts --project-ref vmkhiahoytuqnjpcxwrb`) — the CLI now reads the toml and skips JWT verification automatically.
+
 ### Step 4 — Smoke-test the function
 
 Invoke the function manually to confirm it's reachable and the secrets are wired:
