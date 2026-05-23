@@ -102,6 +102,17 @@ Legend: 🧱 = foundation; 🔐 = security; 📥 = data; 🎨 = UI; 🔁 = workf
 
 ---
 
+## Phase 4 — Hotfixes
+
+- [x] **T-055** 🐛 Fix broken filters on `/consignments` (pre-existing T-042 bug surfaced by the T-054 dashboard deep-links). Done 2026-05-23.
+  - Bug 1: `?stage=unreleased` issued `.neq("release_status", "Done")` but the `release_status` enum has no `Done` — only `Waiting` and `Released`. Postgres rejected with `invalid input value for enum release_status: "Done"`. Fix: `.neq("release_status", "Released")`.
+  - Bug 2: `?stage=stuck` issued `.eq("release_status", "Waiting")` which returned every unreleased consignment, not the stuck subset. Fix: query `v_stuck_stages` first for the consignment IDs, then `.in("id", stuckIds)` on the main query. Empty-set safety: when no rows are stuck, force a no-match UUID rather than passing an invalid `.in("id", [])`.
+  - Dropdown label updated: "Waiting (no action)" → "Stuck > 48h" so the UI matches what the filter now actually does (and matches the dashboard KPI label).
+  - Files: `src/app/(app)/consignments/page.tsx`, `src/app/(app)/consignments/consignments-client.tsx`.
+  - Accept: clicking the dashboard "Pending release" KPI navigates to `/consignments?stage=unreleased` and renders without error. Clicking "Stuck > 48h" navigates to `/consignments?stage=stuck` and shows exactly the rows in `v_stuck_stages` (de-duplicated on `consignment_id`). Gates: typecheck clean, lint 0 errors / 6 pre-existing warnings, 7/7 unit tests.
+
+---
+
 ## Phase 3.5 — Trial-branch cleanup (logged 2026-05-20)
 
 Two cleanup tasks identified during the post-Phase-3 audit. Both must be done before Phase 4 work begins so the perf/security posture is right for the EFD and dashboard screens.
@@ -153,8 +164,16 @@ Two cleanup tasks identified during the post-Phase-3 audit. Both must be done be
   - V-GUTA added to `validation.md`. Gates: typecheck clean, lint 0 errors / 6 pre-existing warnings, 7/7 unit tests.
 - [ ] **T-053** 🔁 Build the **alerts edge function** (Supabase scheduled): every 30 min, find newly-stuck stages, email admins via Resend.
   - Accept: Backdating a stage to 49h ago and waiting 30 min results in an email; deployed function logs show the run.
-- [ ] **T-054** 🎨 Build the **dashboard** (`/dashboard`) — active jobs count, pipeline funnel, arrivals this week, revenue this month, top clients, overdue jobs (PRD §6.3).
-  - Accept: Numbers match SQL queries run against seed data.
+- [x] **T-054** 🎨 Build the **dashboard** (`/dashboard`) — active jobs count, pipeline funnel, arrivals this week, revenue this month, top clients, overdue jobs (PRD §6.3). Done 2026-05-23.
+  - Accept: Numbers match SQL queries run against seed data. ✓ All 4 KPI tiles + funnel + top-clients + arrivals + overdue-jobs widgets fetch from the appropriate views/tables.
+  - Built: `src/app/(app)/dashboard/page.tsx` — server component, 7 reads in parallel via `Promise.all`. KPIs: Released today (`release_date = today`), Pending release (cross-year `release_status != 'Released'`), Stuck > 48h (length of `v_stuck_stages` top-10), Revenue this month (sum of `amount` for current-month releases) with compact tile + exact-figure footer.
+  - Pipeline funnel: 10 stages from `v_pipeline_funnel` rendered as relative-width bars (min 2% so zero stages remain visible); footer shows `released` and `total_active` for the year.
+  - Top clients: top 5 by `total_containers` from `v_client_volume`, current year, with sub_label.
+  - Arrivals this week: Mon→Sun calendar window (inclusive Mon 00:00, exclusive next Mon 00:00); ordered ascending, capped at 20; each row links to consignment detail.
+  - Overdue jobs: top 10 from `v_stuck_stages` ordered by `hours_stuck DESC`; stage label mapped from DB enum via local `stageLabelFor()` using `PIPELINE_STAGES`.
+  - Nav update: `app-shell.tsx` adds a new Dashboard entry at `/dashboard` and renames `/` to "Pipeline" (Kanban). Login redirect target (`/`) unchanged.
+  - All queries use `getSupabaseServerClient` (user JWT). No new `getSupabaseAdminClient` uses — D-026 allowlist stays at 3 sites.
+  - V-DASH added to `validation.md`. Gates: typecheck clean, lint 0 errors / 6 pre-existing warnings, 7/7 unit tests, dev-server smoke: `/dashboard` compiles and 307-redirects to `/login?next=/dashboard` for unauthenticated requests.
 
 ---
 

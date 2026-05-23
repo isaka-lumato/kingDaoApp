@@ -57,8 +57,24 @@ export default async function ConsignmentsPage({
     .range(from, from + pageSize - 1);
 
   if (params.client) query = query.eq("client_id", params.client);
-  if (params.stage === "unreleased") query = query.neq("release_status", "Done");
-  if (params.stage === "stuck") query = query.eq("release_status", "Waiting");
+  if (params.stage === "unreleased") query = query.neq("release_status", "Released");
+  if (params.stage === "stuck") {
+    // "Stuck > 48h" means at least one pipeline stage in Action longer than
+    // settings.stuck_threshold_hours (PRD §6.8). Source of truth is the
+    // v_stuck_stages view — read the consignment IDs and filter by them.
+    const { data: stuckRows } = await supabase
+      .from("v_stuck_stages")
+      .select("consignment_id");
+    const stuckIds = Array.from(
+      new Set((stuckRows ?? []).map((r) => r.consignment_id).filter(Boolean)),
+    ) as string[];
+    // Empty set → force zero results without an invalid `.in("id", [])`.
+    if (stuckIds.length === 0) {
+      query = query.eq("id", "00000000-0000-0000-0000-000000000000");
+    } else {
+      query = query.in("id", stuckIds);
+    }
+  }
   if (params.q) query = query.ilike("ref_no", `%${params.q}%`);
 
   const { data, count, error } = await query;

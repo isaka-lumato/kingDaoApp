@@ -127,6 +127,30 @@ T-052 gates. Run when touching the GUTA pair section in `consignment-detail.tsx`
 
 ---
 
+## V-DASH — Dashboard (`/dashboard`)
+
+T-054 gates. Run when touching `src/app/(app)/dashboard/`, the navigation order in `app-shell.tsx`, or any of the reporting views (`v_pipeline_funnel`, `v_revenue_monthly`, `v_client_volume`, `v_stuck_stages`).
+
+- [ ] All four KPI tiles render: "Released today", "Pending release", "Stuck > 48h", and "Revenue · <Month YYYY>". Numbers match direct SQL against the underlying tables/views for the current `year`.
+- [ ] "Released today" counts only `release_status = 'Released' AND release_date = CURRENT_DATE AND deleted_at IS NULL`.
+- [ ] "Pending release" counts every non-deleted consignment with `release_status != 'Released'` — across all years (no year filter on this KPI).
+- [ ] "Stuck > 48h" matches `SELECT COUNT(*) FROM v_stuck_stages` capped at 10 (display truncates to top 10; the count shown is the rendered list length).
+- [ ] "Revenue · <month>" sums `consignments.amount` where `release_status = 'Released' AND release_date >= first-of-current-month AND amount IS NOT NULL AND deleted_at IS NULL`. Footer shows the exact value via `formatTzs`; the tile shows the compact form via `formatTzsCompact`.
+- [ ] **Pipeline funnel** bars show all 10 Action stages from `v_pipeline_funnel` for the current year (Manifest, Shipping, TANESWS, Assessment, TBS Load, TBS Debit, Mfst Comp, Duty, Inspection, Ready). Bar widths are relative to the largest single stage; minimum width 2% so empty stages remain visible.
+- [ ] Funnel footer shows `released` and `total_active` from the view.
+- [ ] **Top clients** lists the 5 highest `total_containers` from `v_client_volume` for the current year only. Each row shows client name, sub_label (when set), container count, and job count.
+- [ ] **Arrivals this week** lists consignments with `arrival_date` in the current Mon→Sun window (calendar week, not rolling 7 days), ordered ascending, capped at 20. Each row links to `/consignments/[id]`.
+- [ ] Week boundaries are inclusive of Monday 00:00 and exclusive of next Monday 00:00 — a Sunday-arrival consignment shows up, a next-Monday-arrival does not.
+- [ ] **Overdue jobs** lists the top 10 rows from `v_stuck_stages` ordered by `hours_stuck DESC`. Each row shows REF No, year, client, stage label (mapped from DB enum via `stageLabelFor`), relative `stuck_since`, and the integer hours stuck. Each row links to its consignment detail.
+- [ ] Empty states render gracefully: "No vessel arrivals scheduled this week", "✅ Nothing is stuck right now", "No client data yet for <year>".
+- [ ] When any of the 7 parallel queries errors, a red banner explains the partial failure but the other widgets still render with their fallback data.
+- [ ] **RLS sanity (D-026):** the page uses `getSupabaseServerClient` (user JWT). `grep -n "getSupabaseAdminClient" src/app/(app)/dashboard/` returns no matches. Admin-client allowlist stays at 3 sites.
+- [ ] **Viewer access:** a viewer (no write permissions) can load `/dashboard` and sees the same KPIs the data warrants. The sidebar "Dashboard" entry is unconditional (not gated by `roles`), so every signed-in user sees the link.
+- [ ] **Navigation:** the sidebar order is Dashboard → Pipeline → Consignments → Inbox → EFD Records → Reports → Settings. `/` continues to render the Kanban board (no route changes besides the new entry).
+- [ ] **Released-but-no-EFD flag** (PRD §8.14 / status.md follow-up): tracked separately as a Phase-4 follow-up; this dashboard does **not** yet surface it. Mark this row N/A and link the follow-up task ID when it lands.
+
+---
+
 ## V-AUDIT — Audit trail
 
 - [ ] Every UPDATE on a tracked table produces one row per changed column in `audit_log`.

@@ -172,7 +172,7 @@ export default function ConsignmentsClient({
         >
           <option value="">All statuses</option>
           <option value="unreleased">Unreleased only</option>
-          <option value="stuck">Waiting (no action)</option>
+          <option value="stuck">Stuck &gt; 48h</option>
         </select>
 
         {/* Search */}
