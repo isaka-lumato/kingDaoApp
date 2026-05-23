@@ -467,4 +467,50 @@ The UI still displays the linked ref_no via `consignments c left join consignmen
 
 ---
 
+## D-031 — Stuck-alert dedup via `stuck_alerts` ledger table
+
+**Date:** 2026-05-23
+**Status:** Active — supports T-053.
+
+**Decision:** Track which `(consignment_id, stage)` pairs have already been emailed in a dedicated `public.stuck_alerts` table. The alerts edge function calls two SQL helpers on every run:
+
+1. `reset_resolved_stuck_alerts()` — DELETE ledger rows whose pair no longer appears in `v_stuck_stages` (the stage has been advanced out of Action). Returning to Action later is then re-alertable.
+2. `claim_new_stuck_alerts()` — `INSERT … FROM v_stuck_stages ON CONFLICT DO NOTHING RETURNING …`. Atomic claim; concurrent invocations cannot return the same row.
+
+**Why a table, not a time-window heuristic:** A heuristic like "alert when elapsed crosses 48h in the last 30 min" is fragile — missed cron runs (Supabase Functions cold starts, deploy windows) silently drop alerts; clock drift can double-fire. The ledger turns the question into a SQL set difference that's correct regardless of how many times the function runs or how long since the last run.
+
+**Why DELETE on resolve rather than `resolved_at` flag:** The simplest correct semantic is "if you're not in `stuck_alerts` and you are in `v_stuck_stages`, you're new". DELETE keeps the table small (one row per currently-stuck pair) and makes `claim_new_stuck_alerts()` a single ON CONFLICT statement. The `resolved_at` column on the table is reserved for future analytics ("how long was each job in stuck state?") and is left null in v1.
+
+**RLS:** SELECT for authenticated (admins occasionally want to see what's been alerted). No INSERT/UPDATE/DELETE policies — the table is mutated only via the `SECURITY DEFINER` helpers, which the edge function calls with the service role.
+
+---
+
+## D-032 — Stuck-job alerts go to admins as a digest, not per-job
+
+**Date:** 2026-05-23
+**Status:** Active — supports T-053.
+
+**Decision:** Each scheduled run of the alerts function sends **at most one digest email per admin user**, listing every newly-stuck `(cid, stage)` claimed on that run. Admins are resolved at run time as every user assigned to the `admin` role via `public.user_roles` + `public.roles`. Their emails are looked up via the Supabase Auth Admin API (`auth.admin.getUserById`).
+
+**Why a digest:** A small Tanzanian customs office has ~5–15 active consignments and 1–3 admins. Per-row emails would flood inboxes during a bad week (vessel delay → 10 jobs stuck simultaneously). One digest per admin per 30-min run is the equivalent of a status report.
+
+**Why not a single ops mailbox:** PRD §6.8 says "notify admin". Hard-coding one address (a) couples the alert to whoever owns that mailbox today (b) hides admins from the loop when they're added. Resolving the admin role dynamically means new admins start receiving alerts automatically.
+
+**Sender:** `ALERTS_FROM` env var on the edge function. In dev/sandbox this is Resend's default sender (H-004); for production we'll switch to a verified domain sender (H-008).
+
+---
+
+## D-033 — Resend HTTP API direct from edge function, no SDK
+
+**Date:** 2026-05-23
+**Status:** Active — supports T-053.
+
+**Decision:** The alerts edge function POSTs directly to `https://api.resend.com/emails` via `fetch`. We do **not** pull in `resend` / `@resend/node` or any third-party SDK.
+
+**Why:** The Supabase Functions runtime is Deno-based, cold-start sensitive, and limited to `https://esm.sh` for third-party modules. The Resend HTTP API is a single endpoint with a tiny JSON body — wrapping it in an SDK adds ~100 KB of bundled code and one more dependency to keep current. A 20-line `sendViaResend(...)` helper is clearer, cheaper, and easier to audit.
+
+**Trade-off:** We re-implement small things the SDK gives us (typed error shapes, retries). The function logs every non-2xx response from Resend with the status + first 500 chars of the body, which is enough to debug a misconfigured API key or rate-limit. Retries are intentionally not added in v1 — the cron re-fires in 30 min and `claim_new_stuck_alerts` is idempotent across retries.
+
+---
+
 <!-- Append new decisions below this line. Number sequentially. -->

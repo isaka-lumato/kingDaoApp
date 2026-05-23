@@ -151,6 +151,25 @@ T-054 gates. Run when touching `src/app/(app)/dashboard/`, the navigation order 
 
 ---
 
+## V-ALERT — Stuck-job alerts edge function
+
+T-053 gates. Run when touching `supabase/functions/alerts/`, `stuck_alerts`, `claim_new_stuck_alerts()`, `reset_resolved_stuck_alerts()`, or the cron schedule on the dev Supabase project.
+
+- [ ] **Migration applied.** `supabase migration list --linked` shows `20260523163840_stuck_alerts`. `stuck_alerts` table exists in `kdl-tracker-dev` with PK `(consignment_id, stage)` and one index on `alerted_at desc`. RLS enabled with SELECT-only policy for `authenticated`.
+- [ ] **Generated types refreshed.** `Database['public']['Tables']['stuck_alerts']` and `Database['public']['Functions']['claim_new_stuck_alerts']` are present in `src/types/supabase.ts`.
+- [ ] **Bearer-token gate.** A POST to the function's URL without the `Authorization: Bearer <ALERTS_CRON_SECRET>` header returns `401 Unauthorized`. With the correct header it proceeds.
+- [ ] **Empty case.** Running the function when nothing is in `v_stuck_stages` returns `{"sent":0,"claimed":0,"reset":<n>}` and sends no email.
+- [ ] **First-fire case (T-053 acceptance).** Backdating any `stage_history` row to 49h ago so the row appears in `v_stuck_stages`, then invoking the function, returns `claimed:1` and `sent:<admin-count>`. One digest email lands in each admin inbox within ~10s.
+- [ ] **Dedup case.** Immediately invoking the function a second time with no DB change returns `claimed:0`. No email is sent.
+- [ ] **Re-alert case.** After Step 5 above, advance the stage out of Action via `advance_stage(...)`. Wait. Then backdate it again. The next function run returns `claimed:1` — the dedup ledger has been cleared by `reset_resolved_stuck_alerts()` because the pair left `v_stuck_stages` between runs.
+- [ ] **Digest format.** Email subject is `[KDL] <n> consignment(s) newly stuck`; body lists each row as REF · year · client · stage · hours, with a deep-link to `${APP_URL}/consignments/<id>` and a footer link to `${APP_URL}/dashboard`. Both `text` and `html` parts are present.
+- [ ] **Admin resolution.** Adding a new user to the `admin` role causes them to receive the next run's digest without redeploying the function. Removing a user from `admin` stops their emails on the next run.
+- [ ] **No new app-bundle deps.** `supabase/functions/alerts/index.ts` imports only `https://esm.sh/@supabase/supabase-js@…`. No SDK for Resend, no Node-only modules. Function file is excluded from the Next.js `tsconfig` (verify by `pnpm typecheck` succeeding with the file present).
+- [ ] **RLS / admin-client allowlist (D-026).** No new uses of `getSupabaseAdminClient` introduced in the Next.js app. Edge function uses the service-role key — this is expected and unrelated to D-026 (D-026 governs the Next.js app's RLS posture; edge functions run server-side with the service role by design).
+- [ ] **Cron schedule active.** `*/30 * * * *` schedule exists in Studio → Edge Functions → alerts → Schedules. The HTTP header is set to `Authorization: Bearer <ALERTS_CRON_SECRET>`. After at least one cron tick has elapsed, the function logs show one invocation per half-hour, each returning a JSON body.
+
+---
+
 ## V-AUDIT — Audit trail
 
 - [ ] Every UPDATE on a tracked table produces one row per changed column in `audit_log`.

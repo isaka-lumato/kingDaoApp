@@ -176,6 +176,117 @@ Once the app is live and you (as admin) can log in:
 
 ---
 
+## H-010 — Deploy the alerts edge function (T-053b)
+
+**Why:** The alerts edge function (`supabase/functions/alerts/`) is built and ready, but Claude can't deploy it. You need (1) a Resend account, (2) to set 3 secrets on the dev Supabase project, (3) to deploy the function, (4) to enable the 30-min cron schedule.
+**Status:** [ ]
+
+### Prerequisites
+- H-004 done (Resend account + `RESEND_API_KEY`). If you haven't done H-004 yet, do that first — the steps are at the top of this file.
+- A verified sender in Resend. For dev/testing you can use Resend's sandbox sender; for production we'll switch to a verified `@kingdao.co.tz` domain in H-008.
+
+### Step 1 — Generate a cron secret
+The function is protected by a bearer token so nobody can hit the public URL and trigger emails. Generate a random 32+ character string:
+
+```powershell
+# PowerShell — generates a 48-char URL-safe random string
+$bytes = New-Object Byte[] 36; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes); [Convert]::ToBase64String($bytes) -replace '\+','-' -replace '/','_' -replace '=',''
+```
+
+Save the output as `ALERTS_CRON_SECRET` (you'll need it twice: once when setting the secret, once when configuring the cron schedule).
+
+### Step 2 — Set the function secrets
+
+```powershell
+# From the repo root. Substitute real values for the three placeholders.
+supabase secrets set RESEND_API_KEY=re_xxxxxxxxxxxxxxxxxxxx --project-ref vmkhiahoytuqnjpcxwrb
+supabase secrets set ALERTS_FROM="alerts@yourdomain.com" --project-ref vmkhiahoytuqnjpcxwrb
+supabase secrets set ALERTS_CRON_SECRET="<the string from Step 1>" --project-ref vmkhiahoytuqnjpcxwrb
+supabase secrets set APP_URL="https://your-vercel-deploy.vercel.app" --project-ref vmkhiahoytuqnjpcxwrb
+```
+
+`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are injected by the Functions runtime automatically — do not set them yourself.
+
+For dev/testing **before T-083** (Vercel deploy), `APP_URL` can be `http://localhost:3000` — links in the email won't be reachable from your phone but the function still works.
+
+### Step 3 — Deploy the function
+
+```powershell
+supabase functions deploy alerts --project-ref vmkhiahoytuqnjpcxwrb
+```
+
+This uploads `supabase/functions/alerts/index.ts` to the dev project. The first deploy takes ~30 seconds.
+
+### Step 4 — Smoke-test the function
+
+Invoke the function manually to confirm it's reachable and the secrets are wired:
+
+```powershell
+$secret = "<the string from Step 1>"
+$projectRef = "vmkhiahoytuqnjpcxwrb"
+curl -X POST "https://$projectRef.supabase.co/functions/v1/alerts" `
+  -H "Authorization: Bearer $secret"
+```
+
+Expected response (if nothing is stuck right now):
+
+```json
+{"sent":0,"claimed":0,"reset":0}
+```
+
+If you see `Unauthorized`, the bearer token doesn't match the secret. If you see `RESEND_API_KEY and ALERTS_FROM must be set`, redo Step 2.
+
+### Step 5 — Acceptance test (the T-053 acceptance line)
+
+1. In SQL (Supabase Studio → SQL editor on `kdl-tracker-dev`), pick any consignment that's currently in an Action state for some stage, and backdate it 49 hours:
+
+   ```sql
+   -- Replace <CID> with a real consignment_id from your data.
+   -- Pick a stage that's currently in 'Action' on that row.
+   update public.stage_history
+     set occurred_at = now() - interval '49 hours'
+     where consignment_id = '<CID>'
+       and stage = 'tanesws'
+       and to_value = 'Action'
+     order by occurred_at desc
+     limit 1;
+   ```
+
+2. Verify the row appears in the view:
+
+   ```sql
+   select consignment_id, stage, hours_stuck
+   from public.v_stuck_stages
+   where consignment_id = '<CID>';
+   ```
+
+3. Invoke the function (same curl as Step 4). You should see `"claimed": 1` and `"sent": <number-of-admins>`. Each admin should receive an email within ~10 seconds.
+
+4. Invoke the function a second time **without** changing anything. You should see `"claimed": 0` — the dedup ledger is working.
+
+### Step 6 — Schedule the cron
+
+Supabase has a built-in scheduler for functions. Two options:
+
+**Option A — Dashboard UI (recommended for now):**
+
+1. Open Supabase Studio → **Edge Functions** → **alerts** → **Schedules** tab.
+2. Click **Add schedule**.
+3. **Name:** `alerts-30min`
+4. **Schedule (cron):** `*/30 * * * *` (every 30 minutes)
+5. **HTTP Headers:** add `Authorization: Bearer <the string from Step 1>`
+6. Save.
+
+**Option B — SQL (`pg_cron` + `pg_net`):** the same setup as a SQL block; deferred to a future task if you prefer everything-in-migrations.
+
+### Step 7 — Confirm the schedule is live
+
+After ~30 minutes, check the function logs in Studio → **Edge Functions** → **alerts** → **Logs**. You should see one invocation per half-hour, each returning a JSON body.
+
+**Tell Claude when done:** "H-010 done — function deployed, cron scheduled, smoke test passed." Claude will mark T-053 fully done (currently `[~]` at the T-053a code-complete state).
+
+---
+
 ## Notes / blockers
 
 > Use this section to write down anything that didn't go to plan, errors you hit, decisions you want to revisit, etc. Claude will read this before suggesting fixes.

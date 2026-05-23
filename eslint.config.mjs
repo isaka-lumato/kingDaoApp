@@ -14,6 +14,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Machine-generated files:
     "src/types/supabase.ts",
+    // Deno-runtime edge functions — not part of the Next.js app bundle.
+    "supabase/functions/**",
   ]),
 ]);
 

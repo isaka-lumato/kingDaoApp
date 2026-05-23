@@ -623,6 +623,49 @@ export type Database = {
           },
         ]
       }
+      stuck_alerts: {
+        Row: {
+          alerted_at: string
+          consignment_id: string
+          resolved_at: string | null
+          stage: Database["public"]["Enums"]["pipeline_stage"]
+        }
+        Insert: {
+          alerted_at?: string
+          consignment_id: string
+          resolved_at?: string | null
+          stage: Database["public"]["Enums"]["pipeline_stage"]
+        }
+        Update: {
+          alerted_at?: string
+          consignment_id?: string
+          resolved_at?: string | null
+          stage?: Database["public"]["Enums"]["pipeline_stage"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stuck_alerts_consignment_id_fkey"
+            columns: ["consignment_id"]
+            isOneToOne: false
+            referencedRelation: "consignments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stuck_alerts_consignment_id_fkey"
+            columns: ["consignment_id"]
+            isOneToOne: false
+            referencedRelation: "v_pending_refunds"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stuck_alerts_consignment_id_fkey"
+            columns: ["consignment_id"]
+            isOneToOne: false
+            referencedRelation: "v_stuck_stages"
+            referencedColumns: ["consignment_id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           assigned_at: string
@@ -850,6 +893,20 @@ export type Database = {
         Args: { p_column: string; p_table: string }
         Returns: boolean
       }
+      claim_new_stuck_alerts: {
+        Args: never
+        Returns: {
+          client_name: string
+          consignment_id: string
+          hours_stuck: number
+          ref_no: string
+          stage: Database["public"]["Enums"]["pipeline_stage"]
+          stuck_since: string
+          stuck_value: string
+          vessel_name: string
+          year: number
+        }[]
+      }
       force_set_stage: {
         Args: {
           p_id: string
@@ -905,6 +962,7 @@ export type Database = {
         }
       }
       is_admin: { Args: never; Returns: boolean }
+      reset_resolved_stuck_alerts: { Args: never; Returns: number }
       seed_operator_consignment_perms: { Args: never; Returns: undefined }
       seed_viewer_consignment_perms: { Args: never; Returns: undefined }
     }
