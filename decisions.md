@@ -513,4 +513,38 @@ The UI still displays the linked ref_no via `consignments c left join consignmen
 
 ---
 
+## D-034 — Mobile pipeline view: single-stage list + tap-to-advance, not DnD kanban
+
+**Date:** 2026-05-24
+**Status:** Active — supports T-080 (mobile responsive pass) and a new T-086 (mobile pipeline view).
+
+**Decision:** On viewports below the `md` breakpoint (`< 768px`), `/` (the Pipeline route) does **not** render the 10-column DnD kanban. Instead it renders:
+
+1. A sticky stage selector at the top of the page — segmented control or dropdown listing the 10 pipeline stages plus a "Released" tab — defaulting to the first stage with at least one card the user can act on (fall back to `Manifest`).
+2. A vertical list of cards for the selected stage only (same card component as desktop, full-width).
+3. Tapping a card opens an action sheet with: "Open detail" → `/consignments/[id]`, and **"Advance to next stage"** (admin/operator only, hidden for viewers per D-029). The advance action calls the existing `advanceStageAction` server action — same RPC, same RLS, same prerequisite checks as desktop DnD.
+4. Backward moves (admin only) live in the action sheet as "Move to stage…" → opens the existing `forceSetStageAction` dialog. Reason input is required, same as desktop.
+
+The desktop kanban (`md` and up) is unchanged.
+
+**Why ditch DnD on mobile:** Touch-dragging a card across 10 horizontal columns on a 375px viewport is unworkable. `@dnd-kit`'s touch sensor handles single-column DnD fine but the cross-column UX requires horizontal scrolling the board *while* dragging, which fights the browser's own scroll gesture. PRD §11 calls for the app to "work on mobile" — that's a usability bar, not a "render the desktop layout shrunk down" bar.
+
+**Why a single-stage list, not a swipeable carousel of mini-columns:** Pipeline overview is already covered by `/dashboard` (funnel chart, KPI tiles) and per-user focus is covered by `/inbox`. The mobile Pipeline view's remaining job is "let me move my card forward" — which a list + button does better than any DnD substitute. A carousel adds a navigation layer (swipe between stages) without adding capability over a sticky stage picker.
+
+**Alternative considered:**
+- *Long-press card → "Move to…" picker on the existing horizontal-scroll kanban.* Rejected: still requires horizontal-scrolling 10 columns to find the card; the picker duplicates what a single-stage view already gives you.
+- *Hide the kanban on mobile and force users to `/consignments` table.* Rejected: the table is dense and filter-driven; the pipeline view's signature affordance ("here's what's in my stage") disappears.
+- *Render only the user's actionable stages.* Rejected: too clever — admins want to see every stage; the sticky selector handles this with one tap.
+
+**Implementation notes (for T-086):**
+- Reuse `kanban-card.tsx`'s presentational pieces; do not reuse `useSortable`/`useDroppable`.
+- The stage selector reads the same `PIPELINE_STAGES` constant the kanban does (`lib/pipeline.ts`).
+- Realtime: subscribe to `consignments` changes (same channel as desktop) and re-merge into the visible list via `setQueryData`, same as the kanban does — when a card advances out of the selected stage, it disappears from the list.
+- Action-sheet "Advance" must surface server-action errors (prerequisite failures from `advance_stage()`) as a toast, same as desktop drag-end.
+- The `< md` switch happens in the page component, not via CSS — we don't want `@dnd-kit` mounting at all on mobile (it bumps a module-level counter that's already a known hydration warning source; see `status.md`).
+
+**Out of scope for D-034:** Mobile-specific designs for `/inbox`, `/consignments`, `/efd`, `/dashboard`, and the consignment detail view. Those are covered by T-080's broader mobile pass.
+
+---
+
 <!-- Append new decisions below this line. Number sequentially. -->

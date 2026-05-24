@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { fetchKanbanData } from "@/server/actions/consignments";
-import { type StageField } from "@/lib/pipeline";
-import KanbanBoard from "./kanban-board";
+import KanbanBoardClient from "./kanban-board-client";
 
 export const metadata: Metadata = { title: "Pipeline — KDL Tracker" };
 
@@ -15,5 +14,5 @@ export default async function KanbanPage({
 
   const { byStage, error } = await fetchKanbanData(year);
 
-  return <KanbanBoard byStage={byStage} year={year} fetchError={error} />;
+  return <KanbanBoardClient byStage={byStage} year={year} fetchError={error} />;
 }
