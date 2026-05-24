@@ -187,10 +187,18 @@ Two cleanup tasks identified during the post-Phase-3 audit. Both must be done be
 
 ## Phase 5 — Excel import
 
-- [ ] **T-060** 📥 Build the **Excel parser** (`src/server/import/parse-tracker.ts`) — handles year separators, decimal time, Excel serial dates, multiple EFD codes per cell, empty-row skipping, REF No left-padding.
-  - Accept: Unit tests cover every parsing rule from PRD §10.3 + §8.20; given a sample of `TRACKER_--_KDL.xlsx`, returns the expected row count.
-- [ ] **T-061** 📥 Build the **import UI** (`/import`) — file upload, preview table with per-row validation, "Confirm" commits via server action, "Cancel" discards.
-  - Accept: Uploading a malformed row shows the error inline; only valid rows commit when confirmed; an `import_jobs` audit row is created.
+- [x] **T-060** 📥 Build the **Excel parser** (`src/server/import/parse-tracker.ts`) — handles year separators, decimal time, Excel serial dates, multiple EFD codes per cell, empty-row skipping, REF No left-padding. Done 2026-05-24.
+  - Accept: Unit tests cover every parsing rule from PRD §10.3 + §8.20. ✓ 28 Vitest cases in `tests/unit/parse-tracker.test.ts` cover: year separators (3 cases), empty-row skip (2), Excel serial + dd/mm/yyyy + Date dates (3), decimal time + HH:MM strings (2), multi-EFD comma + abbreviated prefix expansion (3), REF No padding + non-numeric + over-long errors (3), container_type validation + case-insensitivity (2), §8.5 cross-field warnings — 40FT band / CAR-with-in_ref / COIL-non-DPWORLD (3), §8.19 TANSAD-missing warning (1), enum coercion + whitespace tolerance + blank-as-Waiting (3), header resolution case-insensitive + missing-required (2), and summary counts (1).
+  - Real-fixture row-count check is deferred to T-061 (UI adapter wires SheetJS to read `TRACKER -- KDL.xlsx`). Parser stays pure per D-035.
+  - D-035 logged: parser is pure over `CellValue[][]`; SheetJS lives in T-061/T-062 adapters.
+  - D-036 logged: header-driven column resolution + two-bucket `errors` / `warnings` output.
+  - Gates: typecheck clean, lint 0 errors / 5 pre-existing warnings, 35/35 unit tests (was 7/7).
+- [x] **T-061** 📥 Build the **import UI** (`/import`) — file upload, preview table with per-row validation, "Confirm" commits via server action, "Cancel" discards. Done 2026-05-24.
+  - Accept (PRD §9.3 / D-037): ✓ Upload `.xlsx` → SheetJS adapter (`workbookToRows`) → `parseTracker` → preview panel with errors/warnings/auto-create chips + first-25 row sample. ✓ Confirm commits row-by-row via `commitImportAction`, auto-creating missing clients/ICDs (case-insensitive `ilike` lookup, in-process cache). ✓ One `import_jobs` audit row per attempt: created on preview as `status='previewed'`, updated to `'committed'` or `'failed'` on confirm with `inserted_count` + per-row failure details in `payload`.
+  - Built: `src/server/import/import-actions.ts` (preview + commit server actions), `src/app/(app)/import/page.tsx` (server gate — admin+operator), `src/app/(app)/import/import-client.tsx` (form + preview + outcome panels). `xlsx@0.18.5` added (server-only — never imported by client components). Sidebar nav entry "Import" between EFD and Reports (role-gated `["admin","operator"]`).
+  - Migration: `20260524181824_import_jobs.sql` applied to dev. Table `import_jobs(id, user_id, filename, status, parsed_count, errors_count, warnings_count, inserted_count, payload jsonb, created_at, committed_at)` with audit trigger + RLS (admin SELECT all; operator SELECT own; admin+operator INSERT/UPDATE own).
+  - D-037 logged: row-by-row commit + auto-create clients/ICDs + `import_jobs` audit table.
+  - Gates: typecheck clean, lint 0 errors / 5 pre-existing warnings, 35/35 unit tests, `pnpm build` succeeds with `/import` in the route manifest, Supabase advisors clean for the new table (no new findings introduced).
 - [ ] **T-062** 📥 Build the **CLI importer** (`scripts/import-tracker.ts`) — same parser, designed for the initial bulk historical load.
   - Accept: `pnpm tsx scripts/import-tracker.ts ./TRACKER_--_KDL.xlsx` runs end-to-end on local Supabase with all PRD §13 reference data already seeded.
 

@@ -547,4 +547,86 @@ The desktop kanban (`md` and up) is unchanged.
 
 ---
 
+## D-035 — Excel parser is pure over `CellValue[][]`, SheetJS lives in adapters
+
+**Date:** 2026-05-24
+**Status:** Active — supports T-060 / T-061 / T-062.
+
+**Decision:** `src/server/import/parse-tracker.ts` exports a pure function `parseTracker(rows: CellValue[][])` that returns `{ consignments, efds, errors, warnings, summary }`. It does **not** import `xlsx` (SheetJS) or read files. Reading the workbook → 2D array of cell values is the job of two thin adapters:
+
+- T-061 (UI) — a server action accepts an uploaded file, runs `XLSX.read(...)`, calls `XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true })`, hands rows to `parseTracker`.
+- T-062 (CLI) — `scripts/import-tracker.ts` does the same, against a local path.
+
+**Why:** Three reasons.
+
+1. **Testability.** Unit tests for every PRD §10.3 / §8.20 rule can build the input as plain TypeScript arrays — no `.xlsx` fixtures committed, no SheetJS in the test runner, no flake on cell-type coercion. Per the T-060 question round we chose synthetic fixtures only.
+2. **Smaller blast radius.** SheetJS is ~500KB and brings WASM. Keeping it out of the parser means the parser stays cheap to import from anywhere (e.g. a row-by-row preview validator in T-061's UI). It also defers the dep install — `xlsx` is still the locked choice per CLAUDE.md §2, but we don't add it until T-061 lands.
+3. **Forward compatibility with `exceljs` (writer).** PRD §6.9 reports export via `exceljs`. Keeping read/write libs in adapter modules means we don't accidentally couple the parser to one library.
+
+**`CellValue` shape:** `string | number | boolean | Date | null`. Matches `XLSX.utils.sheet_to_json(..., { raw: true })` output. Adapters are responsible for surface-level normalisation (e.g. stripping leading apostrophes from text-formatted numbers); the parser still defends against ambiguity by coercing once at the field level.
+
+**Trade-off:** Adapters are tested separately at T-061 / T-062 time (smaller surface — just "did the workbook open and yield the right shape"). The risk of a SheetJS quirk slipping past is bounded because each adapter passes rows through the same `parseTracker` and the same per-rule errors fire downstream.
+
+---
+
+## D-036 — Excel parser is header-driven, two-bucket output (errors block, warnings inform)
+
+**Date:** 2026-05-24
+**Status:** Active — supports T-060.
+
+**Decision:**
+
+1. **Column resolution is header-driven**, not positional. Each yearly section is expected to begin with a header row whose cells contain the labels from PRD §5's "Source Column" column (e.g. `REF No`, `TANSAD No.`, `B/L No.`, `No. of Cont(s)`, `CLIENT`, …). Matching is case-insensitive and whitespace-tolerant (collapses runs of spaces, trims, ignores trailing punctuation `.`/`:`).
+2. Year-separator rows (a single non-empty cell whose value parses as a 4-digit year, all other cells empty) flip the active year. The next non-empty row is treated as the section header.
+3. **Output is two buckets**:
+   - `errors[]` — the row was **not** included in `consignments`. Reasons: missing `ref_no` *and* missing `tansad_no` (treated as empty per PRD §10.3, but classified as `skipped`, not `error`); year never established before the first data row; unrecoverable parse (e.g. `container_type` value not in the enum and not blank).
+   - `warnings[]` — the row **was** included in `consignments` but has a soft issue worth surfacing in the import UI. Examples: amount outside the §8.5 range for the container type + count; `ref_no` < 7 digits and was auto-padded with leading `9` (PRD §8.20 "flag for manual review"); `tanesws_status = Done` but `tansad_no` is null (§8.19); `container_type = COIL` but `icd_name ≠ DP WORLD` (§8.5).
+4. Each entry in either bucket carries `{ rowIndex, refNo?, field?, message }`. `rowIndex` is the 0-based offset into the input `rows` array — the UI can map back to the user's file line number by adding 1 (or +2 if it wants 1-based Excel rows including the header).
+5. **Skipped rows** (empty rows per §10.3, and year-separator rows) are not errors. They're counted in `summary.skipped` and don't appear in either bucket.
+
+**Why header-driven:** Future tracker files may have columns added/removed/reordered without breaking the import. Position-based parsing means every tracker variation requires a code change. The PRD lists 28 source columns; matching by header keeps the parser robust to small layout drift.
+
+**Why two buckets:** PRD §8.5 explicitly says amount-out-of-range is "yellow warning, not a hard block." Combining errors + warnings into one severity-tagged list (the alternative) forces every UI caller to filter twice. Two buckets means the T-061 preview can render them in two distinct panels with no logic.
+
+**Open question for T-061 (not T-060):** Whether warnings should require operator acknowledgement before "Confirm import" enables, or just display. Defer.
+
+---
+
+## D-037 — Excel import commit: row-by-row, auto-create missing clients/ICDs, `import_jobs` audit row
+
+**Date:** 2026-05-24
+**Status:** Active — supports T-061.
+
+**Decision:** The "Confirm import" server action commits as follows:
+
+1. **One row at a time, per-row error capture.** Uses `getSupabaseServerClient()` (user JWT, RLS applies). For each parsed consignment row: resolve client_name → client_id and icd_name → icd_id (case-insensitive `name ilike` lookup, plus an in-process cache so a 400-row import does at most one query per distinct client/ICD); insert the consignment row; insert any EFD records from `efd_codes`. A failure on one row records the row index + error message in the job's payload and continues. Final stats: `{ inserted, skipped, errors }`.
+
+2. **Auto-create missing clients and ICDs.** If `client_name` doesn't match an existing `clients.name` (case-insensitive), insert `{ name: uppercased(client_name), sub_label: null }` and use the new id. Same for ICDs (insert `{ location: titleCased(icd_name) }`). Each auto-create is recorded in the job payload under `auto_created: { clients: [...], icds: [...] }` so an admin can review afterwards. This reflects how the existing tracker grew organically; PRD §13.1 explicitly notes the reference lists were "from source data."
+
+3. **`import_jobs` audit table.** New migration adds:
+   ```
+   import_jobs(
+     id uuid pk default gen_random_uuid(),
+     user_id uuid references auth.users(id),
+     filename text,
+     status text check (status in ('previewed','committed','failed')),
+     parsed_count int,
+     errors_count int,
+     warnings_count int,
+     inserted_count int,
+     payload jsonb,             -- full preview snapshot: errors, warnings, summary, auto_created
+     created_at timestamptz default now(),
+     committed_at timestamptz
+   );
+   ```
+   RLS: admins SELECT all; non-admins SELECT only their own rows. INSERT/UPDATE permitted to admin + operator (the roles allowed to import). The preview server action inserts a `previewed` row; the confirm action updates it to `committed` with `committed_at` + `inserted_count`. This gives us a complete record of every import attempt without coupling to the consignments audit log.
+
+**Why row-by-row over an atomic RPC:** A single transactional `commit_import(payload jsonb)` RPC is safer (all-or-nothing) but pushes client_name resolution and FK lookups into SQL, which is harder to test and slower to evolve. With ~400 rows/year and the parser already weeding out hard errors before commit, partial commits are the right trade — the operator sees exactly which rows failed and can fix them in the source sheet.
+
+**Why auto-create:** Blocking on unknown FKs sounds safer but in practice means a typo in one row (e.g. `PAPA - SAAJT` vs `PAPA-SAAJT`) cascades into "fix all rows, re-upload" loops. Auto-creating + flagging in the preview lets an admin reconcile after the fact (merge two near-duplicate clients) — far less friction. Trade-off accepted: occasional duplicate client rows that an admin merges manually.
+
+**Preview is read-only.** Uploading the file and parsing happens entirely in the server action; nothing writes to the DB until "Confirm." The preview response is the parsed shape (consignments / errors / warnings / summary / auto_create previews) — same JSON the confirm step will use.
+
+---
+
 <!-- Append new decisions below this line. Number sequentially. -->

@@ -479,6 +479,48 @@ export type Database = {
         }
         Relationships: []
       }
+      import_jobs: {
+        Row: {
+          committed_at: string | null
+          created_at: string
+          errors_count: number
+          filename: string | null
+          id: string
+          inserted_count: number
+          parsed_count: number
+          payload: Json | null
+          status: string
+          user_id: string | null
+          warnings_count: number
+        }
+        Insert: {
+          committed_at?: string | null
+          created_at?: string
+          errors_count?: number
+          filename?: string | null
+          id?: string
+          inserted_count?: number
+          parsed_count?: number
+          payload?: Json | null
+          status: string
+          user_id?: string | null
+          warnings_count?: number
+        }
+        Update: {
+          committed_at?: string | null
+          created_at?: string
+          errors_count?: number
+          filename?: string | null
+          id?: string
+          inserted_count?: number
+          parsed_count?: number
+          payload?: Json | null
+          status?: string
+          user_id?: string | null
+          warnings_count?: number
+        }
+        Relationships: []
+      }
       role_column_permissions: {
         Row: {
           can_read: boolean

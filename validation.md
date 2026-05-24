@@ -232,6 +232,35 @@ T-053 gates. Run when touching `supabase/functions/alerts/`, `stuck_alerts`, `cl
 
 ---
 
+## V-PARSER — Excel parser (T-060)
+
+Pure function, fully unit-tested. Re-run after any change to `src/server/import/parse-tracker.ts`:
+
+- [ ] `pnpm test tests/unit/parse-tracker.test.ts` — all 28 cases green.
+- [ ] No SheetJS / `xlsx` import in `parse-tracker.ts` — `grep -n xlsx src/server/import/parse-tracker.ts` is empty (D-035: parser stays pure; SheetJS lives in T-061/T-062 adapters).
+- [ ] Header alias map covers every PRD §5 "Source Column" name; `REQUIRED_HEADERS` is the smallest set that must be present (currently `ref_no` + `container_type`).
+- [ ] When the source tracker layout changes (new columns, renamed columns), update `HEADER_ALIASES`, add a Vitest case proving the new header maps to the right `LogicalField`, and only then ship.
+- [ ] `errors[]` represents rows excluded from import; `warnings[]` represents rows included with soft issues (D-036). Don't merge these into one bucket without bumping the decision.
+- [ ] Cross-field rules (§8.5, §8.19) are warnings only — never block import based on amount range or TANSAD-missing.
+
+---
+
+## V-IMPORT — Excel import UI (T-061)
+
+Run after any change to `/import`, `src/server/import/*`, or the `import_jobs` schema:
+
+- [ ] Visiting `/import` as a **viewer** redirects to `/dashboard` (server-side check in `page.tsx`); as **operator** or **admin** the page renders.
+- [ ] Uploading a file with header mismatches (e.g. drop the REF No column) produces an error in the preview panel, not a thrown stack trace.
+- [ ] Uploading the canonical tracker fixture shows: parsed > 0; auto-create chips empty (clients + ICDs already seeded per PRD §13); skipped includes year-separator + header rows.
+- [ ] Uploading a row with `client_name` not in `clients` shows the auto-create chip in the preview. After Confirm, the new client appears in `Settings → Clients` with `name` uppercased.
+- [ ] An `import_jobs` row is INSERTed with `status='previewed'` on upload; UPDATEd to `'committed'` on Confirm with `inserted_count` matching the success count and `committed_at` populated. As admin in Supabase Studio: `select status, parsed_count, inserted_count from import_jobs order by created_at desc limit 5;` should reflect recent imports.
+- [ ] As operator, `select * from import_jobs` returns only the operator's own jobs (RLS verified).
+- [ ] `xlsx` is **never** imported by a `"use client"` component (`grep -rn '"use client"' src | xargs grep -l xlsx` is empty). It must stay server-only — bundling SheetJS into the client would add ~500KB.
+- [ ] Confirm with zero parsed rows (all errors) does not produce an INSERT into `consignments`; the audit row's `status` ends as `'committed'` with `inserted_count=0` (a no-op confirm is allowed; the UI button is disabled when parsed=0, but the action must still be safe if called directly).
+- [ ] Auto-created clients/ICDs are sanity-checked manually for duplicates (e.g. `PAPA - SAAJT` vs `PAPA-SAAJT`) — per D-037 the trade-off is admin-merges-afterward; this is intentional but needs an occasional review.
+
+---
+
 ## V-DEPLOY — Production deployment
 
 - [ ] Migrations applied via `supabase db push`, never via Studio.
