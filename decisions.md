@@ -629,4 +629,48 @@ The desktop kanban (`md` and up) is unchanged.
 
 ---
 
+## D-038 — CLI tracker importer: admin client, dry-run default, no shared helper
+
+**Date:** 2026-05-26
+**Status:** Active
+
+**Decision:** T-062 ships `scripts/import-tracker.ts` as a Node CLI run via `tsx`, with:
+
+1. **Admin (service-key) client** built inline from `.env.local`, same pattern as `scripts/create-viewer-user.mjs`. Bypasses RLS. No login flow. Rows inserted by the CLI carry `audit_log.actor_id = NULL` because `auth.uid()` is null under the service role — this is acceptable for the historical bulk load because the `import_jobs` row (one per attempt) provides the operator/source/filename provenance instead.
+2. **Dry-run by default**, `--commit` required to write. `--commit` additionally requires typing `IMPORT` on stdin (skip with `--yes` for non-interactive runs). Belt-and-braces against an accidental `npm run import:tracker file.xlsx` flooding the DB.
+3. **`--no-auto-create` safety valve** — fails fast if any client or ICD would need to be created. Not in the UI; the CLI is the right place for the more conservative policy because the historical load runs on a freshly seeded project where every "missing" name probably indicates a typo worth investigating, not an intended new entity.
+4. **No shared `commit-rows.ts` helper** between `import-actions.ts` (UI) and `import-tracker.ts` (CLI). Two call sites is below the rule-of-three; the inner loops differ in auth model, revalidation, progress reporting, and the auto-create policy knob. If T-084 (prod import) introduces a third site, extract then.
+5. **No transaction wrapping** the commit loop. Same posture as `commitImportAction` — per-row inserts, failures captured in `import_jobs.payload.failures`. Postgres can hold a transaction over hundreds of rows, but the cross-table EFD inserts plus the FK auto-create branches make a single transaction harder to reason about than the current "loud per-row failures with full provenance in `import_jobs`" model.
+
+**Defaults locked by user (2026-05-26):** auth model = admin client; dry-run = default; target project = whatever's in `.env.local` (no project-switch flag — operator edits the env file or passes `--env-file`).
+
+**Why not authenticate the CLI as an operator:** Reading the operator's password / running a full Supabase Auth login from a CLI adds an interactive dance the historical load doesn't need. The CLI is admin-only by virtue of having the secret key on the operator's disk; gatekeeping access via filesystem permission on `.env.local` is the same posture every other one-off script in `scripts/` already uses.
+
+**Why not reuse the `/import` server action via fetch:** Would require the dev server up, would re-implement file-multipart uploads from Node, and would still need a separate admin-auth path. The CLI duplicates ~150 lines of `commitImportAction` and that's cheaper.
+
+**Verification surface:** V-IMPORT-CLI in `validation.md`.
+
+---
+
+## D-039 — Reports screen: date range only where the view supports it
+
+**Date:** 2026-05-26
+**Status:** Active
+
+**Decision:** The `/reports` filter bar always shows a year selector + From/To date inputs, but the date inputs are **disabled** for reports backed by year-grain views (Client Volume, Turnaround · by Client, Turnaround · by ICD, Pipeline Bottleneck). The disabled state carries an inline note ("Date range not applicable — this report is aggregated by year"). For Revenue Summary the range filters on the view's `month` column (`gte` / `lte` against the first-of-month date); for Pending Refunds it filters on `release_date`.
+
+**Why:** PRD §8.5 names "Date range picker" generically, but the underlying T-024 views were intentionally aggregated at the year level (the grain is correct for those reports — average days-by-client over an arbitrary 17-day window in March is meaningless). Two paths considered:
+
+1. **Show a date picker on every report and silently ignore the day part for year-grain reports.** Cleanest visual UI but lies to the user about what the filter does.
+2. **Drop the picker entirely.** Matches the data but ignores PRD §8.5.
+3. **(Chosen)** Show the picker, disable it where it's a no-op, explain why.
+
+This keeps PRD §8.5 satisfied while making the filter's effective scope visible. When/if the views are augmented to expose finer grain (e.g. `v_client_volume_monthly`), the disabled flag flips in `REPORT_OPTIONS` and the existing filter wiring picks it up without UI changes.
+
+**No new tasks or views planned to add finer grain in v1** — operators can drill into specific months via the `consignments` table filters and the dashboard's "Revenue this month" tile.
+
+**Verification surface:** V-REPORTS in `validation.md`.
+
+---
+
 <!-- Append new decisions below this line. Number sequentially. -->

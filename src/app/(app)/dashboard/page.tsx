@@ -4,6 +4,7 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { formatTzs, formatTzsCompact } from "@/lib/money";
 import { formatDate, formatRelative } from "@/lib/dates";
 import { PIPELINE_STAGES } from "@/lib/pipeline";
+import { perfTimer } from "@/lib/perf";
 
 export const metadata: Metadata = { title: "Dashboard — KDL Tracker" };
 
@@ -54,8 +55,31 @@ function clientName(c: ArrivalRow["clients"]): string {
   return c.name ?? "—";
 }
 
+// Per-query timer for the dashboard fan-out. Hoisted out of the page
+// component so the React purity rule doesn't flag `performance.now()` as
+// render-time work — this only runs inside awaited promises, which are not
+// considered part of the render.
+const PERF_ENABLED =
+  process.env.PERF_LOG === "1" ||
+  process.env.PERF_LOG === "true" ||
+  process.env.NODE_ENV !== "production";
+
+async function timedQuery<T>(label: string, p: PromiseLike<T>): Promise<T> {
+  if (!PERF_ENABLED) return p;
+  const start = performance.now();
+  try {
+    return await p;
+  } finally {
+    console.log(
+      `[perf] dashboard:${label} ${Math.round(performance.now() - start)}ms`,
+    );
+  }
+}
+
 export default async function DashboardPage() {
+  const t = perfTimer("dashboard");
   const supabase = await getSupabaseServerClient();
+  t.mark("supabase-client");
   const today = new Date();
   const year = today.getFullYear();
 
@@ -82,7 +106,10 @@ export default async function DashboardPage() {
   // Today window for "Released today".
   const todayISO = today.toISOString().slice(0, 10);
 
-  // Run every read in parallel.
+  // Run every read in parallel. Each query is wrapped in `timedQuery()` so
+  // the slow ones surface individually in the perf log; the whole
+  // `Promise.all` is also bracketed by `fanout-start` / `fanout-end`.
+  t.mark("fanout-start");
   const [
     funnelRes,
     releasedTodayRes,
@@ -93,58 +120,83 @@ export default async function DashboardPage() {
     stuckRes,
     totalActiveRes,
   ] = await Promise.all([
-    supabase
-      .from("v_pipeline_funnel")
-      .select("*")
-      .eq("year", year)
-      .maybeSingle(),
-    supabase
-      .from("consignments")
-      .select("id", { count: "exact", head: true })
-      .is("deleted_at", null)
-      .eq("release_status", "Released")
-      .eq("release_date", todayISO),
-    supabase
-      .from("consignments")
-      .select("id", { count: "exact", head: true })
-      .is("deleted_at", null)
-      .neq("release_status", "Released"),
-    supabase
-      .from("consignments")
-      .select("amount")
-      .is("deleted_at", null)
-      .eq("release_status", "Released")
-      .gte("release_date", monthStartISO)
-      .not("amount", "is", null),
-    supabase
-      .from("consignments")
-      .select(
-        "id, ref_no, year, vessel_name, arrival_date, container_count, container_type, clients(name)",
-      )
-      .is("deleted_at", null)
-      .gte("arrival_date", weekStartISO)
-      .lt("arrival_date", weekEndISO)
-      .order("arrival_date", { ascending: true })
-      .limit(20),
-    supabase
-      .from("v_client_volume")
-      .select("client_id, client_name, sub_label, total_containers, job_count")
-      .eq("year", year)
-      .order("total_containers", { ascending: false })
-      .limit(5),
-    supabase
-      .from("v_stuck_stages")
-      .select(
-        "consignment_id, ref_no, year, client_name, stage, hours_stuck, stuck_since",
-      )
-      .order("hours_stuck", { ascending: false })
-      .limit(10),
-    supabase
-      .from("consignments")
-      .select("id", { count: "exact", head: true })
-      .is("deleted_at", null)
-      .eq("year", year),
+    timedQuery(
+      "v_pipeline_funnel",
+      supabase
+        .from("v_pipeline_funnel")
+        .select("*")
+        .eq("year", year)
+        .maybeSingle(),
+    ),
+    timedQuery(
+      "released-today-count",
+      supabase
+        .from("consignments")
+        .select("id", { count: "exact", head: true })
+        .is("deleted_at", null)
+        .eq("release_status", "Released")
+        .eq("release_date", todayISO),
+    ),
+    timedQuery(
+      "pending-release-count",
+      supabase
+        .from("consignments")
+        .select("id", { count: "exact", head: true })
+        .is("deleted_at", null)
+        .neq("release_status", "Released"),
+    ),
+    timedQuery(
+      "revenue-month",
+      supabase
+        .from("consignments")
+        .select("amount")
+        .is("deleted_at", null)
+        .eq("release_status", "Released")
+        .gte("release_date", monthStartISO)
+        .not("amount", "is", null),
+    ),
+    timedQuery(
+      "arrivals-week",
+      supabase
+        .from("consignments")
+        .select(
+          "id, ref_no, year, vessel_name, arrival_date, container_count, container_type, clients(name)",
+        )
+        .is("deleted_at", null)
+        .gte("arrival_date", weekStartISO)
+        .lt("arrival_date", weekEndISO)
+        .order("arrival_date", { ascending: true })
+        .limit(20),
+    ),
+    timedQuery(
+      "v_client_volume",
+      supabase
+        .from("v_client_volume")
+        .select("client_id, client_name, sub_label, total_containers, job_count")
+        .eq("year", year)
+        .order("total_containers", { ascending: false })
+        .limit(5),
+    ),
+    timedQuery(
+      "v_stuck_stages",
+      supabase
+        .from("v_stuck_stages")
+        .select(
+          "consignment_id, ref_no, year, client_name, stage, hours_stuck, stuck_since",
+        )
+        .order("hours_stuck", { ascending: false })
+        .limit(10),
+    ),
+    timedQuery(
+      "total-active-count",
+      supabase
+        .from("consignments")
+        .select("id", { count: "exact", head: true })
+        .is("deleted_at", null)
+        .eq("year", year),
+    ),
   ]);
+  t.mark("fanout-end");
 
   const funnel = funnelRes.data;
   const releasedToday = releasedTodayRes.count ?? 0;
@@ -179,6 +231,8 @@ export default async function DashboardPage() {
     arrivalsRes.error ||
     topClientsRes.error ||
     stuckRes.error;
+
+  t.end();
 
   return (
     <div className="space-y-6">

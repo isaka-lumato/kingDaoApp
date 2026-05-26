@@ -15,7 +15,8 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "gen:types:dev": "supabase gen types typescript --project-id vmkhiahoytuqnjpcxwrb > src/types/supabase.ts",
-    "gen:types:prod": "supabase gen types typescript --project-id wmipzsldwnyyweerpcmd > src/types/supabase.ts"
+    "gen:types:prod": "supabase gen types typescript --project-id wmipzsldwnyyweerpcmd > src/types/supabase.ts",
+    "import:tracker": "tsx scripts/import-tracker.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
@@ -30,6 +31,7 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.2.1",
     "date-fns-tz": "^3.2.0",
+    "exceljs": "^4.4.0",
     "lucide-react": "^1.16.0",
     "next": "16.2.6",
     "react": "19.2.4",
@@ -52,6 +54,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",
+    "tsx": "^4.19.2",
     "typescript": "^5",
     "vitest": "^4.1.6"
   }

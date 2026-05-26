@@ -45,9 +45,21 @@ export async function middleware(request: NextRequest) {
   });
 
   // MUST call getUser() before any redirect — refreshes the session token.
+  // Perf: this is a round-trip to the Supabase Auth server (not just DB) and
+  // is suspected to be a major contributor to navigation latency. Timed here
+  // so we can see it in the server logs when PERF_LOG is on.
+  const perfStart =
+    process.env.PERF_LOG === "1" || process.env.PERF_LOG === "true" || process.env.NODE_ENV !== "production"
+      ? performance.now()
+      : null;
   const {
     data: { user },
   } = await supabase.auth.getUser();
+  if (perfStart !== null) {
+    console.log(
+      `[perf] middleware:getUser ${Math.round(performance.now() - perfStart)}ms path=${pathname}`,
+    );
+  }
 
   const authed = !!user;
   const pub = isPublic(pathname);

@@ -261,6 +261,72 @@ Run after any change to `/import`, `src/server/import/*`, or the `import_jobs` s
 
 ---
 
+## V-IMPORT-CLI — CLI tracker importer (T-062)
+
+Run after any change to `scripts/import-tracker.ts`, its npm script entry in `package.json`, or the shared `parseTracker` it depends on.
+
+- [ ] `pnpm typecheck`, `pnpm lint`, `pnpm test` all clean (script is included in the Next.js `tsconfig.json` glob via `**/*.ts`).
+- [ ] `pnpm import:tracker --help` prints the usage block and exits 0.
+- [ ] `pnpm import:tracker <missing>.xlsx` prints `Could not read input file: …` and exits 1.
+- [ ] Banner prints `DRY-RUN` (yellow) by default and the correct `DEV` / `PROD` / `UNKNOWN` label for the URL in `.env.local`. When `NEXT_PUBLIC_SUPABASE_URL` does not match either known project ID, the banner shows `UNKNOWN` and a warning is sent to stderr.
+- [ ] Dry-run against the real tracker (`pnpm import:tracker fixtures/TRACKER_--_KDL.xlsx`) prints parser summary, auto-create lists, and writes `tmp/import-preview-<ts>.json`. **Zero DB writes** — `select count(*) from import_jobs` is unchanged after the run.
+- [ ] `--no-auto-create` against a file containing unknown clients/ICDs exits non-zero with a clear listing.
+- [ ] `--commit` requires typing `IMPORT` on stdin; any other input aborts. When stdin is not a TTY and `--yes` is not passed, the script aborts with a clear message rather than silently committing.
+- [ ] Small-fixture commit (3 rows) inserts exactly 3 consignments visible at `/consignments`, on the kanban, and reflected in the `/dashboard` KPIs. The `import_jobs` row lands in `status='committed'` with `inserted_count=3`, `committed_at` set, and `payload.source='cli'`.
+- [ ] Re-running the same commit fails per-row on the `(ref_no, year)` unique constraint; the `import_jobs` row lands in `status='failed'` with `inserted_count=0` and `payload.failures[]` listing each offending row.
+- [ ] Admin client + audit log: rows inserted by the CLI carry `audit_log.actor_id = NULL` (expected per D-038 — the `import_jobs` row provides the provenance instead).
+- [ ] Progress indicator prints every 25 rows when stdout is a TTY; suppressed when piped.
+- [ ] Exit codes: `0` clean run; `1` arg / env / file errors; `2` commit completed with at least one row failure.
+- [ ] `getSupabaseAdminClient` is **not** introduced under `src/`. The CLI builds its own admin client inline (consistent with `scripts/create-viewer-user.mjs`). D-026 allowlist stays at 3 sites.
+- [ ] `tmp/.gitignore` excludes the dry-run preview dumps from version control.
+
+---
+
+## V-REPORTS — Reports screen (T-070)
+
+Run after any change to `src/app/(app)/reports/`, the T-024 views, or any of the underlying source tables. T-071 (XLSX) and T-072 (PDF) extend this surface and will append their own gates.
+
+- [ ] `/reports` renders without errors for an admin, operator, and viewer. The viewer can read (RLS allows SELECT on the views via the underlying tables' SELECT policies; mutations are still blocked).
+- [ ] Default load (`/reports` with no query string) selects Revenue Summary for the current year. URL after first interaction reflects the selected report + year via `?report=…&year=…`.
+- [ ] Year dropdown spans current year ± 3. Selecting a different year navigates without a full page reload (React `useTransition`).
+- [ ] **Date range applicability:** the From/To inputs are enabled only for Revenue Summary and Pending Refunds. On the other four reports the inputs are visibly disabled and an "italic" note reads "Date range not applicable — this report is aggregated by year."
+- [ ] **Revenue Summary** rows match `SELECT * FROM v_revenue_monthly WHERE year=$1 [AND month BETWEEN $from AND $to] ORDER BY month`. Totals row shows the sum of `consignment_count` and `formatTzs(sum(total_amount))`.
+- [ ] **Client Volume** rows match `SELECT * FROM v_client_volume WHERE year=$1 ORDER BY total_containers DESC`. Totals row shows summed jobs, containers, and revenue. Empty `sub_label` cells render no second line (no stray "—").
+- [ ] **Turnaround · by Client** rows are ordered `avg_days ASC` (fastest first). Released = 0 clients are excluded by the view's `WHERE release_status = 'Released'` filter.
+- [ ] **Turnaround · by ICD** rows match `v_turnaround_by_icd` for the selected year. ICDs with zero released consignments do not appear.
+- [ ] **Pipeline Bottleneck** lists all 10 Action stages from `v_pipeline_funnel` for the selected year. Each row shows the count and that stage's percentage of `total_active`. The footer shows `released` and `total_active` for the year.
+- [ ] **Pending Refunds** rows match `v_pending_refunds` for the selected year, sorted by `release_date DESC`. Date range filter applies to `release_date`. Totals row shows summed `amount`. Empty state reads "✅ No pending refunds for this period."
+- [ ] Every report has an explicit `EmptyRow` for "no rows match" and an `ErrorRow` for Supabase errors — no blank/silent tables.
+- [ ] **RLS sanity (D-026):** `getSupabaseAdminClient` is not introduced anywhere under `src/app/(app)/reports/`. The admin-client allowlist stays at 3 sites.
+- [ ] **Money formatting:** every shilling value uses `formatTzs` (not inline `Intl.NumberFormat`). Dates use `formatDate` (not raw ISO strings).
+- [ ] **Filter persistence:** changing the report selector keeps the year + date range in the URL where applicable. Year-only reports preserve `from`/`to` in the URL (so flipping back to a date-aware report restores them) but do not act on them.
+- [ ] **Generated types:** all six views are present in `Database['public']['Views']` of `src/types/supabase.ts`. No `as any` casts in the page file.
+- [ ] **Defer-to-T-071/T-072:** the footer note explicitly mentions exports are pending. The acceptance for T-071/T-072 will move this note into proper UI buttons.
+
+---
+
+## V-REPORTS-XLSX — XLSX export (T-071)
+
+Run after any change to `src/app/api/reports/[kind]/xlsx/route.ts`, `src/server/reports/`, or any T-024 view definition. Extends V-REPORTS.
+
+- [ ] Each of the six reports on `/reports` has a visible **Export XLSX** anchor in its header. Clicking it triggers a browser download of `kdl-<kind>-<year>[-<from>-<to>].xlsx` with the correct `Content-Type` (`application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`) and a `Content-Disposition: attachment` header.
+- [ ] Opening the downloaded file in Excel/LibreOffice: row 1 is the report title; row 2 is `Generated …` + filter summary; row 3 is blank; row 4 holds bolded headers; rows 5+ are data; freeze pane sits at row 4.
+- [ ] **Money** columns (Revenue.`total_amount`, Client Volume.`total_revenue`, Pending Refunds.`amount`) are numeric cells with `numFmt = "TSh"#,##0` — sortable, summable, and right-aligned by Excel's default treatment. They are NOT pre-formatted strings.
+- [ ] **Date** columns (Pending Refunds.`release_date`) are real `Date` cells with `numFmt = yyyy-mm-dd`. They sort chronologically, not lexically.
+- [ ] **Totals row** is present on Revenue, Client Volume, Pipeline Bottleneck, and Pending Refunds — matching the page's `TotalRow`. Turnaround · by Client and Turnaround · by ICD intentionally have no totals row.
+- [ ] **Empty result** (e.g. a year with no released consignments) downloads a valid workbook with the headers and a single sentinel cell `"No rows matched the filter."` at row 5. Not an error response.
+- [ ] **Filter range** is honoured on the date-aware reports: `/api/reports/revenue/xlsx?year=2026&from=2026-01-01&to=2026-03-31` and `/api/reports/pending_refunds/xlsx?year=2026&from=2026-02-01&to=2026-02-28` download only the matching rows; row 2 records the range. Year-grain reports ignore `from`/`to` per D-039.
+- [ ] **Auth gate.** `GET /api/reports/revenue/xlsx?year=2026` in an unauthenticated client returns `401`, not the workbook bytes. An authenticated viewer can download (RLS on the underlying views permits SELECT).
+- [ ] **Bad kind.** `/api/reports/bogus/xlsx?year=2026` returns `400` with JSON `{"error":"Unknown report kind: bogus"}`.
+- [ ] **Bad year.** Missing or non-numeric `year` falls back to the current year (matches the page's behavior); no `500`.
+- [ ] **Sheet name** strips Excel-forbidden characters and middle-dot, caps at 31 chars. Verified by `__sheetNameFor` Vitest cases.
+- [ ] **No SheetJS.** `grep -rn "from [\"']xlsx[\"']" src/app/api/ src/server/reports/ src/app/(app)/reports/` returns nothing. The writer is exceljs; SheetJS stays scoped to import-actions and the CLI script (D-035).
+- [ ] **RLS sanity (D-026).** `grep -rn "getSupabaseAdminClient" src/app/api/reports/ src/server/reports/ src/app/(app)/reports/` is empty. Admin-client allowlist stays at 3 sites.
+- [ ] **Tests.** `tests/unit/build-xlsx.test.ts` — 11/11 green. Total Vitest count ≥ 46.
+- [ ] **Build.** `pnpm build` includes `/api/reports/[kind]/xlsx` in the route manifest under `ƒ` (server-rendered on demand).
+
+---
+
 ## V-DEPLOY — Production deployment
 
 - [ ] Migrations applied via `supabase db push`, never via Studio.

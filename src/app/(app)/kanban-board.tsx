@@ -146,7 +146,7 @@ export default function KanbanBoard({ byStage, year, fetchError }: Props) {
           {/* Year selector */}
           <div className="flex rounded-lg border border-border overflow-hidden text-sm">
             {yearOptions.map((y) => (
-              <a
+              <Link
                 key={y}
                 href={`/?year=${y}`}
                 className={[
@@ -157,7 +157,7 @@ export default function KanbanBoard({ byStage, year, fetchError }: Props) {
                 ].join(" ")}
               >
                 {y}
-              </a>
+              </Link>
             ))}
           </div>
           <Link

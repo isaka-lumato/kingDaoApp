@@ -1,6 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { perfTimer } from "@/lib/perf";
 
 export type ColumnPermission = {
   tableName: string;
@@ -41,12 +42,18 @@ export type UserPermissions = {
  *    `role_column_permissions` query via `roles!inner(name)`.
  */
 async function getServerPermissionsImpl(): Promise<UserPermissions | null> {
+  const t = perfTimer("permissions");
   const supabase = await getSupabaseServerClient();
+  t.mark("supabase-client");
 
   // Local JWT verification — no Auth-server round-trip.
   const { data } = await supabase.auth.getClaims();
   const claims = data?.claims;
-  if (!claims) return null;
+  t.mark("getClaims");
+  if (!claims) {
+    t.end({ result: "no-claims" });
+    return null;
+  }
 
   const userId = claims.sub as string;
   const email = (claims.email as string | undefined) ?? null;
@@ -56,6 +63,7 @@ async function getServerPermissionsImpl(): Promise<UserPermissions | null> {
     .from("user_roles")
     .select("roles(name)")
     .eq("user_id", userId);
+  t.mark("user_roles");
 
   const roles: string[] =
     userRoles?.flatMap((r) => {
@@ -83,6 +91,7 @@ async function getServerPermissionsImpl(): Promise<UserPermissions | null> {
       .from("role_column_permissions")
       .select("table_name, column_name, can_read, can_write, roles!inner(name)")
       .in("roles.name", roles);
+    t.mark("role_column_permissions");
 
     // Merge: if any role grants write, the user can write.
     const merged = new Map<string, ColumnPermission>();
@@ -119,6 +128,8 @@ async function getServerPermissionsImpl(): Promise<UserPermissions | null> {
     );
     return p?.canRead ?? false;
   }
+
+  t.end({ roles: roles.length, isAdmin: String(isAdmin), columns: columns.length });
 
   return {
     userId,

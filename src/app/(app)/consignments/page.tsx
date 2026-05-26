@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { perfTimer } from "@/lib/perf";
 import ConsignmentsClient from "./consignments-client";
 import BatchPanel from "./_batch-panel/batch-panel";
 import BatchPanelContent from "./_batch-panel/batch-panel-content";
@@ -27,8 +28,10 @@ export default async function ConsignmentsPage({
   const pageSize = 50;
   const from = (page - 1) * pageSize;
 
+  const t = perfTimer("consignments-list");
   // Per T-048 / D-026: user-bound server client; RLS enforced.
   const supabase = await getSupabaseServerClient();
+  t.mark("supabase-client");
 
   // Fetch clients for filter dropdown.
   const { data: clients } = await supabase
@@ -36,6 +39,7 @@ export default async function ConsignmentsPage({
     .select("id, name")
     .is("deleted_at", null)
     .order("name");
+  t.mark("clients-dropdown");
 
   // Build query.
   let query = supabase
@@ -65,6 +69,7 @@ export default async function ConsignmentsPage({
     const { data: stuckRows } = await supabase
       .from("v_stuck_stages")
       .select("consignment_id");
+    t.mark("v_stuck_stages");
     const stuckIds = Array.from(
       new Set((stuckRows ?? []).map((r) => r.consignment_id).filter(Boolean)),
     ) as string[];
@@ -78,6 +83,7 @@ export default async function ConsignmentsPage({
   if (params.q) query = query.ilike("ref_no", `%${params.q}%`);
 
   const { data, count, error } = await query;
+  t.mark("consignments-query");
 
   // Supabase returns clients as an array from the join — normalize to single object
   const normalizedRows = (data ?? []).map((row) => ({
@@ -90,6 +96,8 @@ export default async function ConsignmentsPage({
   const batchYear = params.by ? parseInt(params.by, 10) : NaN;
   const showBatch =
     !!batchInRef && !!batchClientId && Number.isFinite(batchYear);
+
+  t.end({ rows: (data ?? []).length, total: count ?? 0, stageFilter: params.stage ?? "none" });
 
   return (
     <>

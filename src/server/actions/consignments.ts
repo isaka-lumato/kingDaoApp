@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getServerPermissions } from "@/lib/permissions";
+import { perfTimer } from "@/lib/perf";
 import {
   PIPELINE_STAGES,
   STAGE_FIELDS,
@@ -35,10 +36,12 @@ export async function fetchKanbanData(year?: number): Promise<{
   byStage: Record<StageField, KanbanConsignment[]>;
   error?: string;
 }> {
+  const t = perfTimer("kanban:fetch");
   // Per T-048 / D-026: use the user-bound server client. RLS is enforced;
   // clients(name) joins now resolve because migration 025325 grants
   // authenticated SELECT on `clients` and `icds`.
   const supabase = await getSupabaseServerClient();
+  t.mark("supabase-client");
   const targetYear = year ?? new Date().getFullYear();
 
   const { data, error } = await supabase
@@ -56,8 +59,10 @@ export async function fetchKanbanData(year?: number): Promise<{
     .neq("release_status", "Released")
     .order("updated_at", { ascending: false })
     .limit(500);
+  t.mark("query");
 
   if (error) {
+    t.end({ rows: 0, error: error.message });
     return { byStage: emptyBoard(), error: error.message };
   }
 
@@ -106,6 +111,7 @@ export async function fetchKanbanData(year?: number): Promise<{
     });
   }
 
+  t.end({ rows: (data ?? []).length });
   return { byStage };
 }
 
