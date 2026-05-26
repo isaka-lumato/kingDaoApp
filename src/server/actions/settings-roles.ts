@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getServerPermissions } from "@/lib/permissions";
+import { invalidatePermissionsCacheAll } from "@/lib/permissions-cache";
 import { z } from "zod";
 
 async function requireAdmin() {
@@ -122,6 +123,9 @@ export async function updateColumnPermAction(formData: FormData) {
 
   if (error) return { error: error.message };
 
+  // Clear all cached permissions — every user holding this role has stale
+  // column rules in the cross-request cache (D-041).
+  invalidatePermissionsCacheAll();
   revalidatePath("/settings/roles");
   return { success: true };
 }
@@ -150,6 +154,10 @@ export async function deleteRoleAction(formData: FormData) {
   const { error } = await admin.from("roles").delete().eq("id", roleId.data);
   if (error) return { error: error.message };
 
+  // Any cached user who held this role now has a stale roles[] in the cache
+  // (D-041). Clearing the whole map is cheaper than enumerating affected
+  // users and there are ~10 staff so the warm-up cost is negligible.
+  invalidatePermissionsCacheAll();
   revalidatePath("/settings/roles");
   return { success: true };
 }

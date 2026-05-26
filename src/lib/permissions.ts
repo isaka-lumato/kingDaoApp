@@ -2,6 +2,11 @@ import "server-only";
 import { cache } from "react";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { perfTimer } from "@/lib/perf";
+import {
+  readPermissionsCache,
+  writePermissionsCache,
+  type CachedPermissions,
+} from "@/lib/permissions-cache";
 
 export type ColumnPermission = {
   tableName: string;
@@ -23,20 +28,55 @@ export type UserPermissions = {
 };
 
 /**
+ * Build the cacheable shape into the full `UserPermissions` interface. The
+ * closures over `isAdmin` + `columns` cost ~zero so we rebuild them on every
+ * call rather than serialising functions into the cache.
+ */
+function hydrate(data: CachedPermissions): UserPermissions {
+  const { isAdmin, columns } = data;
+  return {
+    userId: data.userId,
+    email: data.email,
+    roles: data.roles,
+    isAdmin,
+    columns,
+    canWrite(tableName, columnName) {
+      if (isAdmin) return true;
+      const p = columns.find(
+        (c) => c.tableName === tableName && c.columnName === columnName,
+      );
+      return p?.canWrite ?? false;
+    },
+    canRead(tableName, columnName) {
+      if (isAdmin) return true;
+      const p = columns.find(
+        (c) => c.tableName === tableName && c.columnName === columnName,
+      );
+      return p?.canRead ?? false;
+    },
+  };
+}
+
+/**
  * Server-only helper. Fetches the current user's roles and resolved
  * column permissions from the DB. Used in Server Components and Server Actions.
  *
  * Returns null if the user is not authenticated.
  *
- * Perf notes (T-049):
- *  - Uses `auth.getClaims()` for local JWT verification. The canonical session
- *    refresh + Auth-server round-trip is done once per request in
- *    `src/middleware.ts` — this function trusts the verified JWT and stays
- *    on-machine.
- *  - The exported binding is wrapped in React `cache()` so every Server
+ * Perf notes:
+ *  - **D-040:** the canonical session refresh is now in `src/middleware.ts`,
+ *    which uses `getClaims()` on every request and only round-trips to the
+ *    Auth server when the JWT is near expiry. This function trusts the
+ *    verified JWT and stays on-machine for auth.
+ *  - **D-041:** results are cached cross-request in a module-scoped Map
+ *    (`permissions-cache.ts`) keyed by `userId` for 5 minutes. The first hit
+ *    after a cold start pays the ~310ms `user_roles` query; subsequent
+ *    navigations get a free in-process lookup. Mutation actions invalidate
+ *    the cache so role changes take effect immediately.
+ *  - The exported binding is also wrapped in React `cache()` so every Server
  *    Component / Server Action within a single request render shares one
- *    result instead of refetching. `cache()` is per-request, not cross-request,
- *    so revoked permissions still take effect on the next navigation.
+ *    result — that layer dedupes within a request, the in-memory cache
+ *    dedupes across requests.
  *  - The previous 3-step chain (`user_roles` → `roles` → `role_column_permissions`)
  *    is collapsed to 2 round-trips by joining `roles` directly inside the
  *    `role_column_permissions` query via `roles!inner(name)`.
@@ -57,6 +97,14 @@ async function getServerPermissionsImpl(): Promise<UserPermissions | null> {
 
   const userId = claims.sub as string;
   const email = (claims.email as string | undefined) ?? null;
+
+  // Cross-request cache check. If the cached entry still holds, rebuild the
+  // canRead/canWrite closures and return — no DB queries fire.
+  const cached = readPermissionsCache(userId);
+  if (cached) {
+    t.end({ result: "cache-hit", roles: cached.roles.length });
+    return hydrate(cached);
+  }
 
   // Fetch roles for this user.
   const { data: userRoles } = await supabase
@@ -113,33 +161,18 @@ async function getServerPermissionsImpl(): Promise<UserPermissions | null> {
     columns = Array.from(merged.values());
   }
 
-  function canWrite(tableName: string, columnName: string): boolean {
-    if (isAdmin) return true;
-    const p = columns.find(
-      (c) => c.tableName === tableName && c.columnName === columnName
-    );
-    return p?.canWrite ?? false;
-  }
-
-  function canRead(tableName: string, columnName: string): boolean {
-    if (isAdmin) return true;
-    const p = columns.find(
-      (c) => c.tableName === tableName && c.columnName === columnName
-    );
-    return p?.canRead ?? false;
-  }
-
-  t.end({ roles: roles.length, isAdmin: String(isAdmin), columns: columns.length });
-
-  return {
+  const payload: CachedPermissions = {
     userId,
     email,
     roles,
     isAdmin,
-    canWrite,
-    canRead,
     columns,
   };
+  writePermissionsCache(payload);
+
+  t.end({ roles: roles.length, isAdmin: String(isAdmin), columns: columns.length, result: "cache-miss" });
+
+  return hydrate(payload);
 }
 
 /**

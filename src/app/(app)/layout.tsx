@@ -4,6 +4,7 @@ import { getServerPermissions } from "@/lib/permissions";
 import { PermissionsProvider } from "@/hooks/use-permissions";
 import { perfTimer } from "@/lib/perf";
 import AppShell from "./app-shell";
+import { NavSkeletonSwap } from "./_nav/nav-skeleton-swap";
 
 /**
  * (app) route group layout — wraps every protected page.
@@ -47,7 +48,7 @@ export default async function AppLayout({
   return (
     <PermissionsProvider value={clientPerms}>
       <AppShell user={{ email }}>
-        {children}
+        <NavSkeletonSwap>{children}</NavSkeletonSwap>
       </AppShell>
     </PermissionsProvider>
   );

@@ -673,4 +673,154 @@ This keeps PRD §8.5 satisfied while making the filter's effective scope visible
 
 ---
 
+## D-040 — Middleware auth: getClaims fast path + near-expiry getUser refresh
+
+**Date:** 2026-05-26
+**Status:** Active
+
+**Decision:** The Next.js middleware switches from unconditional `supabase.auth.getUser()` (a ~300ms round-trip to the Supabase Auth server) to a two-tier strategy:
+
+1. **Fast path (every request):** `supabase.auth.getClaims()`. With the asymmetric `sb_publishable_…` keys we adopted in D-020, the JWT signature is verifiable locally — measured at 4–12ms in dev. Used for the auth gate on every protected request.
+2. **Refresh path (only when needed):** if `claims.exp - now() < 5 minutes`, call `getUser()` which talks to the Auth server and triggers the SSR client's `setAll()` cookie callback. That rotates the access + refresh tokens onto the response cookies, the same way the old always-call-getUser flow did.
+
+**Why:** the perf instrumentation showed `middleware:getUser` averaging 297–412ms per request — a hard floor on every page navigation, regardless of what the page does. With three to four sequential 300ms calls stacking up (middleware + permissions + page query), the app feels sluggish even though the DB work is sub-10ms. The fast path eliminates ~300ms from every navigation that doesn't need a token refresh, which is the overwhelming majority of them.
+
+**Trust model trade-off:** a server-side session invalidation (admin revoke, password change, ban) does **not** take effect until the next refresh window — at most 5 minutes of "the JWT still works after revoke." Acceptable for an internal-staff app with ~10 named users. If we ever need immediate cross-session revocation we rotate the JWT signing key in the Supabase dashboard (forces every active JWT to fail signature verification on the next request).
+
+**Why not "call `getUser()` every Nth request":** N either has to be small (back to ~300ms often) or large (cookie rotation lags worse than the JWT TTL). The expiry-window heuristic gives exactly one refresh per session window, which is the minimum needed for the cookie chain to stay alive.
+
+**Why not drop middleware entirely:** the `(app)` layout still needs an auth gate, and middleware is the only place that can cleanly rotate the auth cookies via Next's request/response object pair. Layout-level redirects can't write cookies onto the same response.
+
+**Expected savings (from perf logs, before/after):**
+- Per-request middleware cost: 297–412ms → 4–12ms when token is fresh.
+- `/` (kanban): 815ms → ~500ms.
+- `/consignments`: 1267ms → ~950ms (still hitting #2 + #3 on the optimization list).
+- `/dashboard`: similar ~300ms drop.
+
+**Verification surface:** existing perf-log lines `[perf] middleware:auth … mode=getClaims` vs `mode=getUser`. After-the-fact: navigate around for ~10 minutes, expect to see exactly one `mode=getUser` line at the start of each ~1-hour session window. Functional checks: login still works (forces a refresh; expect `mode=getUser` on the first protected hit), logout still clears cookies, expired JWT still redirects to `/login`.
+
+---
+
+## D-041 — Cross-request permissions cache (in-process Map, 5-min TTL)
+
+**Date:** 2026-05-26
+**Status:** Active
+
+**Decision:** `getServerPermissions()` now consults an in-process module-scoped `Map<userId, CachedPermissions>` before hitting the DB. Entries live for 5 minutes; on cache hit no `user_roles` / `role_column_permissions` queries fire. Hits return in under a millisecond; misses pay the existing ~310–375ms DB cost and write-through. The hydration step rebuilds the `canRead` / `canWrite` closures over the cached `columns` array on every call rather than serialising functions into the cache.
+
+**Why:** the perf instrumentation showed the layout's `getServerPermissions()` call costing 306–414ms on every protected page navigation, dominated by the `user_roles` query (307–368ms — pure network RTT to West Europe, not DB work). Roles change ≤ once per month in this app. Caching them per-process eliminates the floor on every protected page navigation.
+
+**Cache layer architecture:**
+- **React `cache()`** wraps `getServerPermissions()` for per-request memoisation (one resolved set per render, regardless of how many Server Components call it).
+- **New module `src/lib/permissions-cache.ts`** wraps the DB query for cross-request memoisation (one resolved set per user per 5-min window, regardless of how many requests they make).
+
+Together: a logged-in admin clicking between Dashboard / Pipeline / Consignments / EFD pays one ~310ms permissions fetch every 5 minutes instead of one per navigation.
+
+**Invalidation (proactive):**
+- `inviteUserAction`, `assignRoleAction`, `removeRoleAction` → `invalidatePermissionsCache(userId)` (per-user; only the affected user's cache is dropped).
+- `deactivateUserAction`, `reactivateUserAction` → `invalidatePermissionsCache(userId)` (defence-in-depth; a banned user's JWT *should* fail to refresh, but we drop the cache regardless so the next request can't pull a stale "still valid" payload from the optimistic-cache path).
+- `updateColumnPermAction`, `deleteRoleAction` → `invalidatePermissionsCacheAll()` (one column toggle on `viewer` affects every viewer; enumerating ~10 staff users is more code than clearing the whole map, and the warm-up cost is one 310ms refetch per active session).
+- **Not invalidated:** `createRoleAction` (the new role has no users yet, no cached payload references it).
+
+**Invalidation (passive):** TTL bounds worst-case staleness at 5 minutes even if a future code path bypasses the explicit invalidation hooks above. A 5-minute window is acceptable for an internal-staff app where permissions changes are rare and the deploying admin can ask the affected user to refresh.
+
+**Multi-process scope:** the cache is a Node `Map`, scoped to one server process. On Vercel each serverless instance keeps its own map and warms independently — fine, because:
+
+1. The TTL is short, so cross-instance divergence is bounded.
+2. Mutations write through `invalidatePermissions…()` on whatever instance handles the action, but other instances' caches keep stale entries until they TTL out. This is the same "≤ 5 min staleness" envelope as the natural TTL.
+3. There's no PII in the cache beyond what the JWT already carries (userId, email, role names, table+column names).
+
+**Why not Redis / external cache:** an internal-staff app with ~10 users does not need it. Per-process is sufficient and removes an infra moving part. Reassess if the app ever serves > 100 concurrent users or if mutations need cross-instance invalidation guarantees.
+
+**Why not signed cookies:** they'd survive cold starts but pay a 1–2 KB cookie cost on every request and force a serialisation/HMAC step. The Map is faster and simpler; the cold-start cost we're trading off is at most one 310ms refetch.
+
+**Expected savings (from perf logs, before/after):**
+- Per-request `getServerPermissions()` cost: 306–414ms → < 1ms when cached.
+- `/` (kanban) on a warm cache: ~500ms (after D-040) → ~200ms.
+- `/consignments`: ~950ms (after D-040) → ~650ms.
+- `/settings/users`: ~2.1s → ~1.3s (the deeper queries inside that page are not yet optimised).
+
+**Verification surface:** new perf-log lines `[perf] permissions total=… | … result=cache-hit` vs `result=cache-miss`. Manual: after one fresh load, every subsequent navigation in the next 5 minutes should log `result=cache-hit roles=N`. Mutation: edit a role's column permissions → next navigation logs `result=cache-miss` (cache was cleared). Per-user invalidation: assign a role to user X → only X's next request logs a miss; other users keep their cached entries.
+
+---
+
+## D-042 — `/consignments` data fetch: parallel tier-1, optional tier-2 for stuck filter
+
+**Date:** 2026-05-26
+**Status:** Active
+
+**Decision:** The `/consignments` server component restructured from three serial queries to one (or two) parallel batches:
+
+- **Default / `stage=unreleased` / `stage=` (no filter):** one parallel batch — `clients-dropdown` + main `consignments` query fire as a `Promise.all`. Two RTTs collapse into one wait window of ~max(368, 312)ms.
+- **`stage=stuck`:** two tiers — tier 1 fires `clients-dropdown` + `v_stuck_stages` in parallel, tier 2 fires the main `consignments` query with the resolved `stuckIds.in(...)` filter applied. Three RTTs collapse into two waits of ~max(368, view-cost) + ~312ms.
+
+A small `buildConsignmentsQuery(stuckIds: string[] | null)` closure inside the page builds the Supabase query builder with all the current `params.{client,stage,q}` filters applied; passing `null` for `stuckIds` means "no stuck filter," passing `string[]` (even empty) applies it.
+
+**Why:** the perf instrumentation showed `clients-dropdown` (368ms) and `consignments-query` (312ms) running back-to-back on every `/consignments` load — 680ms of pure network waiting. The two queries are fully independent. The stuck-filter branch was even worse: three sequential network hops because `v_stuck_stages` blocked the main query.
+
+**Why a closure, not a top-level helper:** the query references `supabase`, `year`, `from`, `pageSize`, and `params`, all of which are request-scoped. Hoisting it would require threading those through as arguments and re-creating the closure on every render anyway. The inner closure is the simpler form.
+
+**Why typed `ConsignmentRow = Record<string, unknown> & { clients: … }`:** the `mainRes.data` shape needs to type-narrow for the `.map((row) => ({ ...row, clients: … }))` normalize step, but the rest of the page just casts the array to `any` at the JSX boundary (a pre-existing pattern, matching how the rows are consumed by the client component). A precise generated type from `Database['public']['Tables']['consignments']['Row']` would require re-deriving the `clients` join shape and is more work than the wide-but-correct alias.
+
+**Why not also parallelize the GUTA-pair sibling fetch on `/consignments/[id]`:** the detail page is already fully parallelized for the four independent queries (consignment + client + ICD + audit + EFD links). The GUTA-pair fetch is conditional on `consignment.guta_pair_id` and depends on the main consignment row — moving it into the parallel batch would require fetching the pair unconditionally, which would waste a query on every non-GUTA consignment (the majority).
+
+**Expected savings (from perf logs, before/after, on a warm permissions cache from D-041):**
+- `/consignments` default load: ~650ms → ~370ms (savings of ~280ms).
+- `/consignments?stage=stuck`: was 3 serial RTTs, now 2 — savings depend on `v_stuck_stages` cost; if the view is fast (~100ms server execution) the page goes from ~1.0s → ~700ms.
+- Net effect of D-040 + D-041 + D-042 on `/consignments`: 1267ms → ~370ms (warm cache) / ~700ms (cold permissions).
+
+**Verification surface:** perf-log lines on `/consignments` change shape — instead of `clients-dropdown=368 consignments-query=312` separately, look for `tier1-clients+consignments=…` (default case) or `tier1-clients+stuck=… tier2-consignments=…` (stuck case). The wall-clock `total=` should drop by the amount the smaller of the two parallel queries used to consume. Manual: navigate `/consignments`, `/consignments?stage=unreleased`, `/consignments?stage=stuck`, `/consignments?client=<uuid>`, `/consignments?q=ref` — all should render with the same data they rendered before (no rows added or dropped) and noticeably faster.
+
+---
+
+## D-043 — `/consignments` filter bar: useTransition + soft-nav for in-page filters
+
+**Date:** 2026-05-26
+**Status:** Active
+
+**Decision:** The `/consignments` client filter bar now wraps every navigation in `React.useTransition`:
+
+- Client/stage `<select>` `onChange` handlers, the search form `onSubmit`, and the year tabs / pagination links all go through a single `navigate(href)` helper that calls `startTransition(() => router.push(href))`.
+- Year tabs and pagination switched from raw `<a href>` to `next/link <Link>` — they were previously triggering full-page hard reloads, which doubled the apparent slowness on those interactions and bypassed the route's `loading.tsx` skeleton.
+- The table receives `opacity-60` while `isPending`, so the stale rows stay readable but visibly "in-flight."
+- An inline "Updating…" spinner appears in the filter bar with `aria-live="polite"` so the indicator is announced to screen readers when navigation starts.
+
+**Why:** without `useTransition`, every filter change unmounts the existing table and re-mounts the route's `loading.tsx` skeleton. That feels like the page is being torn down and rebuilt for what is functionally a small re-query. With `useTransition`, the previous render stays painted; only the new data fades in. The change is purely UX — no Supabase queries change, no extra round-trips.
+
+The year-tab / pagination `<a>` bug is a separate but adjacent fix: hard navs reset all client state (scroll position, filter selections, etc.) and download the JS bundle again. `<Link>` keeps the SPA cache hot.
+
+**Why not also skeleton-ize per-cell content while pending:** the row-level opacity is the right granularity — cell-by-cell shimmering on every filter would be noisier than helpful. Industry pattern is "fade the table, show a pill saying it's updating," which is what we land on.
+
+**Why not `useOptimistic`:** the filter doesn't apply an optimistic mutation — it kicks off a server query whose results aren't predictable client-side. `useOptimistic` is for when you can guess the next state (e.g., a toggle); we can't here.
+
+**Verification surface:** click any filter dropdown or pagination link and watch the table — it should stay visible at 60% opacity with the "Updating…" indicator until the new rows arrive. No skeleton flash.
+
+---
+
+## D-044 — `/settings/users` parallelization (inner + outer)
+
+**Date:** 2026-05-26
+**Status:** Active
+
+**Decision:** Two cuts in the same chain to collapse three serial RTTs into one parallel batch:
+
+1. **Inside `listUsersAction()`:** `admin.auth.admin.listUsers({ perPage: 200 })` (Supabase Auth API) and `admin.from("user_roles").select("user_id, roles(id, name)")` (DB) are now fired in `Promise.all` — they're fully independent (one talks to GoTrue, the other to PostgREST). Was 2 serial RTTs (~600ms), now 1 (~300ms).
+2. **Inside `/settings/users/page.tsx`:** the `roles` dropdown query and `listUsersAction()` are now in `Promise.all` — also independent. Combined with #1, the whole page-data fetch is one parallel batch instead of a 3-RTT chain.
+
+The page also gets a `perfTimer("settings-users")` so we can see the cut land in the logs.
+
+**Why:** the original perf log showed `/settings/users` at 2.1s end-to-end with `application-code=1655ms`. Three serial round-trips of ~300–500ms each accounts for the wall-clock cost; the queries themselves return in single-digit milliseconds. Even with D-040 + D-041 (which cut ~600ms of auth/permissions overhead off the top), the page was still ~1.3s. This change drops the data-fetch portion to one ~300ms wait.
+
+**Why not also batch the auth.listUsers + user_roles via an RPC:** would require a new SECURITY DEFINER PG function plus a roundabout way to enumerate Auth users from SQL (the admin schema isn't joinable). Two RTTs reduced to one parallel batch is the same outcome with no DB-side work.
+
+**Why `listUsersAction` keeps its admin client:** Supabase's `auth.admin.listUsers` requires the service role key — there's no user-bound equivalent. D-026 allowlist already includes this usage. No new admin-client sites added.
+
+**Expected savings (from perf logs, before/after, on a warm permissions cache from D-041):**
+- `/settings/users`: ~1300ms → ~600ms (warm) / ~900ms (cold permissions).
+- Cumulative with D-040 + D-041: 2100ms → 600ms warm = ~70% reduction.
+
+**Verification surface:** new perf-log line `[perf] settings-users total=… | … parallel-roles+listUsers=…`. The `parallel-roles+listUsers` segment should be roughly the larger of the two independent queries, not their sum. Functional: page renders the same user list with the same role badges as before.
+
+---
+
 <!-- Append new decisions below this line. Number sequentially. -->

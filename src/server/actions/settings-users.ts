@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getServerPermissions } from "@/lib/permissions";
+import { invalidatePermissionsCache } from "@/lib/permissions-cache";
 import { z } from "zod";
 
 // ── Guards ─────────────────────────────────────────────────────────────────
@@ -97,6 +98,7 @@ export async function inviteUserAction(formData: FormData) {
     return { error: `User created but role assignment failed: ${roleErr.message}` };
   }
 
+  invalidatePermissionsCache(userId);
   revalidatePath("/settings/users");
   return { success: true, email: parsed.data.email };
 }
@@ -119,16 +121,19 @@ export async function listUsersAction(): Promise<{
   await requireAdmin();
   const admin = getSupabaseAdminClient();
 
-  const { data, error } = await admin.auth.admin.listUsers({ perPage: 200 });
+  // D-044: the two queries here are independent (one hits the Auth API, the
+  // other hits the user_roles table). Fire them in parallel — was 2 serial
+  // RTTs (~600ms total), now bounded by the slower one (~300ms).
+  const [listRes, userRolesRes] = await Promise.all([
+    admin.auth.admin.listUsers({ perPage: 200 }),
+    admin.from("user_roles").select("user_id, roles(id, name)"),
+  ]);
+
+  const { data, error } = listRes;
   if (error) return { users: [], error: error.message };
 
-  // Fetch all user_roles + role names in one query.
-  const { data: userRolesRows } = await admin
-    .from("user_roles")
-    .select("user_id, roles(id, name)");
-
   const rolesByUser = new Map<string, { id: string; name: string }[]>();
-  for (const row of userRolesRows ?? []) {
+  for (const row of userRolesRes.data ?? []) {
     const role = row.roles as unknown as { id: string; name: string } | null;
     if (!role) continue;
     const existing = rolesByUser.get(row.user_id) ?? [];
@@ -169,6 +174,7 @@ export async function assignRoleAction(formData: FormData) {
     return { error: error.message };
   }
 
+  invalidatePermissionsCache(parsed.data.userId);
   revalidatePath("/settings/users");
   return { success: true };
 }
@@ -193,6 +199,7 @@ export async function removeRoleAction(formData: FormData) {
 
   if (error) return { error: error.message };
 
+  invalidatePermissionsCache(parsed.data.userId);
   revalidatePath("/settings/users");
   return { success: true };
 }
@@ -212,6 +219,7 @@ export async function deactivateUserAction(formData: FormData) {
 
   if (error) return { error: error.message };
 
+  invalidatePermissionsCache(userId.data);
   revalidatePath("/settings/users");
   return { success: true };
 }
@@ -231,6 +239,7 @@ export async function reactivateUserAction(formData: FormData) {
 
   if (error) return { error: error.message };
 
+  invalidatePermissionsCache(userId.data);
   revalidatePath("/settings/users");
   return { success: true };
 }

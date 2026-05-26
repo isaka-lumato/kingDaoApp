@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useTransition } from "react";
 import Link from "next/link";
 import { formatTzs } from "@/lib/money";
 import BatchLink from "@/components/batch-link";
@@ -92,6 +93,11 @@ export default function ConsignmentsClient({
   fetchError,
 }: Props) {
   const router = useRouter();
+  // D-043: useTransition keeps the previously-rendered rows visible (with a
+  // subtle opacity fade) while the new query runs server-side. Without this,
+  // any filter change unmounts the table and shows the loading skeleton —
+  // jarring on a fast-feeling page.
+  const [isPending, startTransition] = useTransition();
   const totalPages = Math.ceil(total / pageSize);
   const currentYear = new Date().getFullYear();
   const yearOptions = [currentYear - 1, currentYear, currentYear + 1];
@@ -105,10 +111,14 @@ export default function ConsignmentsClient({
     return `/consignments?${params.toString()}`;
   }
 
+  function navigate(href: string) {
+    startTransition(() => router.push(href));
+  }
+
   function handleSearch(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
-    router.push(buildUrl({ q: fd.get("q") as string, page: "1" }));
+    navigate(buildUrl({ q: fd.get("q") as string, page: "1" }));
   }
 
   return (
@@ -137,7 +147,7 @@ export default function ConsignmentsClient({
         {/* Year tabs */}
         <div className="flex rounded-lg border border-border overflow-hidden text-sm">
           {yearOptions.map((y) => (
-            <a
+            <Link
               key={y}
               href={buildUrl({ year: String(y), page: "1" })}
               className={[
@@ -148,14 +158,14 @@ export default function ConsignmentsClient({
               ].join(" ")}
             >
               {y}
-            </a>
+            </Link>
           ))}
         </div>
 
         {/* Client filter */}
         <select
           value={filters.client ?? ""}
-          onChange={(e) => router.push(buildUrl({ client: e.target.value || undefined, page: "1" }))}
+          onChange={(e) => navigate(buildUrl({ client: e.target.value || undefined, page: "1" }))}
           className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
         >
           <option value="">All clients</option>
@@ -167,7 +177,7 @@ export default function ConsignmentsClient({
         {/* Stage filter */}
         <select
           value={filters.stage ?? ""}
-          onChange={(e) => router.push(buildUrl({ stage: e.target.value || undefined, page: "1" }))}
+          onChange={(e) => navigate(buildUrl({ stage: e.target.value || undefined, page: "1" }))}
           className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
         >
           <option value="">All statuses</option>
@@ -190,6 +200,17 @@ export default function ConsignmentsClient({
             Search
           </button>
         </form>
+
+        {/* Pending indicator — subtle so it doesn't shout, but visible. */}
+        {isPending && (
+          <span
+            className="text-xs text-muted-foreground flex items-center gap-1.5"
+            aria-live="polite"
+          >
+            <span className="inline-block w-3 h-3 rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground animate-spin" />
+            Updating…
+          </span>
+        )}
       </div>
 
       {fetchError && (
@@ -198,8 +219,14 @@ export default function ConsignmentsClient({
         </div>
       )}
 
-      {/* Table */}
-      <div className="rounded-xl border border-border overflow-hidden">
+      {/* Table — fades during transition so the stale rows stay readable
+          but visibly "in-flight." */}
+      <div
+        className={[
+          "rounded-xl border border-border overflow-hidden transition-opacity duration-150",
+          isPending ? "opacity-60" : "opacity-100",
+        ].join(" ")}
+      >
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -294,20 +321,20 @@ export default function ConsignmentsClient({
           </span>
           <div className="flex gap-2">
             {page > 1 && (
-              <a
+              <Link
                 href={buildUrl({ page: String(page - 1) })}
                 className="rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-muted transition-colors"
               >
                 ← Prev
-              </a>
+              </Link>
             )}
             {page < totalPages && (
-              <a
+              <Link
                 href={buildUrl({ page: String(page + 1) })}
                 className="rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-muted transition-colors"
               >
                 Next →
-              </a>
+              </Link>
             )}
           </div>
         </div>
