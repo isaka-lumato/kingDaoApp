@@ -406,3 +406,14 @@ s3_secret_key = "env(S3_SECRET_KEY)"
 # declarative_schema_path = "./database"
 # JSON string passed through to pg-delta SQL formatting.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
+
+# -----------------------------------------------------------------------------
+# Edge Functions
+# -----------------------------------------------------------------------------
+# The alerts function uses a custom ALERTS_CRON_SECRET bearer token (see
+# humanTasks.md H-010). Supabase's default platform layer would reject the
+# request because the Authorization header isn't a Supabase JWT — so we turn
+# JWT verification off for this function only. Authentication is enforced
+# inside the function itself.
+[functions.alerts]
+verify_jwt = false

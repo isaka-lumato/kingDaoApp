@@ -1,0 +1,201 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getServerPermissions } from "@/lib/permissions";
+import { perfTimer } from "@/lib/perf";
+import {
+  PIPELINE_STAGES,
+  STAGE_FIELDS,
+  resolveActiveStage,
+  stageFieldToDbEnum,
+  type StageField,
+  type KanbanConsignment,
+} from "@/lib/pipeline";
+import { z } from "zod";
+
+// (Types and constants are in @/lib/pipeline — import from there in client/server components)
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+function emptyBoard(): Record<StageField, KanbanConsignment[]> {
+  const board = {} as Record<StageField, KanbanConsignment[]>;
+  for (const field of STAGE_FIELDS) {
+    board[field] = [];
+  }
+  return board;
+}
+
+// ── Fetch ──────────────────────────────────────────────────────────────────
+
+/**
+ * T-040: Fetch all active consignments for the Kanban board.
+ * Returns them pre-grouped by active_stage.
+ */
+export async function fetchKanbanData(year?: number): Promise<{
+  byStage: Record<StageField, KanbanConsignment[]>;
+  error?: string;
+}> {
+  const t = perfTimer("kanban:fetch");
+  // Per T-048 / D-026: use the user-bound server client. RLS is enforced;
+  // clients(name) joins now resolve because migration 025325 grants
+  // authenticated SELECT on `clients` and `icds`.
+  const supabase = await getSupabaseServerClient();
+  t.mark("supabase-client");
+  const targetYear = year ?? new Date().getFullYear();
+
+  const { data, error } = await supabase
+    .from("consignments")
+    .select(
+      `id, ref_no, year, goods_description, vessel_name, arrival_date,
+       container_count, container_type, amount, updated_at,
+       manifest_status, shipping_batch_status, tanesws_status,
+       assessment_status, tbs_loading_status, tbs_debit_status,
+       manifest_comp_status, duty_status, inspection_file_status, release_status,
+       clients(name)`
+    )
+    .eq("year", targetYear)
+    .is("deleted_at", null)
+    .neq("release_status", "Released")
+    .order("updated_at", { ascending: false })
+    .limit(500);
+  t.mark("query");
+
+  if (error) {
+    t.end({ rows: 0, error: error.message });
+    return { byStage: emptyBoard(), error: error.message };
+  }
+
+  const byStage = emptyBoard();
+
+  for (const row of data ?? []) {
+    const stageValues: Record<string, string> = {
+      manifest_status: row.manifest_status,
+      shipping_batch_status: row.shipping_batch_status,
+      tanesws_status: row.tanesws_status,
+      assessment_status: row.assessment_status,
+      tbs_loading_status: row.tbs_loading_status,
+      tbs_debit_status: row.tbs_debit_status,
+      manifest_comp_status: row.manifest_comp_status,
+      duty_status: row.duty_status,
+      inspection_file_status: row.inspection_file_status,
+      release_status: row.release_status,
+    };
+
+    const active_stage = resolveActiveStage(stageValues);
+    const client = row.clients as unknown as { name: string } | null;
+
+    byStage[active_stage].push({
+      id: row.id,
+      ref_no: row.ref_no,
+      year: row.year,
+      goods_description: row.goods_description,
+      vessel_name: row.vessel_name,
+      arrival_date: row.arrival_date,
+      container_count: row.container_count ? Number(row.container_count) : null,
+      container_type: row.container_type,
+      amount: row.amount,
+      client_name: client?.name ?? "—",
+      manifest_status: row.manifest_status,
+      shipping_batch_status: row.shipping_batch_status,
+      tanesws_status: row.tanesws_status,
+      assessment_status: row.assessment_status,
+      tbs_loading_status: row.tbs_loading_status,
+      tbs_debit_status: row.tbs_debit_status,
+      manifest_comp_status: row.manifest_comp_status,
+      duty_status: row.duty_status,
+      inspection_file_status: row.inspection_file_status,
+      release_status: row.release_status,
+      active_stage,
+      updated_at: row.updated_at,
+    });
+  }
+
+  t.end({ rows: (data ?? []).length });
+  return { byStage };
+}
+
+// ── Mutations ──────────────────────────────────────────────────────────────
+
+// Validate that `stage` is one of the known `StageField` values. The kanban
+// passes a column-name (`manifest_status`); we convert to the DB enum value
+// (`manifest`) below via `stageFieldToDbEnum`.
+const stageFieldSchema = z.enum(STAGE_FIELDS as [StageField, ...StageField[]]);
+
+const advanceSchema = z.object({
+  consignmentId: z.uuid(),
+  stage: stageFieldSchema,
+  newValue: z.string(),
+});
+
+/**
+ * Advance a pipeline stage via the `advance_stage()` SQL function.
+ * Enforces all PRD §8 prerequisites at the DB level.
+ *
+ * The DB function signature is:
+ *   advance_stage(p_id uuid, p_stage pipeline_stage, p_new_value text, p_reason text)
+ * Note: param name is `p_id` (not `p_consignment_id`), and `p_stage` is the
+ * short DB enum value (`manifest`, `tanesws`, ...), not the column name
+ * (`manifest_status`, `tanesws_status`, ...). See lib/pipeline.ts.
+ */
+export async function advanceStageAction(formData: FormData) {
+  const parsed = advanceSchema.safeParse({
+    consignmentId: formData.get("consignmentId"),
+    stage: formData.get("stage"),
+    newValue: formData.get("newValue"),
+  });
+  if (!parsed.success) return { error: "Invalid input" };
+
+  const supabase = await getSupabaseServerClient();
+  const { error } = await supabase.rpc("advance_stage", {
+    p_id: parsed.data.consignmentId,
+    p_stage: stageFieldToDbEnum(parsed.data.stage),
+    p_new_value: parsed.data.newValue,
+  });
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/");
+  return { success: true };
+}
+
+const forceSchema = z.object({
+  consignmentId: z.uuid(),
+  stage: stageFieldSchema,
+  newValue: z.string(),
+  reason: z.string().min(1, "Reason is required for force-set"),
+});
+
+/**
+ * Admin-only: force-set a stage bypassing prerequisites.
+ * Same param/enum convention as `advance_stage` above.
+ */
+export async function forceSetStageAction(formData: FormData) {
+  const perms = await getServerPermissions();
+  if (!perms?.isAdmin) return { error: "Admin access required" };
+
+  const parsed = forceSchema.safeParse({
+    consignmentId: formData.get("consignmentId"),
+    stage: formData.get("stage"),
+    newValue: formData.get("newValue"),
+    reason: formData.get("reason"),
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+
+  // Use the user-bound client so the DB-side `is_admin()` check inside
+  // `force_set_stage()` sees the real `auth.uid()`. (The admin/service-role
+  // client would make `auth.uid()` null and the SECURITY DEFINER guard would
+  // reject the call — see T-049 / D-029 follow-up.)
+  const supabase = await getSupabaseServerClient();
+  const { error } = await supabase.rpc("force_set_stage", {
+    p_id: parsed.data.consignmentId,
+    p_stage: stageFieldToDbEnum(parsed.data.stage),
+    p_new_value: parsed.data.newValue,
+    p_reason: parsed.data.reason,
+  });
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/");
+  return { success: true };
+}
