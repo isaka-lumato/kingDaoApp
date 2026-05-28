@@ -823,4 +823,43 @@ The page also gets a `perfTimer("settings-users")` so we can see the cut land in
 
 ---
 
+## D-045 — Triage view classifier rule (replaces kanban as default on mobile)
+
+**Date:** 2026-05-28
+**Status:** Active
+
+**Decision:** A consignment's triage bucket is derived from its **active stage** (the first stage in `PIPELINE_STAGES` order whose value is not its `doneValue`) and the value of that stage:
+
+| Active-stage value                                          | Bucket          |
+|-------------------------------------------------------------|-----------------|
+| `"Action"`, `"PREPARED"`, `"W/CARRY IN"`, `"CARRY IN END"`, `"SHARED"` | **Action Needed** |
+| `"Waiting"`                                                 | **Waiting**     |
+| No active stage (every stage at its `doneValue`)            | **Done**        |
+
+A row in **Action Needed** whose `updated_at` is older than 48 hours is additionally flagged **Stuck** (red), per PRD §6.8. The 48h clock uses the existing `updated_at` column — we are not introducing per-stage timestamps for this view (see "Why not" below).
+
+Rows with `arrival_date IS NULL` are forced into **Waiting** with subtitle "Awaiting arrival" regardless of stage values, because PRD §7.2 mandates that all stages stay `Waiting` until arrival; the per-stage enum carries no information for these rows.
+
+This rule drives `T-086` (mobile pipeline replacement) and a new desktop "Triage" tab alongside the existing kanban.
+
+**Why:** the kanban-only model breaks on mobile (no horizontal space for 10 stage columns) and overcounts complexity for staff who just want to know "what do I need to do today?". A flat Action/Waiting/Done list answers that directly. Spot-checked against `TRACKER -- KDL.xlsx` (508 historical rows, 2025–2026):
+- 86% of rows fully released → Done bucket dominates archive views.
+- Of the 69 active rows: `Action`=30%, `Waiting`=35%, `paid`/`closed` (lowercase typos)=31%, `PREPARED`=3%. The `Action` enum is genuinely used by operators, so the classifier has a real signal — not just a hypothetical one.
+
+**Why fold `PREPARED`/`SHARED`/`CARRY IN END`/`W/CARRY IN` into Action Needed:** these are intermediate non-terminal values that mean "work has started, someone owns this." Putting them in Waiting would hide active work; putting them in their own "In Progress" bucket would clutter the UI for the ~3% of rows in this state. Bucket-with-Action keeps the view to three sections.
+
+**Why `updated_at`, not per-stage `stage_changed_at`:** PRD §6.2 says "Stage timestamps are recorded automatically when a stage is marked complete" — but the current schema only writes `updated_at` on every row UPDATE. Adding per-stage timestamps is a separate, larger change (schema migration + trigger work) and not required to launch the triage view. `updated_at` is a coarser approximation but works: any stage transition bumps it, so a row that's been at the same active stage for 48h+ has by definition not been touched in that time. We can swap in `stage_changed_at` later without changing the bucket rule.
+
+**Why not use `current_status` as a row subtitle:** spot-check showed 504/508 rows say `"CARRY IN END"` (it echoes the Shipping Batch state, not a triage hint). The subtitle will instead be the active stage's human label (e.g. "Duty payment", "TBS Debit") — already available in `PIPELINE_STAGES[].label`.
+
+**Casing bug hypothesis — invalidated:** during the spot-check we observed `"paid"`/`"closed"` (lowercase) in 22 rows of the source xlsx, which would have miscategorised those rows as not-done. Investigation showed this is **only present in the operator's Excel source file**, not in the live DB:
+1. `parseTracker.coerceEnum` (`src/server/import/parse-tracker.ts:660`) already does case-insensitive whitespace-tolerant matching, so `"paid"` → `"Paid"` on import.
+2. The Postgres enum columns reject any non-canonical value, so no other write path (form submission, `advance_stage()`, direct SQL) can produce lowercased data.
+
+No data migration is needed. The xlsx itself is the operator's working copy and will be retired once the app launches. Leaving this paragraph here so a future reader looking at the xlsx doesn't repeat the investigation.
+
+**Alternative considered:** keep the kanban as the only stage view and add a separate "stuck jobs" filter. Rejected — doesn't solve the mobile problem (kanban itself is the mobile problem) and doesn't address the broader "what do I do next?" question for operators with 30+ active jobs.
+
+---
+
 <!-- Append new decisions below this line. Number sequentially. -->

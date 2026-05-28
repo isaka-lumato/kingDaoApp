@@ -244,9 +244,7 @@ Two cleanup tasks identified during the post-Phase-3 audit. Both must be done be
 
 - [ ] **T-080** 🎨 Mobile responsive pass on Inbox, Detail, Form (PRD §11 mobile requirement). Pipeline view is handled separately by T-086 per D-034.
   - Accept: Manual test on a 375px-wide viewport — all flows complete without horizontal scroll.
-- [ ] **T-086** 🎨 Mobile pipeline view (`/` below `md` breakpoint) per D-034 — single-stage vertical list with sticky stage selector + tap-card action sheet ("Open detail", "Advance to next stage", admin-only "Move to stage…"). No `@dnd-kit` mounted on mobile.
-  - Accept: At 375px, `/` renders the list (no horizontal scroll); selecting a stage swaps the list; tapping "Advance" calls `advanceStageAction` and the card disappears via Realtime; viewers see no advance/move buttons; admin "Move to stage…" still requires a reason; backward moves blocked for non-admin (same as desktop, per D-029); no `@dnd-kit` modules imported on the mobile branch (verify via dynamic import boundary).
-  - Blocked by: none (independent of T-080's other surfaces).
+- [x] **T-086** 🎨 Triage view (`/` default on mobile, optional tab on desktop) per **D-045** — three buckets (Action Needed / Waiting / Done) derived from active-stage value. Action Needed rows older than 48h via `updated_at` flagged Stuck (red). Awaiting-arrival rows (no `arrival_date`) forced to Waiting with that subtitle. Row shows ref no, client, active-stage label as subtitle. Tap → detail page. No `@dnd-kit` mounted on mobile. Done 2026-05-28.
 - [ ] **T-081** 🔐 Security review: RLS coverage audit (`audit_rls.sql`), env var review, ensure service role never in client bundles.
   - Accept: Audit query shows every public table has RLS enabled; bundle analyzer confirms no service key string in client chunks.
 - [ ] **T-082** 🚚 CI: GitHub Actions running `pnpm typecheck`, `pnpm lint`, `pnpm test`, `supabase db reset` (fresh schema must apply), `pnpm test:e2e`.

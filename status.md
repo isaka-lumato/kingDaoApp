@@ -8,9 +8,9 @@
 
 | Field | Value |
 |---|---|
-| **Phase** | **Phase 5 closed**, **Phase 6 in progress** as of 2026-05-26. T-071 shipped (XLSX export). **Perf sweep landed mid-Phase-6** (D-040 → D-044): middleware fast path, cross-request permissions cache, `/consignments` parallelization, `useTransition` on the filter bar, `/settings/users` inner+outer parallelization. Phase 4's T-053b (alerts deploy) still parked pending Supabase dashboard access. Next: **T-072** (PDF export). |
-| **Last updated** | 2026-05-26 |
-| **Last task completed** | Perf sweep — D-040 (middleware JWT fast path), D-041 (in-process permissions cache, 5-min TTL), D-042 (`/consignments` parallel data fetch), D-043 (`useTransition` filter bar + soft-nav fix), D-044 (`/settings/users` parallelization). Expected per-page cuts measured in perf-log timings: `/` 815ms → ~200ms (warm), `/consignments` 1267ms → ~370ms (warm), `/settings/users` 2100ms → ~600ms (warm). |
+| **Phase** | **Phase 5 closed**, **Phase 6 in progress** as of 2026-05-26. T-071 shipped (XLSX export). **Perf sweep landed mid-Phase-6** (D-040 → D-044): middleware fast path, cross-request permissions cache, `/consignments` parallelization, `useTransition` on the filter bar, `/settings/users` inner+outer parallelization. **2026-05-28**: Triage view (D-045) landed — replaces kanban as the mobile default, adds desktop tab. T-086 done. Phase 4's T-053b (alerts deploy) still parked pending Supabase dashboard access. Next: **T-072** (PDF export). |
+| **Last updated** | 2026-05-28 |
+| **Last task completed** | T-086 — Triage view (D-045). New `classifyConsignment()` helper in `src/lib/pipeline.ts` + 12 Vitest cases. `TriageView` client component with three collapsible buckets (Action Needed / Waiting / Done), stuck flag on Action rows > 48h via `updated_at`, awaiting-arrival shortcut. `HomeShell` wraps `/` with `useSyncExternalStore`-driven media query → triage on `<md`, kanban on `≥md`, with a tab toggle on desktop. Kanban stays in its existing `next/dynamic` boundary so `@dnd-kit` never ships to mobile. Classifier rule and casing-bug investigation (xlsx-only, not a live issue) recorded in D-045. |
 | **Current task in progress** | None — T-072 (PDF export) is the next codeable task. |
 | **Blocked tasks** | None |
 | **Production deployed?** | No |
