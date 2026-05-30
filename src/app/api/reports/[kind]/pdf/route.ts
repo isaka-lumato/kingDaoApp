@@ -85,9 +85,12 @@ export async function GET(
 
   const element = buildReportPdf(payload, filters);
   const buffer = await renderToBuffer(element);
+  // `renderToBuffer` returns a Node `Buffer`; wrap it in a fresh `Uint8Array`
+  // so it satisfies the Web `BodyInit` contract the Response constructor wants.
+  const body = new Uint8Array(buffer);
 
   const filename = `${reportFilenameStem(kind, filters)}.pdf`;
-  return new Response(buffer, {
+  return new Response(body, {
     headers: {
       "Content-Type": "application/pdf",
       "Content-Disposition": `attachment; filename="${filename}"`,

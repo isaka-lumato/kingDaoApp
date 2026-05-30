@@ -327,6 +327,30 @@ Run after any change to `src/app/api/reports/[kind]/xlsx/route.ts`, `src/server/
 
 ---
 
+## V-REPORTS-PDF — PDF export (T-072)
+
+Run after any change to `src/app/api/reports/[kind]/pdf/route.ts`, `src/server/reports/build-pdf.tsx`, or any T-024 view definition. Extends V-REPORTS; mirrors V-REPORTS-XLSX.
+
+- [ ] Each of the six reports on `/reports` has a visible **Export PDF** anchor next to the Export XLSX anchor. Clicking it triggers a browser download of `kdl-<kind>-<year>[-<from>-<to>].pdf` with `Content-Type: application/pdf` and `Content-Disposition: attachment`.
+- [ ] Opening the downloaded PDF: A4 **landscape**; a fixed page header carries the **Kingdao logo** (`public/KINGDAO_LOGO.png`) on the left and the report title + `Generated … UTC` + filter summary on the right, repeated on every page; the footer shows `KDL Tracker` and a `page / total` counter.
+- [ ] **Money** cells (Revenue.`total_amount`, Client Volume.`total_revenue`, Pending Refunds.`amount`) render via `formatTzs` — same formatting as the page and the XLSX strings.
+- [ ] **Date** cells (Pending Refunds.`release_date`) render `yyyy-mm-dd`.
+- [ ] **Totals row** present on Revenue, Client Volume, Pipeline Bottleneck, and Pending Refunds; absent on the two Turnaround reports — matching the page and the XLSX.
+- [ ] **Pagination.** A report with enough rows to exceed one page splits across pages; the header + table header repeat on each page (react-pdf `fixed`); no row is clipped at a page boundary (`wrap={false}` on data rows).
+- [ ] **Empty result** downloads a valid one-page PDF showing `"No rows matched the filter."` — not an error response.
+- [ ] **Filter range** honoured on date-aware reports: `/api/reports/revenue/pdf?year=2026&from=2026-01-01&to=2026-03-31` and `/api/reports/pending_refunds/pdf?year=2026&from=2026-02-01&to=2026-02-28` render only matching rows; the header records the range. Year-grain reports ignore `from`/`to` per D-039.
+- [ ] **Auth gate.** `GET /api/reports/revenue/pdf?year=2026` unauthenticated returns `401`. An authenticated viewer can download.
+- [ ] **Bad kind.** `/api/reports/bogus/pdf?year=2026` returns `400` with JSON `{"error":"Unknown report kind: bogus"}`.
+- [ ] **Bad year.** Missing/non-numeric `year` falls back to the current year; no `500`.
+- [ ] **Node runtime.** The route exports `runtime = "nodejs"` — `@react-pdf/renderer` needs Node built-ins (`fs`, fontkit); Edge would fail.
+- [ ] **Missing logo is non-fatal.** If `KINGDAO_LOGO.png` is absent at `process.cwd()`, the builder falls back to a blank logo box rather than throwing.
+- [ ] **RLS sanity (D-026).** `grep -rn "getSupabaseAdminClient" src/app/api/reports/ src/server/reports/` is empty. Admin-client allowlist stays at 3 sites.
+- [ ] **No SheetJS / no exceljs** in the PDF path — `build-pdf.tsx` imports only `@react-pdf/renderer` + `@/lib/money` + `./report-types`.
+- [ ] **Tests.** `tests/unit/build-pdf.test.ts` — 9/9 green (each kind renders a valid `%PDF`; empty + null payloads do not throw).
+- [ ] **Build.** `pnpm build` includes `/api/reports/[kind]/pdf` in the route manifest under `ƒ`.
+
+---
+
 ## V-DEPLOY — Production deployment
 
 - [ ] Migrations applied via `supabase db push`, never via Studio.

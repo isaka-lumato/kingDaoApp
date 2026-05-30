@@ -115,10 +115,6 @@ export default async function ReportsPage({
           <PendingRefundsReport payload={payload} filters={filters} />
         )}
       </div>
-
-      <p className="text-[11px] text-muted-foreground">
-        PDF export is tracked as T-072.
-      </p>
     </div>
   );
 }
@@ -268,6 +264,7 @@ function RevenueReport({
             : "All months. Released consignments only."
         }
         exportHref={exportHref("revenue", filters)}
+        exportHrefPdf={exportHrefPdf("revenue", filters)}
       />
       <table className="w-full text-sm">
         <thead>
@@ -340,6 +337,7 @@ function ClientVolumeReport({
         title={reportTitle("client_volume", filters)}
         subtitle="Ranked by container count. Released + active counts shown for context."
         exportHref={exportHref("client_volume", filters)}
+        exportHrefPdf={exportHrefPdf("client_volume", filters)}
       />
       <table className="w-full text-sm">
         <thead>
@@ -427,6 +425,7 @@ function TurnaroundClientReport({
         title={reportTitle("turnaround_client", filters)}
         subtitle="Days from arrival_date to release_date for released consignments. Sorted fastest → slowest."
         exportHref={exportHref("turnaround_client", filters)}
+        exportHrefPdf={exportHrefPdf("turnaround_client", filters)}
       />
       <table className="w-full text-sm">
         <thead>
@@ -498,6 +497,7 @@ function TurnaroundIcdReport({
         title={reportTitle("turnaround_icd", filters)}
         subtitle="Days from arrival_date to release_date, aggregated by ICD."
         exportHref={exportHref("turnaround_icd", filters)}
+        exportHrefPdf={exportHrefPdf("turnaround_icd", filters)}
       />
       <table className="w-full text-sm">
         <thead>
@@ -553,6 +553,7 @@ function PipelineFunnelReport({
         title={reportTitle("pipeline_funnel", filters)}
         subtitle="Consignments sitting in Action at each stage. The stage with the highest count is where things are stalling."
         exportHref={exportHref("pipeline_funnel", filters)}
+        exportHrefPdf={exportHrefPdf("pipeline_funnel", filters)}
       />
       <table className="w-full text-sm">
         <thead>
@@ -641,6 +642,7 @@ function PendingRefundsReport({
             : "Consignments where remarks contained PAID / REFUND NEEDED. Source: v_pending_refunds."
         }
         exportHref={exportHref("pending_refunds", filters)}
+        exportHrefPdf={exportHrefPdf("pending_refunds", filters)}
       />
       <table className="w-full text-sm">
         <thead>

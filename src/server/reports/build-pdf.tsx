@@ -12,7 +12,7 @@
  *  - Date cells use yyyy-mm-dd (matches XLSX behaviour).
  *  - Empty result shows "No rows matched the filter."
  *
- * Tested in `tests/unit/build-pdf.test.tsx`.
+ * Tested in `tests/unit/build-pdf.test.ts`.
  */
 
 import * as React from "react";
@@ -25,6 +25,7 @@ import {
   Text,
   Image,
   StyleSheet,
+  type DocumentProps,
 } from "@react-pdf/renderer";
 import { formatTzs } from "@/lib/money";
 import {
@@ -139,6 +140,9 @@ function PageFrame({
     <Page size="A4" orientation="landscape" style={styles.page}>
       <View style={styles.header} fixed>
         {LOGO_BUFFER ? (
+          // react-pdf's <Image> is a PDF primitive, not an HTML <img> — the
+          // jsx-a11y alt-text rule does not apply here.
+          // eslint-disable-next-line jsx-a11y/alt-text
           <Image src={LOGO_BUFFER} style={styles.logo} />
         ) : (
           <View style={styles.logo} />
@@ -489,7 +493,7 @@ function PendingRefundsTable({ rows }: { rows: PendingRefundRow[] }) {
 export function buildReportPdf(
   payload: ReportPayload,
   filters: ReportFilters,
-): React.ReactElement {
+): React.ReactElement<DocumentProps> {
   const title = reportTitle(payload.kind, filters);
   let body: React.ReactElement;
   switch (payload.kind) {
