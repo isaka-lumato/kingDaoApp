@@ -8,6 +8,7 @@ import {
   type StageField,
   type TriageBucket,
 } from "@/lib/pipeline";
+import StageActionShell from "@/components/stage-action-shell";
 
 type Props = {
   byStage: Record<StageField, KanbanConsignment[]>;
@@ -178,33 +179,33 @@ export default function TriageView({ byStage, year, fetchError }: Props) {
                   )}
                   {list.map((row) => (
                     <li key={row.id}>
-                      <Link
-                        href={`/consignments/${row.id}`}
-                        className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-muted/40 transition-colors"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-xs font-bold text-foreground">
-                              {row.ref_no}
-                            </span>
-                            {row.isStuck && (
-                              <span className="text-[10px] font-semibold text-stage-stuck">
-                                ⚠ STUCK
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-foreground/80 truncate mt-0.5">
-                            {row.client_name}
-                          </p>
-                          <p className="text-[11px] text-muted-foreground truncate mt-0.5">
-                            {row.subtitleLabel}
-                            {row.vessel_name ? ` · ${row.vessel_name}` : ""}
-                          </p>
-                        </div>
-                        <span className="text-muted-foreground text-xs shrink-0">
-                          ›
-                        </span>
-                      </Link>
+                      <StageActionShell
+                        consignment={row}
+                        triggerClassName="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-muted/40 transition-colors text-left"
+                        trigger={
+                          <>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-xs font-bold text-foreground">
+                                  {row.ref_no}
+                                </span>
+                                {row.isStuck && (
+                                  <span className="text-[10px] font-semibold text-stage-stuck">
+                                    ⚠ STUCK
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-foreground/80 truncate mt-0.5">
+                                {row.client_name}
+                              </p>
+                              <p className="text-[11px] text-muted-foreground truncate mt-0.5">
+                                {row.subtitleLabel}
+                                {row.vessel_name ? ` · ${row.vessel_name}` : ""}
+                              </p>
+                            </div>
+                          </>
+                        }
+                      />
                     </li>
                   ))}
                 </ul>

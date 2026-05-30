@@ -20,7 +20,7 @@ function SubmitButton() {
     <button
       type="submit"
       disabled={pending}
-      className="rounded-lg bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60 transition-opacity"
+      className="w-full sm:w-auto rounded-lg bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60 transition-opacity"
     >
       {pending ? "Creating…" : "Create consignment"}
     </button>
@@ -220,10 +220,10 @@ export default function NewConsignmentForm({ clients, icds }: Props) {
         </section>
 
         {/* Actions */}
-        <div className="flex items-center gap-3 justify-end pb-8">
+        <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-3 pb-8">
           <Link
             href="/consignments"
-            className="rounded-lg border border-border px-4 py-2.5 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+            className="w-full sm:w-auto text-center rounded-lg border border-border px-4 py-2.5 text-sm font-medium text-foreground hover:bg-muted transition-colors"
           >
             Cancel
           </Link>

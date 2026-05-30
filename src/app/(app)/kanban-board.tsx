@@ -18,11 +18,9 @@ import {
   type StageField,
   type KanbanConsignment,
 } from "@/lib/pipeline";
-import {
-  advanceStageAction,
-  forceSetStageAction,
-} from "@/server/actions/consignments";
+import { advanceStageAction } from "@/server/actions/consignments";
 import { usePermissions } from "@/hooks/use-permissions";
+import ForceStageDialog from "@/components/force-stage-dialog";
 import KanbanCard from "./kanban-card";
 import KanbanColumn from "./kanban-column";
 
@@ -39,7 +37,6 @@ export default function KanbanBoard({ byStage, year, fetchError }: Props) {
     toStage: StageField;
     newValue: string;
   } | null>(null);
-  const [forceReason, setForceReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const perms = usePermissions();
@@ -106,22 +103,6 @@ export default function KanbanBoard({ byStage, year, fetchError }: Props) {
     startTransition(async () => {
       const res = await advanceStageAction(fd);
       if (res?.error) setError(res.error);
-    });
-  }
-
-  function handleForceConfirm() {
-    if (!forceDialog || !forceReason.trim()) return;
-    const { card, toStage, newValue } = forceDialog;
-    const fd = new FormData();
-    fd.set("consignmentId", card.id);
-    fd.set("stage", toStage);
-    fd.set("newValue", newValue);
-    fd.set("reason", forceReason);
-    startTransition(async () => {
-      const res = await forceSetStageAction(fd);
-      if (res?.error) setError(res.error);
-      setForceDialog(null);
-      setForceReason("");
     });
   }
 
@@ -210,46 +191,17 @@ export default function KanbanBoard({ byStage, year, fetchError }: Props) {
         </DndContext>
       </div>
 
-      {/* Force-set dialog (admin backward move) */}
       {forceDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setForceDialog(null)} />
-          <div className="relative z-10 w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-2xl">
-            <h3 className="text-lg font-semibold text-foreground mb-1">
-              ⚠️ Backward move
-            </h3>
-            <p className="text-muted-foreground text-sm mb-4">
-              Moving <strong>{forceDialog.card.ref_no}</strong> backward bypasses pipeline prerequisites. This action is logged.
-            </p>
-            <div className="space-y-1.5 mb-4">
-              <label className="block text-sm font-medium text-foreground">
-                Reason <span className="text-destructive">*</span>
-              </label>
-              <textarea
-                value={forceReason}
-                onChange={(e) => setForceReason(e.target.value)}
-                placeholder="e.g. Data entry correction — wrong stage was set"
-                rows={3}
-                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none"
-              />
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={() => { setForceDialog(null); setForceReason(""); }}
-                className="flex-1 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleForceConfirm}
-                disabled={!forceReason.trim() || isPending}
-                className="flex-1 rounded-lg bg-destructive px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
-              >
-                {isPending ? "Saving…" : "Confirm move"}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ForceStageDialog
+          open
+          onOpenChange={(o) => { if (!o) setForceDialog(null); }}
+          consignmentId={forceDialog.card.id}
+          refNo={forceDialog.card.ref_no}
+          defaultStage={forceDialog.toStage}
+          defaultValue={forceDialog.newValue}
+          onSuccess={() => setForceDialog(null)}
+          onError={setError}
+        />
       )}
     </div>
   );

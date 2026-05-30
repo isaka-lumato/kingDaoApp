@@ -242,8 +242,7 @@ Two cleanup tasks identified during the post-Phase-3 audit. Both must be done be
 
 ## Phase 7 — Polish, hardening, deploy
 
-- [ ] **T-080** 🎨 Mobile responsive pass on Inbox, Detail, Form (PRD §11 mobile requirement). Pipeline view is handled separately by T-086 per D-034.
-  - Accept: Manual test on a 375px-wide viewport — all flows complete without horizontal scroll.
+- [x] **T-080** 🎨 Mobile responsive pass on Inbox, /consignments list, Detail, Form (PRD §11). Pipeline view already done by T-086. Tables on Inbox + /consignments split into desktop `table` + mobile card list at `md`. Detail header buttons + tabs `flex-1` on mobile, Overview grids `grid-cols-1 sm:grid-cols-2 lg:grid-cols-3`, Audit tab gets vertical card list on mobile. Form button rows `flex flex-col-reverse sm:flex-row` with `w-full sm:w-auto` buttons (primary above Cancel on mobile, near the thumb). Done 2026-05-29.
 - [x] **T-086** 🎨 Triage view (`/` default on mobile, optional tab on desktop) per **D-045** — three buckets (Action Needed / Waiting / Done) derived from active-stage value. Action Needed rows older than 48h via `updated_at` flagged Stuck (red). Awaiting-arrival rows (no `arrival_date`) forced to Waiting with that subtitle. Row shows ref no, client, active-stage label as subtitle. Tap → detail page. No `@dnd-kit` mounted on mobile. Done 2026-05-28.
 - [ ] **T-081** 🔐 Security review: RLS coverage audit (`audit_rls.sql`), env var review, ensure service role never in client bundles.
   - Accept: Audit query shows every public table has RLS enabled; bundle analyzer confirms no service key string in client chunks.
