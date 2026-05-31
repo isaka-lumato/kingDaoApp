@@ -152,15 +152,19 @@ const HEADER_ALIASES: Record<string, LogicalField> = {
   manifest: "manifest_status",
   "shipping batch": "shipping_batch_status",
   "current status": "current_status",
+  "curent status": "current_status", // real-file typo
   "tanesws loading": "tanesws_status",
+  "tanesws loadging": "tanesws_status", // real-file typo
   tanesws: "tanesws_status",
   assment: "assessment_status",
   assessment: "assessment_status",
   "tbs loading": "tbs_loading_status",
+  "tbs loadging": "tbs_loading_status", // real-file typo
   "tbs debit": "tbs_debit_status",
   "manifest comp": "manifest_comp_status",
   "duty status": "duty_status",
   "inspection file": "inspection_file_status",
+  "inspectione file": "inspection_file_status", // real-file typo
   "release status": "release_status",
   "release date": "release_date",
   // EFD
@@ -194,21 +198,24 @@ export function parseTracker(rows: CellValue[][]): ParseResult {
       continue;
     }
 
-    // Year separator: a single non-empty cell whose value parses as a 4-digit
-    // year (2000..2100), all other cells empty.
+    // Year separator: a banner row whose every non-empty cell holds the same
+    // 4-digit year. In the real tracker the year is a merged cell smeared
+    // across ~20 columns, so this is NOT a single-cell test (D-047).
+    // A year banner only flips the active year — it never clears the header,
+    // because the file has one header shared across both year sections.
     const yr = detectYearSeparator(row);
     if (yr != null) {
       activeYear = yr;
-      activeHeaderMap = null; // a new section needs its own header row
       years.add(yr);
       skipped++;
       continue;
     }
 
     // Header row: a row that contains REF No and at least one other known
-    // header alias. We try to build a header map from every non-blank row
-    // until one looks like a header; this lets the year separator be
-    // followed by 0+ formatting rows before the real header.
+    // header alias. We scan every non-blank row until one looks like a header.
+    // Per D-047 the header may appear BEFORE the first year banner (the real
+    // file is title-junk → header → year banner → data), so header discovery
+    // is independent of whether a year has been established yet.
     if (activeHeaderMap == null) {
       const map = tryBuildHeaderMap(row);
       if (map) {
@@ -216,19 +223,26 @@ export function parseTracker(rows: CellValue[][]): ParseResult {
         skipped++;
         continue;
       }
-      // Not a header and we have no map yet — treat as error per row, but
-      // only once per section to avoid flooding.
-      errors.push({
-        rowIndex: i,
-        message:
-          activeYear == null
-            ? "Data row before any year separator or header row."
-            : "Data row before a recognisable header row.",
-      });
+      // Not a header and we have no map yet. Two cases:
+      //  - Before any year banner: this is preamble/junk above the header
+      //    (e.g. the file's title row) — skip it silently.
+      //  - After a year banner but still no header: a real data row that can't
+      //    be placed because the section never had a recognisable header —
+      //    surface it as an error so rows aren't dropped silently.
+      if (activeYear == null) {
+        skipped++;
+      } else {
+        errors.push({
+          rowIndex: i,
+          message: "Data row before a recognisable header row.",
+        });
+      }
       continue;
     }
 
     if (activeYear == null) {
+      // Header is known but no year banner has been seen yet. A genuine data
+      // row here can't be assigned to a year — surface it as an error.
       errors.push({
         rowIndex: i,
         message: "Data row before any year separator.",
@@ -492,22 +506,34 @@ function isBlankRow(row: CellValue[]): boolean {
   return row.every((c) => c == null || (typeof c === "string" && c.trim() === ""));
 }
 
+// A year-separator banner: every non-empty cell coerces to the SAME 4-digit
+// year in 2000..2100. The real tracker merges the year across ~20 columns, so
+// this is not a single-cell test (D-047). A lone year cell still satisfies it,
+// so single-cell synthetic test rows continue to work.
 function detectYearSeparator(row: CellValue[]): number | null {
-  const nonEmpty = row.filter((c) => c != null && !(typeof c === "string" && c.trim() === ""));
-  if (nonEmpty.length !== 1) return null;
-  const v = nonEmpty[0]!;
-  const n = typeof v === "number" ? v : parseInt(String(v).trim(), 10);
-  if (!Number.isInteger(n) || n < 2000 || n > 2100) return null;
-  return n;
+  const nonEmpty = row.filter(
+    (c) => c != null && !(typeof c === "string" && c.trim() === "")
+  );
+  if (nonEmpty.length === 0) return null;
+  let year: number | null = null;
+  for (const v of nonEmpty) {
+    const n = typeof v === "number" ? v : parseInt(String(v).trim(), 10);
+    if (!Number.isInteger(n) || n < 2000 || n > 2100) return null;
+    if (year == null) year = n;
+    else if (n !== year) return null;
+  }
+  return year;
 }
 
 function normaliseHeader(s: string): string {
-  // Lowercase, strip `.` and `:` anywhere (real headers in this tracker mix
-  // "ARR. DATE", "TANSAD No.", "S/N" — abbreviation dots are noise to the
-  // matcher), collapse whitespace, trim.
+  // Lowercase, strip `.`, `:` and `;` anywhere (real headers in this tracker
+  // mix "ARR. DATE", "TANSAD No.", "S/N", and the typo'd "B/L No;" —
+  // abbreviation/typo punctuation is noise to the matcher). Embedded newlines
+  // (e.g. "No. of\r\nCont(s)") collapse via the \s+ rule. Collapse whitespace,
+  // trim.
   return s
     .toLowerCase()
-    .replace(/[.:]/g, "")
+    .replace(/[.:;]/g, "")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -526,6 +552,15 @@ function tryBuildHeaderMap(
       map[field] = col;
       hits++;
     }
+  }
+  // Strict container-type fallback (D-047): in the real tracker the container
+  // type column has NO header — its header cell is merged into "No. of
+  // Cont(s)". So if container_type didn't map but container_count did, use the
+  // column immediately to the right of the count column. If that column turns
+  // out to hold non-enum values, those rows error individually via the
+  // per-row container-type guard — no silent mis-mapping.
+  if (map.container_type == null && map.container_count != null) {
+    map.container_type = map.container_count + 1;
   }
   // Heuristic: a real header row should match at least the required fields
   // plus a handful more. Anything else is a noise row.

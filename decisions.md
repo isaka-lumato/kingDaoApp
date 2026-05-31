@@ -879,3 +879,28 @@ No data migration is needed. The xlsx itself is the operator's working copy and 
 **Folded-in fix.** The original operator/viewer seed (`20260518175820`, lines 156 & 194) and the roles-matrix UI (`roles-client.tsx`) named a non-existent column `in_ref_batch_id`; the real column is `in_ref`. The same migration deletes the dangling perm rows and upserts the correct `in_ref` rows (operator writable, viewer read-only); the UI string was corrected too. Without this, operators silently couldn't write `in_ref` and the new guard would have blocked it.
 
 **Scope.** `consignments` only. `efd_records` has the identical `with check (true)` gap but no per-column seed today — logged as a follow-up task rather than widened into T-081.
+
+---
+
+## D-047 — Excel parser handles the real source-file structure (supersedes parts of D-036)
+
+**Context.** Importing the live `TRACKER -- KDL.xlsx` (the file the app replaces) produced **545 errors, 0 parsed rows**, all "Data row before any year separator or header row." `parseTracker` (`src/server/import/parse-tracker.ts`) was coded against the idealized structure in D-036, but byte-level inspection of the real workbook (sheet `IMPORT`, 562 rows, 2 year sections) showed D-036's structural assumptions don't match the actual file. PRD §9.3 says the importer "must handle the source file's structure" and the source file is the authoritative artifact, so the parser changes to fit it.
+
+**What the real file actually looks like:**
+
+1. **Year separator is a merged banner, not a single cell.** The year is repeated across the row's columns (row 2 = `2025` ×21 cells; row 277 = `2026` ×20 cells), backed by cell merges. D-036 §2 ("a single non-empty cell whose value parses as a 4-digit year, all other cells empty") is wrong for this file.
+2. **Header precedes the first year banner.** Order is: title-junk row → header row → `2025` banner → data → `2026` banner → data. D-036 §2's "next non-empty row after a year separator is the header" is inverted here.
+3. **One header for the whole file.** The `2026` section has no header of its own; the single header must stay active across year banners.
+4. **The container-type column has no header.** Its header cell is merged into "No. of Cont(s)" (merge `c5–c6` on the header row), so SheetJS leaves the container-type column (holding CAR/40FT/COIL/20FT) unlabeled. Header-only matching can never resolve it.
+5. **Header labels carry typos:** `CURENT STATUS`, `TANESWS Loadging`, `TBS Loadging`, `Inspectione file`, `B/L No;`, and `"No. of\r\nCont(s)"` (embedded CRLF).
+
+**Decision.**
+
+1. **Year-row detection** = a row where *every* non-empty cell coerces to the **same** 4-digit year in 2000–2100. (A single-cell year row trivially satisfies this, so D-036's synthetic test inputs still pass.)
+2. **Header is discovered by scanning every non-blank row** (the title-junk row fails the `≥5 hits` + required-fields heuristic; the real header passes) and is **sticky**: once found it stays active. A year banner only flips the active year — it never clears the header map. This drops D-036's "header re-required per section" behavior.
+3. **Header order is free.** A header may appear before any year banner; data rows are only parsed once both a header and an active year exist. A data row seen with a header but no active year is still an error (preserved from D-036); unrecognized rows seen *before* the header (preamble/junk) are counted as `skipped`, not errors, so a title row doesn't produce a spurious per-row error.
+4. **Container-type column resolves by strict positional fallback.** If no header maps to `container_type` but `container_count` did, the column immediately to the right of the count column is used. If that column holds non-enum values, those rows error individually via the existing per-row container-type guard — no silent mis-mapping.
+
+**Unchanged from D-036:** two-bucket output (errors block, warnings inform), header-driven column resolution as the primary mechanism, the `{rowIndex, refNo?, field?, message}` issue shape, and skipped-row accounting. D-035 (parser is pure over `CellValue[][]`, SheetJS in adapters) is untouched — all detection runs on the cell matrix; cell-merge facts are read off the *data* shape (repeated year values), not the SheetJS `!merges` table, keeping the parser library-agnostic.
+
+**Trade-offs.** Year detection is marginally looser (a genuine data row that happened to contain only one identical year value in every populated cell would be read as a banner) — acceptable: real data rows always carry a ref_no/text alongside, so they never satisfy "all cells the same year." The container-type fallback assumes count-then-type column adjacency, which holds in the source file and degrades safely (per-row error) if a future file differs.
