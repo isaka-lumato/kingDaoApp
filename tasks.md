@@ -249,8 +249,16 @@ Two cleanup tasks identified during the post-Phase-3 audit. Both must be done be
 
 - [x] **T-080** 🎨 Mobile responsive pass on Inbox, /consignments list, Detail, Form (PRD §11). Pipeline view already done by T-086. Tables on Inbox + /consignments split into desktop `table` + mobile card list at `md`. Detail header buttons + tabs `flex-1` on mobile, Overview grids `grid-cols-1 sm:grid-cols-2 lg:grid-cols-3`, Audit tab gets vertical card list on mobile. Form button rows `flex flex-col-reverse sm:flex-row` with `w-full sm:w-auto` buttons (primary above Cancel on mobile, near the thumb). Done 2026-05-29.
 - [x] **T-086** 🎨 Triage view (`/` default on mobile, optional tab on desktop) per **D-045** — three buckets (Action Needed / Waiting / Done) derived from active-stage value. Action Needed rows older than 48h via `updated_at` flagged Stuck (red). Awaiting-arrival rows (no `arrival_date`) forced to Waiting with that subtitle. Row shows ref no, client, active-stage label as subtitle. Tap → detail page. No `@dnd-kit` mounted on mobile. Done 2026-05-28.
-- [ ] **T-081** 🔐 Security review: RLS coverage audit (`audit_rls.sql`), env var review, ensure service role never in client bundles.
-  - Accept: Audit query shows every public table has RLS enabled; bundle analyzer confirms no service key string in client chunks.
+- [x] **T-081** 🔐 Security review: RLS coverage audit (`audit_rls.sql`), env var review, ensure service role never in client bundles. Done 2026-05-31.
+  - Accept: Audit query shows every public table has RLS enabled; bundle analyzer confirms no service key string in client chunks. ✓ `audit_rls.sql` (repo root) confirms RLS on all 14 user-facing tables + no permissive hard-DELETE on operational tables + the new column-write-guard trigger. Secret-key isolation verified: `import "server-only"` guard in `src/lib/supabase/admin.ts` + `server-only` dep + non-`NEXT_PUBLIC_` env access in `env.ts`; no `"use client"` file imports admin/secret; admin-client allowlist is exactly the 3 D-026 sites; zero hardcoded keys in `src/`.
+  - **Closed the documented compromise (D-046):** the `consignments_update` RLS policy was `with check (true)` — per-column writes were enforced app-layer only, so an operator could PATCH `amount`/`client_id` directly via REST. Added migration `20260525090000_consignments_column_write_guard.sql`: a `BEFORE UPDATE` trigger (`consignments_enforce_column_write()`) that calls `can_user_write()` per changed column and raises `42501`; `advance_stage()`/`force_set_stage()` re-emitted with a tx-local GUC bypass (`app.bypass_column_guard`) so the sanctioned pipeline writers still work. Admins short-circuit via `is_admin()`. Applied to dev (`db push`), types regenerated.
+  - **Folded-in fix:** the operator/viewer perm seed + roles-matrix UI referenced a non-existent column `in_ref_batch_id`; real column is `in_ref`. Migration deletes the dangling rows + upserts correct `in_ref` perms; `src/app/(app)/settings/roles/roles-client.tsx` string corrected.
+  - Findings audit (3 parallel agents + source verification): several agent "CRITICAL/HIGH" flags were false positives — `advanceStageAction` "no app check" (the DB function has the D-029 caller gate), `deleteRoleAction` "race" (the `roles_prevent_system_mutation` trigger is atomic). Real findings = the per-column gap (fixed) + the `in_ref` seed bug (fixed).
+  - **Owed to ad-hoc QA (per T-048/D-029 precedent):** the behavioural REST walkthrough as operator/admin/viewer JWTs (V-PERM "Per-column UPDATE guard" checklist). The migration applied cleanly — the `do $$…$$` seed block and both `create or replace` succeeded, proving the SQL is valid and the seed resolved — but the runtime `42501` proof needs a logged-in operator JWT.
+  - Gates: typecheck clean, lint 0 errors / 5 pre-existing warnings, 67/67 unit tests, migration applied + recorded (`supabase migration list --linked` shows `20260525090000` on both Local + Remote). D-046 logged; V-PERM tightened. New follow-up T-087 logged for the identical `efd_records` gap.
+
+- [ ] **T-087** 🔐 Apply the same DB-level per-column UPDATE guard to `efd_records` (D-046 scope was `consignments`-only). `efd_records_update` also ends in `with check (true)`; unlike `consignments`, `efd_records` has no per-column `role_column_permissions` seed yet, so this needs a seed (which columns operators may write) before a guard trigger can be attached. Mirror migration `20260525090000`.
+  - Accept: an operator direct REST PATCH of a non-writable `efd_records` column returns `42501`; `audit_rls.sql` Query 4 (extended) shows the guard trigger on `efd_records`.
 - [ ] **T-082** 🚚 CI: GitHub Actions running `pnpm typecheck`, `pnpm lint`, `pnpm test`, `supabase db reset` (fresh schema must apply), `pnpm test:e2e`.
   - Accept: Push to a branch triggers CI; all jobs green on a clean repo.
 - [ ] **T-083** 🚚 Deploy: link Supabase Cloud project, set env vars in Vercel, deploy. Apply migrations via `supabase db push`.
@@ -272,7 +280,7 @@ Two cleanup tasks identified during the post-Phase-3 audit. Both must be done be
 - **T-049 (perf pass) blocks T-053 (alerts edge function)** — the edge function should not be added on top of a layout that's already taking 1.5s; we want a clean baseline to compare against.
 - T-060 (parser) blocks T-061, T-062.
 - T-082 (CI) and T-083 (deploy) are last.
-- T-081 (security review) cannot pass until T-048 lands.
+- T-081 (security review) cannot pass until T-048 lands. ✓ T-048 landed 2026-05-22; T-081 done 2026-05-31.
 
 ---
 

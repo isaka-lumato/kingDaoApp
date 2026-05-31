@@ -69,6 +69,15 @@ Each rule needs at least one Vitest or SQL test in `tests/unit/pipeline/`.
   Any other match is a regression and must be fixed before the task is marked done.
 - [ ] **Soft-delete leak audit.** Every read path that doesn't use the admin client must include `.is("deleted_at", null)` in the SELECT clause. Manual check: a viewer hitting the detail URL of a soft-deleted consignment gets a 404, not the row.
 - [ ] **`SECURITY DEFINER` caller-role gate (D-029).** Every `security definer` function in `supabase/migrations/` that performs INSERT/UPDATE/DELETE on a user-facing table has an explicit caller-role check (`raise exception '...' using errcode = '42501'`) as its first executable statement, before row locking or pre-condition checks. Direct REST verification: signing in as a viewer and `POST`ing to `/rest/v1/rpc/<function>` returns `42501`, not `200`. Current inventory: `advance_stage()` ✅, `force_set_stage()` ✅, triggers (`log_table_change`, `auto_detect_guta_pair`) ✅ (no mutations gated on caller). Pure functions (`current_user_can_write`, `is_admin`) — n/a.
+- [ ] **Per-column UPDATE guard at the DB (D-046).** The `consignments_aaa_column_write_guard` BEFORE UPDATE trigger (migration `20260525090000`) must reject a non-admin direct REST PATCH of a non-writable column with `42501`. Direct REST verification with an **operator** JWT against the dev project:
+  - `PATCH /rest/v1/consignments?id=eq.<id>` body `{"amount":999}` → **42501** ("Permission denied: you may not modify consignments.amount").
+  - body `{"client_id":"<other-uuid>"}` → **42501**.
+  - body `{"remarks":"ok"}` → **200/204** (operator-writable).
+  - body `{"in_ref":"TZ9"}` → **200/204** (proves the `in_ref_batch_id`→`in_ref` seed fix).
+  - body `{"remarks":"x","amount":<current amount>}` → **200/204** (unchanged `amount` is not flagged — `is distinct from` per-column logic).
+  - `POST /rest/v1/rpc/advance_stage {p_id,p_stage:"manifest",p_new_value:"Uploaded"}` → **200** even though it writes `updated_by` (tx-local GUC bypass works).
+  With an **admin** JWT: `PATCH {"amount":500}` → **200/204** (`is_admin()` short-circuit). With a **viewer** JWT: any PATCH → **403** from the policy `using` role gate (guard never reached).
+- [ ] **RLS coverage audit (T-081 deliverable).** Run `audit_rls.sql` against the project (Supabase SQL editor or `psql -f audit_rls.sql`). Query 1 must show `rls_enabled = true` for **every** `public` table. Query 3 must show no permissive hard-DELETE policy on `consignments`/`clients`/`icds` (efd_records admin-only DELETE is the documented exception). Query 4 must list the `consignments_aaa_column_write_guard` trigger.
 
 ---
 

@@ -863,3 +863,19 @@ No data migration is needed. The xlsx itself is the operator's working copy and 
 ---
 
 <!-- Append new decisions below this line. Number sequentially. -->
+
+## D-046 — Per-column UPDATE enforcement on `consignments` via BEFORE UPDATE trigger + tx-local GUC bypass
+
+**Context (T-081 security review).** The `consignments_update` RLS policy (migration `20260519005000`) ends in `with check (true)`. Its `using` clause correctly gates UPDATE to admin/operator roles, but once past that gate an operator could PATCH **any** column via PostgREST — including `amount` and `client_id` — even though their role's `role_column_permissions.can_write` is `false` for those columns. The per-column rule was enforced only in the app layer (`src/server/actions/edit-consignment.ts:47`), which protects the UI path but not a direct REST call. This violated CLAUDE.md §3.3 ("per-column permissions enforced two ways: RLS policies on UPDATE *and* UI"). It was the last open compromise before deploy and a hard blocker on T-081.
+
+**Decision.** Enforce per-column writes at the DB with a `BEFORE UPDATE` row trigger (`consignments_enforce_column_write()`), migration `20260525090000_consignments_column_write_guard.sql`. For each column that actually changed (`to_jsonb(OLD)->k IS DISTINCT FROM to_jsonb(NEW)->k`), it calls the existing `public.can_user_write('consignments', k)` and `raise exception ... errcode '42501'` on the first forbidden change. Admins short-circuit via `is_admin()`. `updated_at` is exempt (bumped by `set_updated_at()` on every update).
+
+**Why a trigger, not RLS.** RLS `with check` is a row predicate; it cannot compare OLD vs NEW per column. "Did this column change, and may the caller change it" needs OLD/NEW, which only a `BEFORE UPDATE` row trigger provides. The codebase already establishes this exact pattern (`roles_prevent_system_mutation()`, migration `20260518175820`).
+
+**Why a tx-local GUC bypass, not column GRANTs or owner-detection.** `advance_stage()` / `force_set_stage()` are SECURITY DEFINER but a BEFORE UPDATE trigger still sees the real caller's `auth.uid()`. They write `updated_by` (NOT in the operator writable seed), so a naive guard would `42501` the one sanctioned pipeline writer. The two functions opt out via `perform set_config('app.bypass_column_guard', 'on', true)` placed right after their caller-role/admin gate; the guard early-returns when the flag is set. `is_local = true` ⇒ the flag resets at transaction end ⇒ safe on PgBouncer/pooled connections. Rejected alternatives: (a) detecting the function owner via `current_user`/`session_user` is deploy-fragile in Supabase (table + functions share an owner); (b) a static column allowlist (`updated_by`/`release_date`) would leave those columns unguarded on the *direct* REST path too — the GUC approach keeps them guarded there.
+
+**Trade-offs.** New columns fail closed: any column an operator should write needs a `role_column_permissions` seed row, else the guard blocks it (intended — explicit over implicit). Soft-delete is unaffected because it is admin-only (`softDeleteConsignmentAction` checks `perms.isAdmin`) and admins bypass the guard.
+
+**Folded-in fix.** The original operator/viewer seed (`20260518175820`, lines 156 & 194) and the roles-matrix UI (`roles-client.tsx`) named a non-existent column `in_ref_batch_id`; the real column is `in_ref`. The same migration deletes the dangling perm rows and upserts the correct `in_ref` rows (operator writable, viewer read-only); the UI string was corrected too. Without this, operators silently couldn't write `in_ref` and the new guard would have blocked it.
+
+**Scope.** `consignments` only. `efd_records` has the identical `with check (true)` gap but no per-column seed today — logged as a follow-up task rather than widened into T-081.
