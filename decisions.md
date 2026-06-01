@@ -904,3 +904,18 @@ No data migration is needed. The xlsx itself is the operator's working copy and 
 **Unchanged from D-036:** two-bucket output (errors block, warnings inform), header-driven column resolution as the primary mechanism, the `{rowIndex, refNo?, field?, message}` issue shape, and skipped-row accounting. D-035 (parser is pure over `CellValue[][]`, SheetJS in adapters) is untouched — all detection runs on the cell matrix; cell-merge facts are read off the *data* shape (repeated year values), not the SheetJS `!merges` table, keeping the parser library-agnostic.
 
 **Trade-offs.** Year detection is marginally looser (a genuine data row that happened to contain only one identical year value in every populated cell would be read as a banner) — acceptable: real data rows always carry a ref_no/text alongside, so they never satisfy "all cells the same year." The container-type fallback assumes count-then-type column adjacency, which holds in the source file and degrades safely (per-row error) if a future file differs.
+
+---
+
+## D-048 — Kanban board uses themed slim scrollbars + horizontal-scroll affordance
+
+**Context.** The Pipeline Board relied on raw native OS scrollbars (no custom scrollbar CSS existed anywhere). On Windows 11 this rendered chunky light-grey vertical bars inside every column's card list that clashed with the dark app shell, and the board's horizontal scroller gave no signal that more columns existed off-screen — so sideways navigation felt unintuitive. User-reported polish, not a PRD item.
+
+**Decision.** Presentational only:
+1. Two scrollbar utilities in `globals.css` (`@layer utilities`): `.scrollbar-thin` (slim, theme-token-colored thumb via `::-webkit-scrollbar` + Firefox `scrollbar-width/color`) and `.scrollbar-auto-hide` (thumb transparent until container hover/focus-within). Column card lists use both (auto-hiding vertical); the board's horizontal scroller uses `.scrollbar-thin` (always-slim).
+2. `kanban-column.tsx`: column header is now `sticky top-0` with a translucent backdrop so the stage label persists while scrolling; card list gains `overscroll-contain` so a column's scroll doesn't bubble to the board's horizontal scroller at its ends; empty columns render a dashed "Drop here" placeholder instead of plain "Empty" text.
+3. `kanban-board.tsx`: the scroll viewport is wrapped in a `relative` container with two `pointer-events-none` left/right gradient fades (from `--background`) that frame the board and hint at off-screen columns; an `onWheel` handler maps a vertical wheel to horizontal board `scrollLeft`.
+
+**Wheel behavior (refined after first pass).** The initial handler hijacked *every* vertical wheel for horizontal scroll, which broke scrolling cards within a tall column. Final rule: a plain wheel is redirected to horizontal **only** when (a) `Shift` is held (the web convention — `Ctrl` was rejected because it collides with browser zoom), or (b) the column card-list under the cursor can't scroll further in the wheel's direction. The handler locates that card-list via a `data-kanban-scroll` attribute on the column scroller (`kanban-column.tsx`) and checks `scrollTop`/`scrollHeight`/`clientHeight`. Horizontal trackpad gestures (`|deltaX| > |deltaY|`) are left to the browser.
+
+**Scope / non-goals.** No changes to drag-and-drop, `advance_stage`, the card layout itself, or any data flow. Edge fades are always rendered (no scroll-position listener) — simplest robust version; making them appear/disappear at the true ends was deferred as unnecessary. Firefox can't transition the auto-hide thumb and falls back to the always-slim bar (acceptable).

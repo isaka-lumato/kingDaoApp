@@ -263,4 +263,47 @@
     background-image: radial-gradient(circle, oklch(0.60 0.16 185 / 0.12) 1px, transparent 1px);
     background-size: 24px 24px;
   }
+
+  /* ─── Themed scrollbars (D-048) ─────────────────────────────────────────────
+   * The native OS scrollbars (chunky + light grey on Windows) clash with the
+   * dark app shell. These utilities give slim, theme-aware bars. Webkit/Blink
+   * (Chrome/Edge) use ::-webkit-scrollbar; Firefox uses scrollbar-width/color.
+   */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 10px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: var(--border);
+    border-radius: 9999px;
+    /* 2px transparent border insets the thumb so it reads as a slim pill */
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    transition: background-color 0.15s ease;
+  }
+  .scrollbar-thin:hover::-webkit-scrollbar-thumb,
+  .scrollbar-thin:focus-within::-webkit-scrollbar-thumb {
+    background-color: var(--muted-foreground);
+  }
+  .scrollbar-thin::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  /* Auto-hide: thumb is invisible until the container is hovered / focused.
+   * Firefox can't transition the thumb, so it falls back to the always-thin
+   * bar above (acceptable). */
+  .scrollbar-auto-hide::-webkit-scrollbar-thumb {
+    background-color: transparent;
+  }
+  .scrollbar-auto-hide:hover::-webkit-scrollbar-thumb,
+  .scrollbar-auto-hide:focus-within::-webkit-scrollbar-thumb {
+    background-color: var(--border);
+  }
 }
