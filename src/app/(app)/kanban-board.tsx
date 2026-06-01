@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useOptimistic, useRef, useState, useTransition } from "react";
 import {
   DndContext,
   DragEndEvent,
@@ -10,19 +10,21 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
-  closestCenter,
+  pointerWithin,
+  rectIntersection,
+  type CollisionDetection,
 } from "@dnd-kit/core";
 import {
   PIPELINE_STAGES,
   STAGE_DONE_VALUE,
+  resolveActiveStage,
+  STAGE_FIELDS,
   type StageField,
   type KanbanConsignment,
 } from "@/lib/pipeline";
-import {
-  advanceStageAction,
-  forceSetStageAction,
-} from "@/server/actions/consignments";
+import { advanceStageAction } from "@/server/actions/consignments";
 import { usePermissions } from "@/hooks/use-permissions";
+import ForceStageDialog from "@/components/force-stage-dialog";
 import KanbanCard from "./kanban-card";
 import KanbanColumn from "./kanban-column";
 
@@ -32,6 +34,42 @@ type Props = {
   fetchError?: string;
 };
 
+type Board = Record<StageField, KanbanConsignment[]>;
+
+// Optimistic move: pull `card` out of whichever column currently holds it and
+// drop it into `landingStage` (the stage the server will recompute it into).
+// Returns a fresh Board so React sees a new reference. If the card lands past
+// the visible board (fully released), it's simply removed — the real fetch
+// filters released rows out (.neq("release_status","Released")).
+type OptimisticMove = {
+  card: KanbanConsignment;
+  landingStage: StageField;
+  removed: boolean;
+};
+
+function applyMove(board: Board, move: OptimisticMove): Board {
+  const next = {} as Board;
+  for (const field of STAGE_FIELDS) {
+    next[field] = board[field].filter((c) => c.id !== move.card.id);
+  }
+  if (!move.removed) {
+    next[move.landingStage] = [
+      { ...move.card, active_stage: move.landingStage },
+      ...next[move.landingStage],
+    ];
+  }
+  return next;
+}
+
+// Forgiving drop detection: register the drop wherever the *pointer* is, not
+// where the card's center happens to be. Falls back to rectangle intersection
+// when the pointer is released in a gutter between columns, so an off-center
+// drop still snaps into the nearest column instead of being discarded.
+const collisionDetection: CollisionDetection = (args) => {
+  const within = pointerWithin(args);
+  return within.length ? within : rectIntersection(args);
+};
+
 export default function KanbanBoard({ byStage, year, fetchError }: Props) {
   const [activeCard, setActiveCard] = useState<KanbanConsignment | null>(null);
   const [forceDialog, setForceDialog] = useState<{
@@ -39,10 +77,48 @@ export default function KanbanBoard({ byStage, year, fetchError }: Props) {
     toStage: StageField;
     newValue: string;
   } | null>(null);
-  const [forceReason, setForceReason] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [optimisticBoard, applyOptimistic] = useOptimistic(byStage, applyMove);
   const perms = usePermissions();
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Wheel handling. A plain vertical wheel should scroll the column under the
+  // cursor (its card list) like normal; we only redirect it to *horizontal*
+  // board scroll when there's a clear reason to:
+  //   1. Shift is held — the web convention for "scroll sideways".
+  //   2. The column under the cursor can't scroll any further in the wheel's
+  //      direction (short column, or already at top/bottom) — so the gesture
+  //      isn't wasted and traverses columns instead.
+  // Trackpads emit deltaX natively, so we ignore events that are already
+  // horizontal and let the browser handle them.
+  function handleWheel(e: React.WheelEvent<HTMLDivElement>) {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    // Already a horizontal gesture (trackpad) — leave it to the browser.
+    if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+
+    const delta = e.deltaY;
+
+    if (!e.shiftKey) {
+      // Find the column card-list under the cursor and see if it can still
+      // scroll vertically in this direction. If so, let it — don't hijack.
+      const colScroller = (e.target as HTMLElement)?.closest<HTMLElement>(
+        "[data-kanban-scroll]"
+      );
+      if (colScroller) {
+        const { scrollTop, scrollHeight, clientHeight } = colScroller;
+        const canScrollDown = delta > 0 && scrollTop + clientHeight < scrollHeight - 1;
+        const canScrollUp = delta < 0 && scrollTop > 0;
+        if (canScrollDown || canScrollUp) return;
+      }
+    }
+
+    // Otherwise translate the vertical wheel into horizontal board movement.
+    el.scrollLeft += delta;
+  }
 
   // Viewer-or-other roles cannot move cards. Admins + operators can.
   // Caller-role check is also enforced in the advance_stage() DB function
@@ -60,6 +136,7 @@ export default function KanbanBoard({ byStage, year, fetchError }: Props) {
     const card = e.active.data.current?.card as KanbanConsignment;
     setActiveCard(card ?? null);
     setError(null);
+    setInfo(null);
   }
 
   function handleDragEnd(e: DragEndEvent) {
@@ -99,36 +176,73 @@ export default function KanbanBoard({ byStage, year, fetchError }: Props) {
     // moves one column forward and they can drag again. The DB function
     // enforces PRD §7.1 (stages must complete in order); since we only
     // advance the active stage, prereqs are by definition satisfied.
+    const newValue = STAGE_DONE_VALUE[card.active_stage];
+
+    // Compute where the card will ACTUALLY land, the same way the server's
+    // fetchKanbanData → resolveActiveStage will: clone the card's stage values,
+    // mark the source field done, then resolve the first non-complete stage.
+    // This may differ from the column the user dropped on when later stages are
+    // already at their done value (imported data with gaps) — the card then
+    // jumps several columns forward, which previously looked like it vanished.
+    const stageValues: Record<string, string> = {};
+    for (const f of STAGE_FIELDS) stageValues[f] = card[f];
+    stageValues[card.active_stage] = newValue;
+    const landingStage = resolveActiveStage(stageValues);
+
+    // A card whose remaining stages were all already done lands on release as
+    // "Released" — fetchKanbanData filters those out, so it legitimately leaves
+    // the active board. Detect that so we can explain the disappearance.
+    const fullyReleased =
+      landingStage === "release_status" &&
+      stageValues.release_status === STAGE_DONE_VALUE.release_status;
+
+    console.log("[kanban] advance", {
+      id: card.id,
+      ref_no: card.ref_no,
+      from: card.active_stage,
+      dropTarget: toField,
+      landingStage,
+      newValue,
+      fullyReleased,
+    });
+
     const fd = new FormData();
     fd.set("consignmentId", card.id);
     fd.set("stage", card.active_stage);
-    fd.set("newValue", STAGE_DONE_VALUE[card.active_stage]);
-    startTransition(async () => {
-      const res = await advanceStageAction(fd);
-      if (res?.error) setError(res.error);
-    });
-  }
-
-  function handleForceConfirm() {
-    if (!forceDialog || !forceReason.trim()) return;
-    const { card, toStage, newValue } = forceDialog;
-    const fd = new FormData();
-    fd.set("consignmentId", card.id);
-    fd.set("stage", toStage);
     fd.set("newValue", newValue);
-    fd.set("reason", forceReason);
     startTransition(async () => {
-      const res = await forceSetStageAction(fd);
-      if (res?.error) setError(res.error);
-      setForceDialog(null);
-      setForceReason("");
+      // Optimistically move the card to its computed landing column (or off the
+      // board if fully released) so the UI feels instant. Reverts automatically
+      // if the server action throws or the refetched props don't confirm it.
+      applyOptimistic({ card, landingStage, removed: fullyReleased });
+
+      const res = await advanceStageAction(fd);
+      if (res?.error) {
+        console.error("[kanban] advance failed", {
+          id: card.id,
+          ref_no: card.ref_no,
+          error: res.error,
+        });
+        setError(res.error);
+        return;
+      }
+      console.log("[kanban] advance ok", {
+        id: card.id,
+        ref_no: card.ref_no,
+        landingStage,
+      });
+      if (fullyReleased) {
+        setInfo(
+          `${card.ref_no} is fully released — moved off the active board.`
+        );
+      }
     });
   }
 
   const currentYear = new Date().getFullYear();
   const yearOptions = [currentYear - 1, currentYear, currentYear + 1];
   const totalCards = PIPELINE_STAGES.reduce(
-    (sum, s) => sum + (byStage[s.field]?.length ?? 0),
+    (sum, s) => sum + (optimisticBoard[s.field]?.length ?? 0),
     0
   );
 
@@ -180,76 +294,71 @@ export default function KanbanBoard({ byStage, year, fetchError }: Props) {
         </div>
       )}
 
-      {/* Kanban columns */}
-      <div className="flex-1 overflow-x-auto pb-4">
-        <DndContext
-          id="kanban-dnd"
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-        >
-          <div className="flex gap-3 h-full" style={{ minWidth: `${PIPELINE_STAGES.length * 260}px` }}>
-            {PIPELINE_STAGES.map((stage) => (
-              <KanbanColumn
-                key={stage.field}
-                field={stage.field}
-                label={stage.label}
-                cards={byStage[stage.field] ?? []}
-                isPending={isPending}
-                canDrag={canDrag}
-              />
-            ))}
-          </div>
+      {/* Info banner — non-error notices (e.g. a card released off the board) */}
+      {info && (
+        <div className="rounded-lg border border-brand/30 bg-brand/10 px-4 py-3 text-sm text-foreground flex items-center justify-between">
+          <span>{info}</span>
+          <button onClick={() => setInfo(null)} className="ml-4 hover:opacity-70">✕</button>
+        </div>
+      )}
 
-          <DragOverlay>
-            {activeCard && (
-              <KanbanCard card={activeCard} isDragging canDrag={canDrag} />
-            )}
-          </DragOverlay>
-        </DndContext>
+      {/* Kanban columns. The relative wrapper hosts the edge-fade overlays that
+          hint the board scrolls sideways past the viewport. */}
+      <div className="relative flex-1 min-h-0">
+        {/* Edge fades — soft gradient framing on left/right that signals there
+            are more columns off-screen. pointer-events-none so they never block
+            drag or scroll. */}
+        <div className="pointer-events-none absolute inset-y-0 left-0 z-20 w-8 bg-gradient-to-r from-background to-transparent" />
+        <div className="pointer-events-none absolute inset-y-0 right-0 z-20 w-8 bg-gradient-to-l from-background to-transparent" />
+
+        <div
+          ref={scrollRef}
+          onWheel={handleWheel}
+          className="h-full overflow-x-auto overscroll-x-contain pb-3 scrollbar-thin"
+        >
+          <DndContext
+            id="kanban-dnd"
+            sensors={sensors}
+            collisionDetection={collisionDetection}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+          >
+            <div
+              className="flex gap-3 h-full"
+              style={{ minWidth: `${PIPELINE_STAGES.length * 260}px` }}
+            >
+              {PIPELINE_STAGES.map((stage) => (
+                <KanbanColumn
+                  key={stage.field}
+                  field={stage.field}
+                  label={stage.label}
+                  cards={optimisticBoard[stage.field] ?? []}
+                  isPending={isPending}
+                  canDrag={canDrag}
+                />
+              ))}
+            </div>
+
+            <DragOverlay>
+              {activeCard && (
+                <KanbanCard card={activeCard} isDragging canDrag={canDrag} />
+              )}
+            </DragOverlay>
+          </DndContext>
+        </div>
       </div>
 
-      {/* Force-set dialog (admin backward move) */}
       {forceDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setForceDialog(null)} />
-          <div className="relative z-10 w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-2xl">
-            <h3 className="text-lg font-semibold text-foreground mb-1">
-              ⚠️ Backward move
-            </h3>
-            <p className="text-muted-foreground text-sm mb-4">
-              Moving <strong>{forceDialog.card.ref_no}</strong> backward bypasses pipeline prerequisites. This action is logged.
-            </p>
-            <div className="space-y-1.5 mb-4">
-              <label className="block text-sm font-medium text-foreground">
-                Reason <span className="text-destructive">*</span>
-              </label>
-              <textarea
-                value={forceReason}
-                onChange={(e) => setForceReason(e.target.value)}
-                placeholder="e.g. Data entry correction — wrong stage was set"
-                rows={3}
-                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none"
-              />
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={() => { setForceDialog(null); setForceReason(""); }}
-                className="flex-1 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleForceConfirm}
-                disabled={!forceReason.trim() || isPending}
-                className="flex-1 rounded-lg bg-destructive px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
-              >
-                {isPending ? "Saving…" : "Confirm move"}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ForceStageDialog
+          open
+          onOpenChange={(o) => { if (!o) setForceDialog(null); }}
+          consignmentId={forceDialog.card.id}
+          refNo={forceDialog.card.ref_no}
+          defaultStage={forceDialog.toStage}
+          defaultValue={forceDialog.newValue}
+          onSuccess={() => setForceDialog(null)}
+          onError={setError}
+        />
       )}
     </div>
   );

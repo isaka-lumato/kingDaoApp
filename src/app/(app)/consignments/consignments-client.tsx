@@ -219,11 +219,69 @@ export default function ConsignmentsClient({
         </div>
       )}
 
-      {/* Table — fades during transition so the stale rows stay readable
+      {/* Mobile card list */}
+      <ul
+        className={[
+          "md:hidden flex flex-col gap-2 transition-opacity duration-150",
+          isPending ? "opacity-60" : "opacity-100",
+        ].join(" ")}
+      >
+        {rows.length === 0 && (
+          <li className="rounded-xl border border-border bg-card px-4 py-10 text-center text-muted-foreground text-sm">
+            No consignments found.
+          </li>
+        )}
+        {rows.map((row) => (
+          <li key={row.id}>
+            <Link
+              href={`/consignments/${row.id}`}
+              className="block rounded-xl border border-border bg-card p-3 hover:bg-muted/40 transition-colors"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-mono text-xs font-bold text-foreground">
+                    {row.ref_no}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground bg-muted/50 rounded px-1.5 py-0.5 shrink-0">
+                    {row.year}
+                  </span>
+                </div>
+                <span className="text-[10px] text-foreground/70 shrink-0">
+                  {currentStageLabel(row)}
+                </span>
+              </div>
+              <p className="text-xs font-semibold text-foreground/90 mt-1 truncate">
+                {(row.clients as unknown as { name: string } | null)?.name ?? "—"}
+              </p>
+              {row.bl_number && (
+                <p className="text-[11px] text-muted-foreground mt-0.5 font-mono truncate">
+                  B/L {row.bl_number}
+                </p>
+              )}
+              <div className="flex items-center justify-between gap-2 mt-2 text-[10px] text-muted-foreground">
+                <span className="truncate">
+                  {row.vessel_name ? `⚓ ${row.vessel_name}` : ""}
+                  {row.arrival_date
+                    ? ` · ${new Date(row.arrival_date).toLocaleDateString("en-GB", {
+                        day: "2-digit",
+                        month: "short",
+                      })}`
+                    : ""}
+                </span>
+                {row.amount != null && (
+                  <span className="shrink-0 font-mono">{formatTzs(row.amount)}</span>
+                )}
+              </div>
+            </Link>
+          </li>
+        ))}
+      </ul>
+
+      {/* Desktop table — fades during transition so the stale rows stay readable
           but visibly "in-flight." */}
       <div
         className={[
-          "rounded-xl border border-border overflow-hidden transition-opacity duration-150",
+          "hidden md:block rounded-xl border border-border overflow-hidden transition-opacity duration-150",
           isPending ? "opacity-60" : "opacity-100",
         ].join(" ")}
       >

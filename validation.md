@@ -69,6 +69,15 @@ Each rule needs at least one Vitest or SQL test in `tests/unit/pipeline/`.
   Any other match is a regression and must be fixed before the task is marked done.
 - [ ] **Soft-delete leak audit.** Every read path that doesn't use the admin client must include `.is("deleted_at", null)` in the SELECT clause. Manual check: a viewer hitting the detail URL of a soft-deleted consignment gets a 404, not the row.
 - [ ] **`SECURITY DEFINER` caller-role gate (D-029).** Every `security definer` function in `supabase/migrations/` that performs INSERT/UPDATE/DELETE on a user-facing table has an explicit caller-role check (`raise exception '...' using errcode = '42501'`) as its first executable statement, before row locking or pre-condition checks. Direct REST verification: signing in as a viewer and `POST`ing to `/rest/v1/rpc/<function>` returns `42501`, not `200`. Current inventory: `advance_stage()` ✅, `force_set_stage()` ✅, triggers (`log_table_change`, `auto_detect_guta_pair`) ✅ (no mutations gated on caller). Pure functions (`current_user_can_write`, `is_admin`) — n/a.
+- [ ] **Per-column UPDATE guard at the DB (D-046).** The `consignments_aaa_column_write_guard` BEFORE UPDATE trigger (migration `20260525090000`) must reject a non-admin direct REST PATCH of a non-writable column with `42501`. Direct REST verification with an **operator** JWT against the dev project:
+  - `PATCH /rest/v1/consignments?id=eq.<id>` body `{"amount":999}` → **42501** ("Permission denied: you may not modify consignments.amount").
+  - body `{"client_id":"<other-uuid>"}` → **42501**.
+  - body `{"remarks":"ok"}` → **200/204** (operator-writable).
+  - body `{"in_ref":"TZ9"}` → **200/204** (proves the `in_ref_batch_id`→`in_ref` seed fix).
+  - body `{"remarks":"x","amount":<current amount>}` → **200/204** (unchanged `amount` is not flagged — `is distinct from` per-column logic).
+  - `POST /rest/v1/rpc/advance_stage {p_id,p_stage:"manifest",p_new_value:"Uploaded"}` → **200** even though it writes `updated_by` (tx-local GUC bypass works).
+  With an **admin** JWT: `PATCH {"amount":500}` → **200/204** (`is_admin()` short-circuit). With a **viewer** JWT: any PATCH → **403** from the policy `using` role gate (guard never reached).
+- [ ] **RLS coverage audit (T-081 deliverable).** Run `audit_rls.sql` against the project (Supabase SQL editor or `psql -f audit_rls.sql`). Query 1 must show `rls_enabled = true` for **every** `public` table. Query 3 must show no permissive hard-DELETE policy on `consignments`/`clients`/`icds` (efd_records admin-only DELETE is the documented exception). Query 4 must list the `consignments_aaa_column_write_guard` trigger.
 
 ---
 
@@ -324,6 +333,30 @@ Run after any change to `src/app/api/reports/[kind]/xlsx/route.ts`, `src/server/
 - [ ] **RLS sanity (D-026).** `grep -rn "getSupabaseAdminClient" src/app/api/reports/ src/server/reports/ src/app/(app)/reports/` is empty. Admin-client allowlist stays at 3 sites.
 - [ ] **Tests.** `tests/unit/build-xlsx.test.ts` — 11/11 green. Total Vitest count ≥ 46.
 - [ ] **Build.** `pnpm build` includes `/api/reports/[kind]/xlsx` in the route manifest under `ƒ` (server-rendered on demand).
+
+---
+
+## V-REPORTS-PDF — PDF export (T-072)
+
+Run after any change to `src/app/api/reports/[kind]/pdf/route.ts`, `src/server/reports/build-pdf.tsx`, or any T-024 view definition. Extends V-REPORTS; mirrors V-REPORTS-XLSX.
+
+- [ ] Each of the six reports on `/reports` has a visible **Export PDF** anchor next to the Export XLSX anchor. Clicking it triggers a browser download of `kdl-<kind>-<year>[-<from>-<to>].pdf` with `Content-Type: application/pdf` and `Content-Disposition: attachment`.
+- [ ] Opening the downloaded PDF: A4 **landscape**; a fixed page header carries the **Kingdao logo** (`public/KINGDAO_LOGO.png`) on the left and the report title + `Generated … UTC` + filter summary on the right, repeated on every page; the footer shows `KDL Tracker` and a `page / total` counter.
+- [ ] **Money** cells (Revenue.`total_amount`, Client Volume.`total_revenue`, Pending Refunds.`amount`) render via `formatTzs` — same formatting as the page and the XLSX strings.
+- [ ] **Date** cells (Pending Refunds.`release_date`) render `yyyy-mm-dd`.
+- [ ] **Totals row** present on Revenue, Client Volume, Pipeline Bottleneck, and Pending Refunds; absent on the two Turnaround reports — matching the page and the XLSX.
+- [ ] **Pagination.** A report with enough rows to exceed one page splits across pages; the header + table header repeat on each page (react-pdf `fixed`); no row is clipped at a page boundary (`wrap={false}` on data rows).
+- [ ] **Empty result** downloads a valid one-page PDF showing `"No rows matched the filter."` — not an error response.
+- [ ] **Filter range** honoured on date-aware reports: `/api/reports/revenue/pdf?year=2026&from=2026-01-01&to=2026-03-31` and `/api/reports/pending_refunds/pdf?year=2026&from=2026-02-01&to=2026-02-28` render only matching rows; the header records the range. Year-grain reports ignore `from`/`to` per D-039.
+- [ ] **Auth gate.** `GET /api/reports/revenue/pdf?year=2026` unauthenticated returns `401`. An authenticated viewer can download.
+- [ ] **Bad kind.** `/api/reports/bogus/pdf?year=2026` returns `400` with JSON `{"error":"Unknown report kind: bogus"}`.
+- [ ] **Bad year.** Missing/non-numeric `year` falls back to the current year; no `500`.
+- [ ] **Node runtime.** The route exports `runtime = "nodejs"` — `@react-pdf/renderer` needs Node built-ins (`fs`, fontkit); Edge would fail.
+- [ ] **Missing logo is non-fatal.** If `KINGDAO_LOGO.png` is absent at `process.cwd()`, the builder falls back to a blank logo box rather than throwing.
+- [ ] **RLS sanity (D-026).** `grep -rn "getSupabaseAdminClient" src/app/api/reports/ src/server/reports/` is empty. Admin-client allowlist stays at 3 sites.
+- [ ] **No SheetJS / no exceljs** in the PDF path — `build-pdf.tsx` imports only `@react-pdf/renderer` + `@/lib/money` + `./report-types`.
+- [ ] **Tests.** `tests/unit/build-pdf.test.ts` — 9/9 green (each kind renders a valid `%PDF`; empty + null payloads do not throw).
+- [ ] **Build.** `pnpm build` includes `/api/reports/[kind]/pdf` in the route manifest under `ƒ`.
 
 ---
 

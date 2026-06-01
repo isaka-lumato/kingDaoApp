@@ -32,15 +32,20 @@ function isValidISODate(s: string | undefined): s is string {
   return typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
 }
 
-function exportHref(
-  kind: ReportKind,
-  filters: ReportFilters,
-): string {
+function exportParams(filters: ReportFilters): string {
   const params = new URLSearchParams();
   params.set("year", String(filters.year));
   if (filters.from) params.set("from", filters.from);
   if (filters.to) params.set("to", filters.to);
-  return `/api/reports/${kind}/xlsx?${params.toString()}`;
+  return params.toString();
+}
+
+function exportHref(kind: ReportKind, filters: ReportFilters): string {
+  return `/api/reports/${kind}/xlsx?${exportParams(filters)}`;
+}
+
+function exportHrefPdf(kind: ReportKind, filters: ReportFilters): string {
+  return `/api/reports/${kind}/pdf?${exportParams(filters)}`;
 }
 
 export default async function ReportsPage({
@@ -110,10 +115,6 @@ export default async function ReportsPage({
           <PendingRefundsReport payload={payload} filters={filters} />
         )}
       </div>
-
-      <p className="text-[11px] text-muted-foreground">
-        PDF export is tracked as T-072.
-      </p>
     </div>
   );
 }
@@ -126,39 +127,60 @@ function ReportHeader({
   title,
   subtitle,
   exportHref,
+  exportHrefPdf,
 }: {
   title: string;
   subtitle: string;
   exportHref: string;
+  exportHrefPdf: string;
 }) {
+  const anchorCls =
+    "shrink-0 inline-flex items-center gap-1.5 rounded-md border border-border bg-background hover:bg-muted px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors";
   return (
-    <div className="px-5 py-4 border-b border-border bg-muted/20 flex items-start justify-between gap-3">
+    <div className="px-5 py-4 border-b border-border bg-muted/20 flex items-start justify-between gap-3 flex-wrap">
       <div className="min-w-0">
         <h2 className="text-sm font-semibold text-foreground">{title}</h2>
         <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
       </div>
-      <a
-        href={exportHref}
-        className="shrink-0 inline-flex items-center gap-1.5 rounded-md border border-border bg-background hover:bg-muted px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors"
-        download
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="h-3.5 w-3.5"
-          aria-hidden="true"
-        >
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-          <polyline points="7 10 12 15 17 10" />
-          <line x1="12" y1="15" x2="12" y2="3" />
-        </svg>
-        Export XLSX
-      </a>
+      <div className="flex gap-2 shrink-0">
+        <a href={exportHref} className={anchorCls} download>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-3.5 w-3.5"
+            aria-hidden="true"
+          >
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+          Export XLSX
+        </a>
+        <a href={exportHrefPdf} className={anchorCls} download>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-3.5 w-3.5"
+            aria-hidden="true"
+          >
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="9" y1="13" x2="15" y2="13" />
+            <line x1="9" y1="17" x2="15" y2="17" />
+          </svg>
+          Export PDF
+        </a>
+      </div>
     </div>
   );
 }
@@ -242,6 +264,7 @@ function RevenueReport({
             : "All months. Released consignments only."
         }
         exportHref={exportHref("revenue", filters)}
+        exportHrefPdf={exportHrefPdf("revenue", filters)}
       />
       <table className="w-full text-sm">
         <thead>
@@ -314,6 +337,7 @@ function ClientVolumeReport({
         title={reportTitle("client_volume", filters)}
         subtitle="Ranked by container count. Released + active counts shown for context."
         exportHref={exportHref("client_volume", filters)}
+        exportHrefPdf={exportHrefPdf("client_volume", filters)}
       />
       <table className="w-full text-sm">
         <thead>
@@ -401,6 +425,7 @@ function TurnaroundClientReport({
         title={reportTitle("turnaround_client", filters)}
         subtitle="Days from arrival_date to release_date for released consignments. Sorted fastest → slowest."
         exportHref={exportHref("turnaround_client", filters)}
+        exportHrefPdf={exportHrefPdf("turnaround_client", filters)}
       />
       <table className="w-full text-sm">
         <thead>
@@ -472,6 +497,7 @@ function TurnaroundIcdReport({
         title={reportTitle("turnaround_icd", filters)}
         subtitle="Days from arrival_date to release_date, aggregated by ICD."
         exportHref={exportHref("turnaround_icd", filters)}
+        exportHrefPdf={exportHrefPdf("turnaround_icd", filters)}
       />
       <table className="w-full text-sm">
         <thead>
@@ -527,6 +553,7 @@ function PipelineFunnelReport({
         title={reportTitle("pipeline_funnel", filters)}
         subtitle="Consignments sitting in Action at each stage. The stage with the highest count is where things are stalling."
         exportHref={exportHref("pipeline_funnel", filters)}
+        exportHrefPdf={exportHrefPdf("pipeline_funnel", filters)}
       />
       <table className="w-full text-sm">
         <thead>
@@ -615,6 +642,7 @@ function PendingRefundsReport({
             : "Consignments where remarks contained PAID / REFUND NEEDED. Source: v_pending_refunds."
         }
         exportHref={exportHref("pending_refunds", filters)}
+        exportHrefPdf={exportHrefPdf("pending_refunds", filters)}
       />
       <table className="w-full text-sm">
         <thead>

@@ -26,7 +26,7 @@ type Props = {
 const CONSIGNMENT_COLUMNS = [
   "ref_no", "tansad_no", "bl_number", "container_count", "container_type",
   "goods_description", "vessel_name", "arrival_date", "icd_id",
-  "in_ref_batch_id", "remarks", "amount", "client_id",
+  "in_ref", "remarks", "amount", "client_id",
   "manifest_status", "shipping_batch_status", "tanesws_status",
   "assessment_status", "tbs_loading_status", "tbs_debit_status",
   "manifest_comp_status", "duty_status", "inspection_file_status",

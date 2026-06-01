@@ -125,6 +125,112 @@ describe("parseTracker — year separators", () => {
   });
 });
 
+// ──────────────────────────────────────────────────────────────────────────
+// Real source-file structure (D-047). The live TRACKER -- KDL.xlsx has:
+//   title-junk row → ONE header → merged year banner → data → next banner.
+// The year is a merged cell repeated across ~20 columns, the container-type
+// column has no header (merged into "No. of Cont(s)"), and the 2026 section
+// reuses the single header. These tests mirror that shape synthetically.
+// ──────────────────────────────────────────────────────────────────────────
+
+// A full-width year banner: the year repeated across N columns (mimics the
+// merged cell SheetJS unrolls into repeated values).
+function yearBanner(year: number, width = HEADER.length): CellValue[] {
+  return new Array(width).fill(year);
+}
+
+describe("parseTracker — real file structure (D-047)", () => {
+  it("treats a full-width repeated-year row as a year banner", () => {
+    const rows: CellValue[][] = [
+      HEADER,
+      yearBanner(2025),
+      validRow({ "REF No": "9900001" }),
+    ];
+    const r = parseTracker(rows);
+    expect(r.consignments).toHaveLength(1);
+    expect(r.consignments[0]!.year).toBe(2025);
+    expect(r.summary.years).toEqual([2025]);
+  });
+
+  it("accepts the header BEFORE the year banner", () => {
+    const rows: CellValue[][] = [
+      HEADER, // header first
+      yearBanner(2025),
+      validRow(),
+    ];
+    const r = parseTracker(rows);
+    expect(r.consignments).toHaveLength(1);
+    expect(r.errors).toHaveLength(0);
+  });
+
+  it("keeps one sticky header across two year banners (no second header)", () => {
+    const rows: CellValue[][] = [
+      HEADER, // single header for the whole file
+      yearBanner(2025),
+      validRow({ "REF No": "9900001" }),
+      yearBanner(2026), // no header beneath this banner
+      validRow({ "REF No": "9900002" }),
+    ];
+    const r = parseTracker(rows);
+    expect(r.consignments).toHaveLength(2);
+    expect(r.consignments[0]!.year).toBe(2025);
+    expect(r.consignments[1]!.year).toBe(2026);
+    expect(r.summary.years).toEqual([2025, 2026]);
+  });
+
+  it("skips a title-junk preamble row above the header (not an error)", () => {
+    const rows: CellValue[][] = [
+      [" import consignmets status", null, null, 91439000], // junk row 0
+      HEADER,
+      yearBanner(2025),
+      validRow(),
+    ];
+    const r = parseTracker(rows);
+    expect(r.consignments).toHaveLength(1);
+    expect(r.errors).toHaveLength(0);
+    expect(r.summary.skipped).toBeGreaterThanOrEqual(1);
+  });
+
+  it("infers a header-less container-type column right of the count column", () => {
+    // Build a header where the container-type cell is blank (merged away),
+    // exactly as in the real file: col after "No. of Cont(s)" is empty.
+    const HEADER_NO_CT: CellValue[] = HEADER.map((h) =>
+      h === "Container Type" ? null : h
+    );
+    // Place 40FT in the column that follows the count column.
+    const countIdx = HEADER.indexOf("No. of Cont(s)");
+    const dataRow = validRow();
+    dataRow[countIdx + 1] = "40FT"; // the unlabeled container-type column
+    const rows: CellValue[][] = [HEADER_NO_CT, yearBanner(2025), dataRow];
+    const r = parseTracker(rows);
+    expect(r.consignments).toHaveLength(1);
+    expect(r.consignments[0]!.container_type).toBe("40FT");
+  });
+
+  it("maps real-file header typos (CURENT/Loadging/B-L No;)", () => {
+    const HEADER_TYPOS: CellValue[] = HEADER.map((h) => {
+      switch (h) {
+        case "CURRENT STATUS":
+          return "CURENT STATUS";
+        case "TANESWS Loading":
+          return "TANESWS Loadging";
+        case "TBS Loading":
+          return "TBS Loadging";
+        case "Inspection File":
+          return "Inspectione file";
+        case "B/L No.":
+          return "B/L No;";
+        default:
+          return h;
+      }
+    });
+    const rows: CellValue[][] = [HEADER_TYPOS, yearBanner(2025), validRow()];
+    const r = parseTracker(rows);
+    expect(r.consignments).toHaveLength(1);
+    expect(r.consignments[0]!.bl_number).toBe("MEDU123");
+  });
+});
+
 describe("parseTracker — empty row skip (§10.3)", () => {
   it("skips totally-blank rows", () => {
     const rows: CellValue[][] = [

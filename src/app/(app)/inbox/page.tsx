@@ -106,21 +106,22 @@ export default async function InboxPage() {
 
       {Array.from(grouped.entries()).map(([stageLabel, stageItems]) => (
         <section key={stageLabel}>
-          <div className="flex items-center gap-3 mb-3">
+          <div className="flex items-center gap-3 mb-3 flex-wrap">
             <h2 className="text-sm font-semibold text-foreground">{stageLabel}</h2>
             <span className="text-xs bg-stage-action/15 text-stage-action border border-stage-action/30 rounded-full px-2 py-0.5 font-medium">
               {stageItems.length}
             </span>
-            <div className="flex-1 border-t border-border" />
+            <div className="flex-1 border-t border-border min-w-[2rem]" />
           </div>
 
-          <div className="rounded-xl border border-border overflow-hidden">
+          {/* Desktop table */}
+          <div className="hidden md:block rounded-xl border border-border overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-muted/40">
                   <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Ref No</th>
                   <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Client</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground hidden md:table-cell">Goods</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Goods</th>
                   <th className="text-left px-4 py-2.5 font-medium text-muted-foreground hidden lg:table-cell">Vessel</th>
                   <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Updated</th>
                   <th className="px-4 py-2.5 w-20" />
@@ -141,7 +142,7 @@ export default async function InboxPage() {
                     <td className="px-4 py-3 text-foreground/80 font-medium text-xs">
                       {item.client_name}
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground text-xs hidden md:table-cell max-w-[180px] truncate">
+                    <td className="px-4 py-3 text-muted-foreground text-xs max-w-[180px] truncate">
                       {item.goods_description ?? "—"}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground text-xs hidden lg:table-cell">
@@ -166,6 +167,46 @@ export default async function InboxPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Mobile card list */}
+          <ul className="md:hidden flex flex-col gap-2">
+            {stageItems.map((item) => (
+              <li key={`${item.id}-${item.stage_field}`}>
+                <Link
+                  href={`/consignments/${item.id}`}
+                  className="block rounded-xl border border-border bg-card p-3 hover:bg-muted/40 transition-colors"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-xs font-bold text-foreground">
+                      {item.ref_no}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground bg-muted/50 rounded px-1.5 py-0.5">
+                      {item.year}
+                    </span>
+                  </div>
+                  <p className="text-xs font-semibold text-foreground/90 mt-1 truncate">
+                    {item.client_name}
+                  </p>
+                  {item.goods_description && (
+                    <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2">
+                      {item.goods_description}
+                    </p>
+                  )}
+                  <div className="flex items-center justify-between gap-2 mt-2 text-[10px] text-muted-foreground">
+                    <span className="truncate">
+                      {item.vessel_name ? `⚓ ${item.vessel_name}` : ""}
+                    </span>
+                    <span className="shrink-0">
+                      {new Date(item.updated_at).toLocaleDateString("en-GB", {
+                        day: "2-digit",
+                        month: "short",
+                      })}
+                    </span>
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
         </section>
       ))}
     </div>

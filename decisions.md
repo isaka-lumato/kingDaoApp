@@ -823,4 +823,99 @@ The page also gets a `perfTimer("settings-users")` so we can see the cut land in
 
 ---
 
+## D-045 — Triage view classifier rule (replaces kanban as default on mobile)
+
+**Date:** 2026-05-28
+**Status:** Active
+
+**Decision:** A consignment's triage bucket is derived from its **active stage** (the first stage in `PIPELINE_STAGES` order whose value is not its `doneValue`) and the value of that stage:
+
+| Active-stage value                                          | Bucket          |
+|-------------------------------------------------------------|-----------------|
+| `"Action"`, `"PREPARED"`, `"W/CARRY IN"`, `"CARRY IN END"`, `"SHARED"` | **Action Needed** |
+| `"Waiting"`                                                 | **Waiting**     |
+| No active stage (every stage at its `doneValue`)            | **Done**        |
+
+A row in **Action Needed** whose `updated_at` is older than 48 hours is additionally flagged **Stuck** (red), per PRD §6.8. The 48h clock uses the existing `updated_at` column — we are not introducing per-stage timestamps for this view (see "Why not" below).
+
+Rows with `arrival_date IS NULL` are forced into **Waiting** with subtitle "Awaiting arrival" regardless of stage values, because PRD §7.2 mandates that all stages stay `Waiting` until arrival; the per-stage enum carries no information for these rows.
+
+This rule drives `T-086` (mobile pipeline replacement) and a new desktop "Triage" tab alongside the existing kanban.
+
+**Why:** the kanban-only model breaks on mobile (no horizontal space for 10 stage columns) and overcounts complexity for staff who just want to know "what do I need to do today?". A flat Action/Waiting/Done list answers that directly. Spot-checked against `TRACKER -- KDL.xlsx` (508 historical rows, 2025–2026):
+- 86% of rows fully released → Done bucket dominates archive views.
+- Of the 69 active rows: `Action`=30%, `Waiting`=35%, `paid`/`closed` (lowercase typos)=31%, `PREPARED`=3%. The `Action` enum is genuinely used by operators, so the classifier has a real signal — not just a hypothetical one.
+
+**Why fold `PREPARED`/`SHARED`/`CARRY IN END`/`W/CARRY IN` into Action Needed:** these are intermediate non-terminal values that mean "work has started, someone owns this." Putting them in Waiting would hide active work; putting them in their own "In Progress" bucket would clutter the UI for the ~3% of rows in this state. Bucket-with-Action keeps the view to three sections.
+
+**Why `updated_at`, not per-stage `stage_changed_at`:** PRD §6.2 says "Stage timestamps are recorded automatically when a stage is marked complete" — but the current schema only writes `updated_at` on every row UPDATE. Adding per-stage timestamps is a separate, larger change (schema migration + trigger work) and not required to launch the triage view. `updated_at` is a coarser approximation but works: any stage transition bumps it, so a row that's been at the same active stage for 48h+ has by definition not been touched in that time. We can swap in `stage_changed_at` later without changing the bucket rule.
+
+**Why not use `current_status` as a row subtitle:** spot-check showed 504/508 rows say `"CARRY IN END"` (it echoes the Shipping Batch state, not a triage hint). The subtitle will instead be the active stage's human label (e.g. "Duty payment", "TBS Debit") — already available in `PIPELINE_STAGES[].label`.
+
+**Casing bug hypothesis — invalidated:** during the spot-check we observed `"paid"`/`"closed"` (lowercase) in 22 rows of the source xlsx, which would have miscategorised those rows as not-done. Investigation showed this is **only present in the operator's Excel source file**, not in the live DB:
+1. `parseTracker.coerceEnum` (`src/server/import/parse-tracker.ts:660`) already does case-insensitive whitespace-tolerant matching, so `"paid"` → `"Paid"` on import.
+2. The Postgres enum columns reject any non-canonical value, so no other write path (form submission, `advance_stage()`, direct SQL) can produce lowercased data.
+
+No data migration is needed. The xlsx itself is the operator's working copy and will be retired once the app launches. Leaving this paragraph here so a future reader looking at the xlsx doesn't repeat the investigation.
+
+**Alternative considered:** keep the kanban as the only stage view and add a separate "stuck jobs" filter. Rejected — doesn't solve the mobile problem (kanban itself is the mobile problem) and doesn't address the broader "what do I do next?" question for operators with 30+ active jobs.
+
+---
+
 <!-- Append new decisions below this line. Number sequentially. -->
+
+## D-046 — Per-column UPDATE enforcement on `consignments` via BEFORE UPDATE trigger + tx-local GUC bypass
+
+**Context (T-081 security review).** The `consignments_update` RLS policy (migration `20260519005000`) ends in `with check (true)`. Its `using` clause correctly gates UPDATE to admin/operator roles, but once past that gate an operator could PATCH **any** column via PostgREST — including `amount` and `client_id` — even though their role's `role_column_permissions.can_write` is `false` for those columns. The per-column rule was enforced only in the app layer (`src/server/actions/edit-consignment.ts:47`), which protects the UI path but not a direct REST call. This violated CLAUDE.md §3.3 ("per-column permissions enforced two ways: RLS policies on UPDATE *and* UI"). It was the last open compromise before deploy and a hard blocker on T-081.
+
+**Decision.** Enforce per-column writes at the DB with a `BEFORE UPDATE` row trigger (`consignments_enforce_column_write()`), migration `20260525090000_consignments_column_write_guard.sql`. For each column that actually changed (`to_jsonb(OLD)->k IS DISTINCT FROM to_jsonb(NEW)->k`), it calls the existing `public.can_user_write('consignments', k)` and `raise exception ... errcode '42501'` on the first forbidden change. Admins short-circuit via `is_admin()`. `updated_at` is exempt (bumped by `set_updated_at()` on every update).
+
+**Why a trigger, not RLS.** RLS `with check` is a row predicate; it cannot compare OLD vs NEW per column. "Did this column change, and may the caller change it" needs OLD/NEW, which only a `BEFORE UPDATE` row trigger provides. The codebase already establishes this exact pattern (`roles_prevent_system_mutation()`, migration `20260518175820`).
+
+**Why a tx-local GUC bypass, not column GRANTs or owner-detection.** `advance_stage()` / `force_set_stage()` are SECURITY DEFINER but a BEFORE UPDATE trigger still sees the real caller's `auth.uid()`. They write `updated_by` (NOT in the operator writable seed), so a naive guard would `42501` the one sanctioned pipeline writer. The two functions opt out via `perform set_config('app.bypass_column_guard', 'on', true)` placed right after their caller-role/admin gate; the guard early-returns when the flag is set. `is_local = true` ⇒ the flag resets at transaction end ⇒ safe on PgBouncer/pooled connections. Rejected alternatives: (a) detecting the function owner via `current_user`/`session_user` is deploy-fragile in Supabase (table + functions share an owner); (b) a static column allowlist (`updated_by`/`release_date`) would leave those columns unguarded on the *direct* REST path too — the GUC approach keeps them guarded there.
+
+**Trade-offs.** New columns fail closed: any column an operator should write needs a `role_column_permissions` seed row, else the guard blocks it (intended — explicit over implicit). Soft-delete is unaffected because it is admin-only (`softDeleteConsignmentAction` checks `perms.isAdmin`) and admins bypass the guard.
+
+**Folded-in fix.** The original operator/viewer seed (`20260518175820`, lines 156 & 194) and the roles-matrix UI (`roles-client.tsx`) named a non-existent column `in_ref_batch_id`; the real column is `in_ref`. The same migration deletes the dangling perm rows and upserts the correct `in_ref` rows (operator writable, viewer read-only); the UI string was corrected too. Without this, operators silently couldn't write `in_ref` and the new guard would have blocked it.
+
+**Scope.** `consignments` only. `efd_records` has the identical `with check (true)` gap but no per-column seed today — logged as a follow-up task rather than widened into T-081.
+
+---
+
+## D-047 — Excel parser handles the real source-file structure (supersedes parts of D-036)
+
+**Context.** Importing the live `TRACKER -- KDL.xlsx` (the file the app replaces) produced **545 errors, 0 parsed rows**, all "Data row before any year separator or header row." `parseTracker` (`src/server/import/parse-tracker.ts`) was coded against the idealized structure in D-036, but byte-level inspection of the real workbook (sheet `IMPORT`, 562 rows, 2 year sections) showed D-036's structural assumptions don't match the actual file. PRD §9.3 says the importer "must handle the source file's structure" and the source file is the authoritative artifact, so the parser changes to fit it.
+
+**What the real file actually looks like:**
+
+1. **Year separator is a merged banner, not a single cell.** The year is repeated across the row's columns (row 2 = `2025` ×21 cells; row 277 = `2026` ×20 cells), backed by cell merges. D-036 §2 ("a single non-empty cell whose value parses as a 4-digit year, all other cells empty") is wrong for this file.
+2. **Header precedes the first year banner.** Order is: title-junk row → header row → `2025` banner → data → `2026` banner → data. D-036 §2's "next non-empty row after a year separator is the header" is inverted here.
+3. **One header for the whole file.** The `2026` section has no header of its own; the single header must stay active across year banners.
+4. **The container-type column has no header.** Its header cell is merged into "No. of Cont(s)" (merge `c5–c6` on the header row), so SheetJS leaves the container-type column (holding CAR/40FT/COIL/20FT) unlabeled. Header-only matching can never resolve it.
+5. **Header labels carry typos:** `CURENT STATUS`, `TANESWS Loadging`, `TBS Loadging`, `Inspectione file`, `B/L No;`, and `"No. of\r\nCont(s)"` (embedded CRLF).
+
+**Decision.**
+
+1. **Year-row detection** = a row where *every* non-empty cell coerces to the **same** 4-digit year in 2000–2100. (A single-cell year row trivially satisfies this, so D-036's synthetic test inputs still pass.)
+2. **Header is discovered by scanning every non-blank row** (the title-junk row fails the `≥5 hits` + required-fields heuristic; the real header passes) and is **sticky**: once found it stays active. A year banner only flips the active year — it never clears the header map. This drops D-036's "header re-required per section" behavior.
+3. **Header order is free.** A header may appear before any year banner; data rows are only parsed once both a header and an active year exist. A data row seen with a header but no active year is still an error (preserved from D-036); unrecognized rows seen *before* the header (preamble/junk) are counted as `skipped`, not errors, so a title row doesn't produce a spurious per-row error.
+4. **Container-type column resolves by strict positional fallback.** If no header maps to `container_type` but `container_count` did, the column immediately to the right of the count column is used. If that column holds non-enum values, those rows error individually via the existing per-row container-type guard — no silent mis-mapping.
+
+**Unchanged from D-036:** two-bucket output (errors block, warnings inform), header-driven column resolution as the primary mechanism, the `{rowIndex, refNo?, field?, message}` issue shape, and skipped-row accounting. D-035 (parser is pure over `CellValue[][]`, SheetJS in adapters) is untouched — all detection runs on the cell matrix; cell-merge facts are read off the *data* shape (repeated year values), not the SheetJS `!merges` table, keeping the parser library-agnostic.
+
+**Trade-offs.** Year detection is marginally looser (a genuine data row that happened to contain only one identical year value in every populated cell would be read as a banner) — acceptable: real data rows always carry a ref_no/text alongside, so they never satisfy "all cells the same year." The container-type fallback assumes count-then-type column adjacency, which holds in the source file and degrades safely (per-row error) if a future file differs.
+
+---
+
+## D-048 — Kanban board uses themed slim scrollbars + horizontal-scroll affordance
+
+**Context.** The Pipeline Board relied on raw native OS scrollbars (no custom scrollbar CSS existed anywhere). On Windows 11 this rendered chunky light-grey vertical bars inside every column's card list that clashed with the dark app shell, and the board's horizontal scroller gave no signal that more columns existed off-screen — so sideways navigation felt unintuitive. User-reported polish, not a PRD item.
+
+**Decision.** Presentational only:
+1. Two scrollbar utilities in `globals.css` (`@layer utilities`): `.scrollbar-thin` (slim, theme-token-colored thumb via `::-webkit-scrollbar` + Firefox `scrollbar-width/color`) and `.scrollbar-auto-hide` (thumb transparent until container hover/focus-within). Column card lists use both (auto-hiding vertical); the board's horizontal scroller uses `.scrollbar-thin` (always-slim).
+2. `kanban-column.tsx`: column header is now `sticky top-0` with a translucent backdrop so the stage label persists while scrolling; card list gains `overscroll-contain` so a column's scroll doesn't bubble to the board's horizontal scroller at its ends; empty columns render a dashed "Drop here" placeholder instead of plain "Empty" text.
+3. `kanban-board.tsx`: the scroll viewport is wrapped in a `relative` container with two `pointer-events-none` left/right gradient fades (from `--background`) that frame the board and hint at off-screen columns; an `onWheel` handler maps a vertical wheel to horizontal board `scrollLeft`.
+
+**Wheel behavior (refined after first pass).** The initial handler hijacked *every* vertical wheel for horizontal scroll, which broke scrolling cards within a tall column. Final rule: a plain wheel is redirected to horizontal **only** when (a) `Shift` is held (the web convention — `Ctrl` was rejected because it collides with browser zoom), or (b) the column card-list under the cursor can't scroll further in the wheel's direction. The handler locates that card-list via a `data-kanban-scroll` attribute on the column scroller (`kanban-column.tsx`) and checks `scrollTop`/`scrollHeight`/`clientHeight`. Horizontal trackpad gestures (`|deltaX| > |deltaY|`) are left to the browser.
+
+**Scope / non-goals.** No changes to drag-and-drop, `advance_stage`, the card layout itself, or any data flow. Edge fades are always rendered (no scroll-position listener) — simplest robust version; making them appear/disappear at the true ends was deferred as unnecessary. Firefox can't transition the auto-hide thumb and falls back to the always-slim bar (acceptable).

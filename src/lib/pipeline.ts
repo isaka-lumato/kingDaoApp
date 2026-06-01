@@ -171,3 +171,87 @@ export function isStageComplete(field: StageField, value: string): boolean {
 export function stageFieldToDbEnum(field: StageField): string {
   return field.replace(/_status$/, "");
 }
+
+// Triage classifier — D-045. Drives the mobile-default / desktop-tab triage view.
+
+export type TriageBucket = "action" | "waiting" | "done";
+
+export type TriageClassification = {
+  bucket: TriageBucket;
+  /** Action-bucket row whose active stage hasn't moved in 48h+. */
+  isStuck: boolean;
+  /** No arrival yet — PRD §7.2 forces all stages to Waiting. */
+  isAwaitingArrival: boolean;
+  /** The active stage, or null if fully released. */
+  activeStage: StageField | null;
+  /** Human label for the row subtitle (e.g. "Duty", "Awaiting arrival"). */
+  subtitleLabel: string;
+};
+
+/** Active-stage values that mean "work has started; someone owns this." */
+const ACTION_INTERMEDIATE_VALUES = new Set([
+  "Action",
+  "PREPARED",
+  "W/CARRY IN",
+  "CARRY IN END",
+  "SHARED",
+]);
+
+const STUCK_THRESHOLD_MS = 48 * 60 * 60 * 1000;
+
+type ClassifiableRow = Record<StageField, string> & {
+  arrival_date: string | null;
+  updated_at: string;
+};
+
+export function classifyConsignment(
+  row: ClassifiableRow,
+  now: Date = new Date(),
+): TriageClassification {
+  if (!row.arrival_date) {
+    return {
+      bucket: "waiting",
+      isStuck: false,
+      isAwaitingArrival: true,
+      activeStage: PIPELINE_STAGES[0].field,
+      subtitleLabel: "Awaiting arrival",
+    };
+  }
+
+  const stageOnly = {} as Record<string, string>;
+  for (const s of PIPELINE_STAGES) stageOnly[s.field] = row[s.field];
+  const activeField = resolveActiveStage(stageOnly);
+  const fullyReleased = PIPELINE_STAGES.every(
+    (s) => row[s.field] === s.doneValue,
+  );
+
+  if (fullyReleased) {
+    return {
+      bucket: "done",
+      isStuck: false,
+      isAwaitingArrival: false,
+      activeStage: null,
+      subtitleLabel: "Released",
+    };
+  }
+
+  const stage = PIPELINE_STAGES.find((s) => s.field === activeField)!;
+  const value = row[activeField];
+  const bucket: TriageBucket = ACTION_INTERMEDIATE_VALUES.has(value)
+    ? "action"
+    : "waiting";
+
+  const updatedAtMs = Date.parse(row.updated_at);
+  const isStuck =
+    bucket === "action" &&
+    Number.isFinite(updatedAtMs) &&
+    now.getTime() - updatedAtMs > STUCK_THRESHOLD_MS;
+
+  return {
+    bucket,
+    isStuck,
+    isAwaitingArrival: false,
+    activeStage: activeField,
+    subtitleLabel: stage.label,
+  };
+}

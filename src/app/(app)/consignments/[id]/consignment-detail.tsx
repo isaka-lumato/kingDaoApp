@@ -2,10 +2,11 @@
 
 import { useState, useTransition, useActionState } from "react";
 import Link from "next/link";
-import { PIPELINE_STAGES, isStageComplete, type StageField } from "@/lib/pipeline";
+import { PIPELINE_STAGES, isStageComplete, resolveActiveStage, type StageField } from "@/lib/pipeline";
 import { formatTzs } from "@/lib/money";
 import { usePermissions } from "@/hooks/use-permissions";
 import BatchLink from "@/components/batch-link";
+import StageActionShell from "@/components/stage-action-shell";
 import {
   duplicateConsignmentAction,
   softDeleteConsignmentAction,
@@ -204,6 +205,24 @@ export default function ConsignmentDetail({ consignment, auditLog, linkedEfds, g
   ).length;
   const progress = Math.round((doneCount / PIPELINE_STAGES.length) * 100);
 
+  const activeStage = resolveActiveStage(stageValues) as StageField;
+  const stageMenuTarget = {
+    id: consignment.id,
+    ref_no: consignment.ref_no,
+    client_name: client?.name ?? "—",
+    active_stage: activeStage,
+    manifest_status: consignment.manifest_status,
+    shipping_batch_status: consignment.shipping_batch_status,
+    tanesws_status: consignment.tanesws_status,
+    assessment_status: consignment.assessment_status,
+    tbs_loading_status: consignment.tbs_loading_status,
+    tbs_debit_status: consignment.tbs_debit_status,
+    manifest_comp_status: consignment.manifest_comp_status,
+    duty_status: consignment.duty_status,
+    inspection_file_status: consignment.inspection_file_status,
+    release_status: consignment.release_status,
+  };
+
   return (
     <div className="space-y-6 max-w-4xl">
       {/* Header */}
@@ -228,13 +247,13 @@ export default function ConsignmentDetail({ consignment, auditLog, linkedEfds, g
             </p>
           </div>
         </div>
-        <div className="flex gap-2">
-          <form onSubmit={handleDuplicate}>
+        <div className="flex gap-2 w-full sm:w-auto">
+          <form onSubmit={handleDuplicate} className="flex-1 sm:flex-none">
             <input type="hidden" name="id" value={consignment.id} />
             <button
               type="submit"
               disabled={isDuplicating}
-              className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-50"
+              className="w-full rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-50"
               title="Duplicate this consignment"
             >
               {isDuplicating ? "Copying…" : "Duplicate"}
@@ -242,14 +261,14 @@ export default function ConsignmentDetail({ consignment, auditLog, linkedEfds, g
           </form>
           <Link
             href={`/consignments/${consignment.id}/edit`}
-            className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+            className="flex-1 sm:flex-none text-center rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
           >
             Edit
           </Link>
           {isAdmin && (
             <button
               onClick={() => setDeleteOpen(true)}
-              className="rounded-lg border border-destructive/40 px-4 py-2 text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors"
+              className="flex-1 sm:flex-none rounded-lg border border-destructive/40 px-4 py-2 text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors"
             >
               Delete
             </button>
@@ -278,7 +297,7 @@ export default function ConsignmentDetail({ consignment, auditLog, linkedEfds, g
             key={t}
             onClick={() => setTab(t)}
             className={[
-              "px-4 py-2.5 text-sm font-medium capitalize transition-colors border-b-2 -mb-px",
+              "flex-1 sm:flex-none px-4 py-2.5 text-sm font-medium capitalize transition-colors border-b-2 -mb-px text-center",
               tab === t
                 ? "border-brand text-foreground"
                 : "border-transparent text-muted-foreground hover:text-foreground",
@@ -302,7 +321,7 @@ export default function ConsignmentDetail({ consignment, auditLog, linkedEfds, g
             <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-4">
               Core details
             </h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4">
               <Field label="Client" value={client?.name} />
               <Field label="Year" value={consignment.year} />
               <Field label="Serial No" value={consignment.serial_no} />
@@ -341,7 +360,7 @@ export default function ConsignmentDetail({ consignment, auditLog, linkedEfds, g
             <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-4">
               Vessel &amp; shipping
             </h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4">
               <Field label="Vessel" value={consignment.vessel_name} />
               <Field
                 label="Arrival date"
@@ -437,7 +456,7 @@ export default function ConsignmentDetail({ consignment, auditLog, linkedEfds, g
                       {gutaPair.sibling.release_status}
                     </span>
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3">
                     <Field label="B/L" value={gutaPair.sibling.bl_number} />
                     <Field
                       label="Container"
@@ -582,19 +601,17 @@ export default function ConsignmentDetail({ consignment, auditLog, linkedEfds, g
               .slice(0, idx)
               .every((s) => isStageComplete(s.field, stageValues[s.field] ?? ""));
 
-            return (
-              <div
-                key={stage.field}
-                className={[
-                  "flex items-center gap-4 rounded-xl border px-4 py-3 transition-colors",
-                  isDone
-                    ? "border-stage-done/30 bg-stage-done/5"
-                    : isActive
-                    ? "border-brand/40 bg-brand/5"
-                    : "border-border bg-card",
-                ].join(" ")}
-              >
-                {/* Step indicator */}
+            const rowClass = [
+              "flex items-center gap-4 rounded-xl border px-4 py-3 transition-colors",
+              isDone
+                ? "border-stage-done/30 bg-stage-done/5"
+                : isActive
+                ? "border-brand/40 bg-brand/5"
+                : "border-border bg-card",
+            ].join(" ");
+
+            const rowContent = (
+              <>
                 <div
                   className={[
                     "w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0",
@@ -623,7 +640,25 @@ export default function ConsignmentDetail({ consignment, auditLog, linkedEfds, g
                 </div>
 
                 <StageBadge field={stage.field} status={status} />
-              </div>
+              </>
+            );
+
+            if (isDone) {
+              return (
+                <div key={stage.field} className={rowClass}>
+                  {rowContent}
+                </div>
+              );
+            }
+
+            return (
+              <StageActionShell
+                key={stage.field}
+                consignment={stageMenuTarget}
+                targetStage={stage.field}
+                triggerClassName={`${rowClass} w-full text-left cursor-pointer hover:bg-muted/30`}
+                trigger={rowContent}
+              />
             );
           })}
         </div>
@@ -631,61 +666,110 @@ export default function ConsignmentDetail({ consignment, auditLog, linkedEfds, g
 
       {/* ── Audit tab ── */}
       {tab === "audit" && (
-        <div className="rounded-xl border border-border overflow-hidden">
+        <>
           {auditLog.length === 0 ? (
-            <div className="px-4 py-10 text-center text-muted-foreground text-sm">
+            <div className="rounded-xl border border-border overflow-hidden px-4 py-10 text-center text-muted-foreground text-sm">
               No audit history yet.
             </div>
           ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border bg-muted/40">
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">When</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">By</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Field</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Old</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">New</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
+            <>
+              {/* Desktop table */}
+              <div className="hidden md:block rounded-xl border border-border overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border bg-muted/40">
+                      <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">When</th>
+                      <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">By</th>
+                      <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Field</th>
+                      <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Old</th>
+                      <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">New</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {auditLog.map((entry) => {
+                      // Sentinel rows (_inserted / _deleted) hold the entire row
+                      // object in new/old — not useful in the tiny Old/New
+                      // columns. Show "—" for those and let the Field column
+                      // carry the meaning.
+                      const isSentinel =
+                        entry.column_name === "_inserted" ||
+                        entry.column_name === "_deleted" ||
+                        entry.column_name === "FORCED_STAGE_CHANGE";
+                      return (
+                        <tr key={entry.id} className="hover:bg-muted/20 transition-colors">
+                          <td className="px-4 py-2.5 text-xs text-muted-foreground whitespace-nowrap">
+                            {new Date(entry.occurred_at).toLocaleDateString("en-GB", {
+                              day: "2-digit",
+                              month: "short",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </td>
+                          <td className="px-4 py-2.5 text-xs text-muted-foreground max-w-[140px] truncate">
+                            {entry.actor_email ?? "system"}
+                          </td>
+                          <td className="px-4 py-2.5 text-xs font-mono text-foreground">
+                            {renderColumnLabel(entry.column_name)}
+                          </td>
+                          <td className="px-4 py-2.5 text-xs text-muted-foreground break-all">
+                            {isSentinel ? "—" : renderAuditValue(entry.old_value)}
+                          </td>
+                          <td className="px-4 py-2.5 text-xs font-medium text-foreground break-all">
+                            {isSentinel ? "—" : renderAuditValue(entry.new_value)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile card list */}
+              <ul className="md:hidden flex flex-col gap-2">
                 {auditLog.map((entry) => {
-                  // Sentinel rows (_inserted / _deleted) hold the entire row
-                  // object in new/old — not useful in the tiny Old/New
-                  // columns. Show "—" for those and let the Field column
-                  // carry the meaning.
                   const isSentinel =
                     entry.column_name === "_inserted" ||
                     entry.column_name === "_deleted" ||
                     entry.column_name === "FORCED_STAGE_CHANGE";
                   return (
-                    <tr key={entry.id} className="hover:bg-muted/20 transition-colors">
-                      <td className="px-4 py-2.5 text-xs text-muted-foreground whitespace-nowrap">
-                        {new Date(entry.occurred_at).toLocaleDateString("en-GB", {
-                          day: "2-digit",
-                          month: "short",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </td>
-                      <td className="px-4 py-2.5 text-xs text-muted-foreground max-w-[140px] truncate">
-                        {entry.actor_email ?? "system"}
-                      </td>
-                      <td className="px-4 py-2.5 text-xs font-mono text-foreground">
+                    <li
+                      key={entry.id}
+                      className="rounded-xl border border-border bg-card p-3"
+                    >
+                      <div className="flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
+                        <span>
+                          {new Date(entry.occurred_at).toLocaleDateString("en-GB", {
+                            day: "2-digit",
+                            month: "short",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </span>
+                        <span className="truncate max-w-[60%]">
+                          {entry.actor_email ?? "system"}
+                        </span>
+                      </div>
+                      <p className="text-xs font-mono text-foreground mt-1">
                         {renderColumnLabel(entry.column_name)}
-                      </td>
-                      <td className="px-4 py-2.5 text-xs text-muted-foreground break-all">
-                        {isSentinel ? "—" : renderAuditValue(entry.old_value)}
-                      </td>
-                      <td className="px-4 py-2.5 text-xs font-medium text-foreground break-all">
-                        {isSentinel ? "—" : renderAuditValue(entry.new_value)}
-                      </td>
-                    </tr>
+                      </p>
+                      {!isSentinel && (
+                        <p className="text-[11px] mt-1 break-all">
+                          <span className="text-muted-foreground">
+                            {renderAuditValue(entry.old_value)}
+                          </span>
+                          <span className="text-muted-foreground mx-1">→</span>
+                          <span className="font-medium text-foreground">
+                            {renderAuditValue(entry.new_value)}
+                          </span>
+                        </p>
+                      )}
+                    </li>
                   );
                 })}
-              </tbody>
-            </table>
+              </ul>
+            </>
           )}
-        </div>
+        </>
       )}
 
       {/* ── Delete confirmation dialog ── */}

@@ -1,4 +1,7 @@
 # KDL Import Consignment Tracker — Operating Manual & Guide
+
+> **Start here:** For the complete operator guide (daily workflows, Excel legacy, mobile usage, and app vs spreadsheet comparison), read **[README.md](README.md)** first. This document adds deeper technical detail for interns who want to understand how the system is built.
+
 **Welcome to Kingdao Logistics!** 
 
 If you are a new intern who has just joined the team, this document is your golden key. Whether you know nothing about shipping cargo across the ocean (Logistics) or how web applications are built (Code), this guide will explain both in simple, friendly, and complete terms. 
