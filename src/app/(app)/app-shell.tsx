@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import Image from "next/image";
 import { logoutAction } from "@/server/actions/auth";
 import { usePermissions } from "@/hooks/use-permissions";
 import { NavLinks } from "./nav-links";
+import { ThemeToggle, readThemeSync, THEME_KEY, type Theme } from "./theme-toggle";
 
 export type NavItem = {
   label: string;
@@ -107,6 +108,17 @@ export default function AppShell({
   const pathname = usePathname();
   const { roles, isAdmin } = usePermissions();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [theme, setTheme] = useState<Theme>(readThemeSync);
+
+  // Keep the persisted choice in sync after the first client render. The
+  // useState initializer already read localStorage synchronously, so the
+  // initial paint is correct and this only handles persistence on change.
+  useEffect(() => {
+    window.localStorage.setItem(THEME_KEY, theme);
+  }, [theme]);
+
+  const toggleTheme = () =>
+    setTheme((t) => (t === "dark" ? "light" : "dark"));
 
   const visibleNav = NAV.filter(
     (item) =>
@@ -119,11 +131,14 @@ export default function AppShell({
     user.email.split("@")[0]?.slice(0, 2).toUpperCase() ?? "KD";
 
   return (
-    <div className="flex h-screen dark overflow-hidden bg-background">
+    <div
+      className={`flex h-screen overflow-hidden bg-background ${theme === "dark" ? "dark" : ""}`}
+      suppressHydrationWarning
+    >
       {/* ── Desktop sidebar ─────────────────────────────────────────────── */}
       <aside className="hidden md:flex w-60 shrink-0 flex-col bg-sidebar border-r border-sidebar-border">
         {/* Brand */}
-        <div className="flex items-center gap-3 px-5 py-4 border-b border-sidebar-border">
+        <div className="flex items-center gap-3 px-5 py-5 border-b border-sidebar-border">
           <Image
             src="/KINGDAO_LOGO.png"
             alt="Kingdao Logistics"
@@ -133,8 +148,8 @@ export default function AppShell({
             priority
           />
           <div>
-            <p className="text-sidebar-foreground font-bold text-sm leading-none">KDL Tracker</p>
-            <p className="text-brand text-[10px] font-medium tracking-widest uppercase mt-0.5">Kingdao Logistics</p>
+            <p className="text-sidebar-foreground font-semibold text-sm leading-none">KDL Tracker</p>
+            <p className="text-brand text-[10px] font-medium tracking-[0.18em] uppercase mt-1">Kingdao Logistics</p>
           </div>
         </div>
 
@@ -218,6 +233,7 @@ export default function AppShell({
             <span className="w-1.5 h-1.5 rounded-full bg-brand" />
             {new Date().getFullYear()}
           </span>
+          <ThemeToggle theme={theme} onToggle={toggleTheme} />
         </header>
         <main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
       </div>
