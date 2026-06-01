@@ -3,68 +3,68 @@
  */
 export default function DashboardLoading() {
   return (
-    <div className="animate-pulse space-y-6">
+    <div className="mx-auto max-w-7xl animate-pulse space-y-8">
       {/* Header */}
       <div>
-        <div className="h-7 w-36 bg-muted rounded-lg" />
-        <div className="h-4 w-56 bg-muted/60 rounded mt-2" />
+        <div className="h-7 w-36 rounded-lg bg-muted" />
+        <div className="mt-2 h-4 w-56 rounded bg-muted/60" />
       </div>
 
       {/* KPI row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         {[...Array(4)].map((_, i) => (
           <div
             key={i}
-            className="rounded-xl border border-border p-4 space-y-2"
+            className="space-y-3 rounded-xl border border-border bg-card p-5"
           >
-            <div className="h-3 w-20 bg-muted/60 rounded" />
-            <div className="h-8 w-16 bg-muted rounded" />
+            <div className="h-3 w-24 rounded bg-muted/60" />
+            <div className="h-7 w-16 rounded bg-muted" />
           </div>
         ))}
       </div>
 
       {/* Funnel + top clients */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 rounded-xl border border-border bg-card p-5 space-y-3">
-          <div className="h-4 w-32 bg-muted rounded" />
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="space-y-4 rounded-xl border border-border bg-card p-6 lg:col-span-2">
+          <div className="h-4 w-32 rounded bg-muted" />
           {[...Array(8)].map((_, i) => (
             <div key={i} className="flex items-center gap-3">
-              <div className="h-3 w-20 bg-muted/40 rounded" />
-              <div className="flex-1 h-6 bg-muted/30 rounded" />
-              <div className="h-3 w-8 bg-muted/40 rounded" />
+              <div className="h-3 w-20 rounded bg-muted/40" />
+              <div className="h-5 flex-1 rounded-md bg-muted/30" />
+              <div className="h-3 w-8 rounded bg-muted/40" />
             </div>
           ))}
         </div>
-        <div className="rounded-xl border border-border bg-card p-5 space-y-4">
-          <div className="h-4 w-28 bg-muted rounded" />
+        <div className="space-y-4 rounded-xl border border-border bg-card p-6">
+          <div className="h-4 w-28 rounded bg-muted" />
           {[...Array(5)].map((_, i) => (
             <div key={i} className="flex items-center gap-3">
-              <div className="h-3 w-5 bg-muted/40 rounded" />
-              <div className="flex-1 h-4 bg-muted/30 rounded" />
-              <div className="h-4 w-10 bg-muted/40 rounded" />
+              <div className="h-3 w-5 rounded bg-muted/40" />
+              <div className="h-4 flex-1 rounded bg-muted/30" />
+              <div className="h-4 w-10 rounded bg-muted/40" />
             </div>
           ))}
         </div>
       </div>
 
       {/* Lists */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {[...Array(2)].map((_, i) => (
           <div
             key={i}
-            className="rounded-xl border border-border bg-card overflow-hidden"
+            className="overflow-hidden rounded-xl border border-border bg-card"
           >
-            <div className="px-5 py-4 border-b border-border flex justify-between">
-              <div className="h-4 w-32 bg-muted rounded" />
-              <div className="h-3 w-24 bg-muted/40 rounded" />
+            <div className="flex justify-between px-6 pt-5 pb-4">
+              <div className="h-4 w-32 rounded bg-muted" />
+              <div className="h-3 w-24 rounded bg-muted/40" />
             </div>
-            <div className="divide-y divide-border">
+            <div className="divide-y divide-border border-t border-border">
               {[...Array(4)].map((_, j) => (
-                <div key={j} className="flex items-center gap-3 px-5 py-3">
-                  <div className="w-12 h-12 bg-muted/30 rounded-full" />
+                <div key={j} className="flex items-center gap-3 px-6 py-3">
+                  <div className="h-9 w-9 rounded-full bg-muted/30" />
                   <div className="flex-1 space-y-1.5">
-                    <div className="h-4 w-32 bg-muted/40 rounded" />
-                    <div className="h-3 w-48 bg-muted/30 rounded" />
+                    <div className="h-4 w-32 rounded bg-muted/40" />
+                    <div className="h-3 w-48 rounded bg-muted/30" />
                   </div>
                 </div>
               ))}

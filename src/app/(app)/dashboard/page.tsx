@@ -235,18 +235,18 @@ export default async function DashboardPage() {
   t.end();
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-baseline justify-between gap-4">
+    <div className="mx-auto max-w-7xl space-y-8">
+      <header className="flex items-baseline justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground tracking-tight">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
             Dashboard
           </h1>
-          <p className="text-muted-foreground text-sm mt-1">
+          <p className="mt-1 text-sm text-muted-foreground">
             Overview for {year} · {totalActive} consignment
             {totalActive === 1 ? "" : "s"} on the books
           </p>
         </div>
-      </div>
+      </header>
 
       {anyFatalError && (
         <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
@@ -256,12 +256,8 @@ export default async function DashboardPage() {
       )}
 
       {/* ── Active jobs row ─────────────────────────────────────────────── */}
-      <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Kpi
-          label="Released today"
-          value={releasedToday}
-          tone="done"
-        />
+      <section className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <Kpi label="Released today" value={releasedToday} tone="done" />
         <Kpi
           label="Pending release"
           value={pendingRelease}
@@ -269,7 +265,7 @@ export default async function DashboardPage() {
           href="/consignments?stage=unreleased"
         />
         <Kpi
-          label="Stuck > 48h"
+          label="Stuck over 48h"
           value={stuck.length}
           tone={stuck.length > 0 ? "stuck" : "waiting"}
           href="/consignments?stage=stuck"
@@ -282,81 +278,75 @@ export default async function DashboardPage() {
         />
       </section>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* ── Pipeline funnel ───────────────────────────────────────────── */}
-        <section className="lg:col-span-2 rounded-xl border border-border bg-card p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-foreground">
-              Pipeline funnel · {year}
-            </h2>
-            <span className="text-xs text-muted-foreground">
-              Consignments in Action by stage
-            </span>
-          </div>
-          <div className="space-y-2.5">
+        <section className="rounded-xl border border-border bg-card p-6 lg:col-span-2">
+          <SectionHeader
+            title="Pipeline funnel"
+            meta={`Consignments in action · ${year}`}
+          />
+          <div className="mt-5 space-y-3">
             {funnelValues.map((f) => (
               <div key={f.key} className="flex items-center gap-3">
-                <span className="text-xs text-muted-foreground w-24 shrink-0">
+                <span className="w-24 shrink-0 text-xs text-muted-foreground">
                   {f.label}
                 </span>
-                <div className="flex-1 h-6 rounded bg-muted/40 overflow-hidden">
+                <div className="h-5 flex-1 overflow-hidden rounded-md bg-muted/40">
                   <div
-                    className="h-full bg-stage-action/60 border-r border-stage-action transition-all"
+                    className="h-full rounded-md bg-brand/55 transition-all"
                     style={{
                       width: `${Math.max(2, (f.value / funnelMax) * 100)}%`,
                     }}
                   />
                 </div>
-                <span className="text-xs font-mono font-medium text-foreground w-10 text-right tabular-nums">
+                <span className="w-10 text-right font-mono text-xs font-medium tabular-nums text-foreground">
                   {f.value}
                 </span>
               </div>
             ))}
           </div>
-          <div className="mt-4 pt-4 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
+          <div className="mt-5 flex items-center justify-between border-t border-border pt-4 text-xs text-muted-foreground">
             <span>
-              Released: <strong className="text-stage-done font-semibold">{funnel?.released ?? 0}</strong>
+              Released:{" "}
+              <strong className="font-semibold text-stage-done">
+                {funnel?.released ?? 0}
+              </strong>
             </span>
             <span>
-              Total active: <strong className="text-foreground font-semibold">{funnel?.total_active ?? 0}</strong>
+              Total active:{" "}
+              <strong className="font-semibold text-foreground">
+                {funnel?.total_active ?? 0}
+              </strong>
             </span>
           </div>
         </section>
 
         {/* ── Top clients ───────────────────────────────────────────────── */}
-        <section className="rounded-xl border border-border bg-card p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-foreground">
-              Top clients · {year}
-            </h2>
-            <span className="text-xs text-muted-foreground">by containers</span>
-          </div>
+        <section className="rounded-xl border border-border bg-card p-6">
+          <SectionHeader title="Top clients" meta="by containers" />
           {topClients.length === 0 ? (
-            <p className="text-xs text-muted-foreground py-8 text-center">
+            <p className="py-10 text-center text-xs text-muted-foreground">
               No client data yet for {year}.
             </p>
           ) : (
-            <ol className="space-y-3">
+            <ol className="mt-5 space-y-4">
               {topClients.map((c, i) => (
-                <li
-                  key={c.client_id ?? i}
-                  className="flex items-center gap-3"
-                >
-                  <span className="text-xs font-mono text-muted-foreground w-5 tabular-nums">
-                    {i + 1}.
+                <li key={c.client_id ?? i} className="flex items-center gap-3">
+                  <span className="w-5 font-mono text-xs tabular-nums text-muted-foreground">
+                    {i + 1}
                   </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-foreground">
                       {c.client_name ?? "—"}
                     </p>
                     {c.sub_label && (
-                      <p className="text-[11px] text-muted-foreground truncate">
+                      <p className="truncate text-[11px] text-muted-foreground">
                         {c.sub_label}
                       </p>
                     )}
                   </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-sm font-mono font-semibold text-foreground tabular-nums">
+                  <div className="shrink-0 text-right">
+                    <p className="font-mono text-sm font-semibold tabular-nums text-foreground">
                       {c.total_containers ?? 0}
                     </p>
                     <p className="text-[10px] text-muted-foreground">
@@ -370,52 +360,51 @@ export default async function DashboardPage() {
         </section>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* ── Arrivals this week ────────────────────────────────────────── */}
-        <section className="rounded-xl border border-border bg-card overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-            <h2 className="text-sm font-semibold text-foreground">
-              Arrivals this week
-            </h2>
-            <span className="text-xs text-muted-foreground">
-              {formatDate(weekStartISO)} →{" "}
-              {formatDate(
-                new Date(weekEnd.getTime() - 86400000).toISOString().slice(0, 10),
-              )}
-            </span>
+        <section className="overflow-hidden rounded-xl border border-border bg-card">
+          <div className="px-6 pt-5 pb-4">
+            <SectionHeader
+              title="Arrivals this week"
+              meta={`${formatDate(weekStartISO)} → ${formatDate(
+                new Date(weekEnd.getTime() - 86400000)
+                  .toISOString()
+                  .slice(0, 10),
+              )}`}
+            />
           </div>
           {arrivals.length === 0 ? (
-            <p className="text-xs text-muted-foreground py-12 text-center">
+            <p className="py-12 text-center text-xs text-muted-foreground">
               No vessel arrivals scheduled this week.
             </p>
           ) : (
-            <ul className="divide-y divide-border">
+            <ul className="divide-y divide-border border-t border-border">
               {arrivals.map((a) => (
                 <li key={a.id}>
                   <Link
                     href={`/consignments/${a.id}`}
-                    className="flex items-center gap-3 px-5 py-3 hover:bg-muted/20 transition-colors"
+                    className="flex items-center gap-3 px-6 py-3 transition-colors hover:bg-muted/30"
                   >
-                    <div className="text-center shrink-0 w-12">
-                      <p className="text-[10px] uppercase text-muted-foreground font-medium">
+                    <div className="w-12 shrink-0 text-center">
+                      <p className="text-[10px] font-medium uppercase text-muted-foreground">
                         {new Date(a.arrival_date).toLocaleDateString("en-GB", {
                           month: "short",
                         })}
                       </p>
-                      <p className="text-lg font-bold text-foreground leading-none tabular-nums">
+                      <p className="text-lg font-semibold leading-none tabular-nums text-foreground">
                         {new Date(a.arrival_date).getDate()}
                       </p>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-foreground truncate">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-foreground">
                         {clientName(a.clients)}
                       </p>
-                      <p className="text-[11px] text-muted-foreground truncate">
+                      <p className="truncate text-[11px] text-muted-foreground">
                         {a.vessel_name ?? "vessel TBC"} ·{" "}
                         {a.container_count ?? "?"} × {a.container_type ?? "—"}
                       </p>
                     </div>
-                    <span className="font-mono text-xs text-muted-foreground shrink-0">
+                    <span className="shrink-0 font-mono text-xs text-muted-foreground">
                       {a.ref_no}
                     </span>
                   </Link>
@@ -426,45 +415,30 @@ export default async function DashboardPage() {
         </section>
 
         {/* ── Overdue jobs ──────────────────────────────────────────────── */}
-        <section className="rounded-xl border border-border bg-card overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-            <h2 className="text-sm font-semibold text-foreground">
-              Overdue jobs
-            </h2>
-            <span className="text-xs text-muted-foreground">
-              stuck &gt; 48h · top {Math.min(stuck.length, 10)}
-            </span>
+        <section className="overflow-hidden rounded-xl border border-border bg-card">
+          <div className="px-6 pt-5 pb-4">
+            <SectionHeader
+              title="Overdue jobs"
+              meta={`stuck over 48h · top ${Math.min(stuck.length, 10)}`}
+            />
           </div>
           {stuck.length === 0 ? (
-            <p className="text-xs text-muted-foreground py-12 text-center">
-              ✅ Nothing is stuck right now.
+            <p className="py-12 text-center text-xs text-muted-foreground">
+              Nothing is stuck right now.
             </p>
           ) : (
-            <ul className="divide-y divide-border">
+            <ul className="divide-y divide-border border-t border-border">
               {stuck.map((s) => (
                 <li key={`${s.consignment_id}-${s.stage}`}>
                   <Link
                     href={`/consignments/${s.consignment_id}`}
-                    className="flex items-center gap-3 px-5 py-3 hover:bg-muted/20 transition-colors"
+                    className="flex items-center gap-3 px-6 py-3 transition-colors hover:bg-muted/30"
                   >
-                    <div className="shrink-0">
-                      <span className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-stage-stuck/15 border border-stage-stuck/40 text-stage-stuck">
-                        <svg
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth={2}
-                          className="w-5 h-5"
-                        >
-                          <circle cx="12" cy="12" r="9" />
-                          <path
-                            strokeLinecap="round"
-                            d="M12 7v5l3 2"
-                          />
-                        </svg>
-                      </span>
-                    </div>
-                    <div className="flex-1 min-w-0">
+                    <span
+                      aria-hidden
+                      className="h-9 w-1 shrink-0 rounded-full bg-stage-stuck/70"
+                    />
+                    <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-xs font-bold text-foreground">
                           {s.ref_no}
@@ -472,19 +446,19 @@ export default async function DashboardPage() {
                         <span className="text-[10px] text-muted-foreground">
                           {s.year}
                         </span>
-                        <span className="text-xs text-foreground/80 truncate">
+                        <span className="truncate text-xs text-foreground/80">
                           · {s.client_name}
                         </span>
                       </div>
-                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">
                         Stuck at{" "}
-                        <span className="text-stage-stuck font-medium">
+                        <span className="font-medium text-stage-stuck">
                           {stageLabelFor(s.stage)}
                         </span>{" "}
                         · {formatRelative(s.stuck_since)}
                       </p>
                     </div>
-                    <span className="text-xs font-mono font-semibold text-stage-stuck shrink-0 tabular-nums">
+                    <span className="shrink-0 font-mono text-xs font-semibold tabular-nums text-stage-stuck">
                       {Math.floor(s.hours_stuck)}h
                     </span>
                   </Link>
@@ -496,9 +470,21 @@ export default async function DashboardPage() {
       </div>
 
       {/* Footer: revenue raw value (compact format used in KPI is approximate) */}
-      <p className="text-[11px] text-muted-foreground text-right">
-        Revenue this month: <span className="font-mono text-foreground">{formatTzs(revenueThisMonth)}</span>
+      <p className="text-right text-[11px] text-muted-foreground">
+        Revenue this month:{" "}
+        <span className="font-mono text-foreground">
+          {formatTzs(revenueThisMonth)}
+        </span>
       </p>
+    </div>
+  );
+}
+
+function SectionHeader({ title, meta }: { title: string; meta?: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+      {meta && <span className="text-xs text-muted-foreground">{meta}</span>}
     </div>
   );
 }
@@ -516,12 +502,12 @@ function Kpi({
   tone: "brand" | "done" | "action" | "stuck" | "waiting";
   href?: string;
 }) {
-  const toneClass = {
-    brand: "border-brand/30 bg-brand/5",
-    done: "border-stage-done/30 bg-stage-done/5",
-    action: "border-stage-action/30 bg-stage-action/5",
-    stuck: "border-stage-stuck/30 bg-stage-stuck/5",
-    waiting: "border-border bg-muted/20",
+  const dotClass = {
+    brand: "bg-brand",
+    done: "bg-stage-done",
+    action: "bg-stage-action",
+    stuck: "bg-stage-stuck",
+    waiting: "bg-muted-foreground/40",
   }[tone];
 
   const valueToneClass = {
@@ -533,18 +519,29 @@ function Kpi({
   }[tone];
 
   const inner = (
-    <div className={`rounded-xl border p-4 transition-colors ${toneClass} ${href ? "hover:bg-opacity-80" : ""}`}>
-      <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
+    <div
+      className={`flex h-full flex-col rounded-xl border border-border bg-card p-5 transition-all ${
+        href ? "hover:border-foreground/15 hover:bg-muted/20" : ""
+      }`}
+    >
+      <p className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+        <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} />
         {label}
       </p>
-      <p className={`mt-1.5 text-2xl font-bold tabular-nums ${valueToneClass}`}>
+      <p className={`mt-2 text-2xl font-semibold tabular-nums ${valueToneClass}`}>
         {value}
       </p>
-      {subValue && (
-        <p className="text-[11px] text-muted-foreground mt-0.5">{subValue}</p>
-      )}
+      <p className="mt-0.5 text-[11px] text-muted-foreground">
+        {subValue ?? " "}
+      </p>
     </div>
   );
 
-  return href ? <Link href={href}>{inner}</Link> : inner;
+  return href ? (
+    <Link href={href} className="block h-full">
+      {inner}
+    </Link>
+  ) : (
+    inner
+  );
 }
