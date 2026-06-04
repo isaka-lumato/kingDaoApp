@@ -371,6 +371,21 @@ Run after any change to `src/app/api/reports/[kind]/pdf/route.ts`, `src/server/r
 
 ---
 
+## V-REFDATA — Reference-data management (Clients / ICDs / Vessels, D-050)
+
+- [ ] `/settings/clients`, `/settings/icds`, `/settings/vessels` reachable as admin; each lists existing rows with an Active/Inactive badge.
+- [ ] Non-admin (operator/viewer) hitting any `/settings/*` route is redirected to `/` (inherited from `settings/layout.tsx`).
+- [ ] Add / Edit / Activate-Deactivate work for each entity; duplicate name returns a friendly "already exists" message (no raw `23505`).
+- [ ] "Deactivate" is a reversible toggle — nothing is deleted; inactive rows still appear in Settings.
+- [ ] Inactive clients/ICDs/vessels are **excluded** from the New / Edit consignment dropdowns + vessel datalist (`is_active = true` filter).
+- [ ] Vessel field on New + Edit forms suggests managed vessel names via `<datalist>` but still accepts a brand-new free-text value (saves fine).
+- [ ] Client dropdowns show `name — sub_label` so PAPA/JOYCE variants are distinguishable.
+- [ ] Direct REST write to `vessels` (INSERT/UPDATE) with a non-admin JWT is rejected by RLS (`vessels_write_admin`).
+- [ ] Editing a client/ICD/vessel writes an `audit_log` row (trigger `*_audit`).
+- [ ] `grep -rn "getSupabaseAdminClient" src/` still returns only the 3 D-026 sites — the new server actions use the user-bound client.
+
+---
+
 ## How to run a full pre-merge check (Phase 7 onward)
 
 ```powershell

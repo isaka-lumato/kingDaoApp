@@ -5,6 +5,9 @@ import { getServerPermissions } from "@/lib/permissions";
 const SETTINGS_NAV = [
   { href: "/settings/users", label: "Users", icon: "👥" },
   { href: "/settings/roles", label: "Roles & Permissions", icon: "🔑" },
+  { href: "/settings/clients", label: "Clients", icon: "🏢" },
+  { href: "/settings/icds", label: "ICDs", icon: "🏭" },
+  { href: "/settings/vessels", label: "Vessels", icon: "🚢" },
 ];
 
 export default async function SettingsLayout({

@@ -6,9 +6,14 @@ import Link from "next/link";
 import { createConsignmentAction } from "@/server/actions/create-consignment";
 
 type Props = {
-  clients: { id: string; name: string }[];
+  clients: { id: string; name: string; sub_label: string | null }[];
   icds: { id: string; name: string; location: string | null }[];
+  vessels: string[];
 };
+
+function clientLabel(c: { name: string; sub_label: string | null }) {
+  return c.sub_label ? `${c.name} — ${c.sub_label}` : c.name;
+}
 
 const CONTAINER_TYPES = ["40FT", "20FT", "CAR", "COIL"] as const;
 const CURRENT_YEAR = new Date().getFullYear();
@@ -53,7 +58,7 @@ function Field({
 const inputCls =
   "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring";
 
-export default function NewConsignmentForm({ clients, icds }: Props) {
+export default function NewConsignmentForm({ clients, icds, vessels }: Props) {
   const [state, action] = useActionState(createConsignmentAction, null);
 
   return (
@@ -94,7 +99,7 @@ export default function NewConsignmentForm({ clients, icds }: Props) {
                 <option value="">Select client…</option>
                 {clients.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.name}
+                    {clientLabel(c)}
                   </option>
                 ))}
               </select>
@@ -144,13 +149,20 @@ export default function NewConsignmentForm({ clients, icds }: Props) {
               />
             </Field>
 
-            <Field label="Vessel name">
+            <Field label="Vessel name" hint="Pick a known vessel or type a new one">
               <input
                 name="vessel_name"
                 type="text"
+                list="vessel-options"
                 placeholder="e.g. MSC ANNA"
                 className={inputCls}
+                autoComplete="off"
               />
+              <datalist id="vessel-options">
+                {vessels.map((v) => (
+                  <option key={v} value={v} />
+                ))}
+              </datalist>
             </Field>
 
             <Field label="Arrival date">

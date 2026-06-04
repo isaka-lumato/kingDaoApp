@@ -919,3 +919,60 @@ No data migration is needed. The xlsx itself is the operator's working copy and 
 **Wheel behavior (refined after first pass).** The initial handler hijacked *every* vertical wheel for horizontal scroll, which broke scrolling cards within a tall column. Final rule: a plain wheel is redirected to horizontal **only** when (a) `Shift` is held (the web convention — `Ctrl` was rejected because it collides with browser zoom), or (b) the column card-list under the cursor can't scroll further in the wheel's direction. The handler locates that card-list via a `data-kanban-scroll` attribute on the column scroller (`kanban-column.tsx`) and checks `scrollTop`/`scrollHeight`/`clientHeight`. Horizontal trackpad gestures (`|deltaX| > |deltaY|`) are left to the browser.
 
 **Scope / non-goals.** No changes to drag-and-drop, `advance_stage`, the card layout itself, or any data flow. Edge fades are always rendered (no scroll-position listener) — simplest robust version; making them appear/disappear at the true ends was deferred as unnecessary. Firefox can't transition the auto-hide thumb and falls back to the always-slim bar (acceptable).
+
+---
+
+## D-049 — Explicit "Mark Released" affordance on the board + celebration
+
+**Context.** On the desktop Pipeline Board the **Release** column is the last column. The board's forward-drag model means "I'm done with the current active stage," but a card already sitting in Release has `active_stage = "release_status"` at value `Waiting` and there is no column to its right to drag toward; `handleDragEnd` also ignores same-column drops. So cards flooded into Release with **no UI to mark them `Released`** — even though `advanceStageAction(release_status, "Released")` already exists and `fetchKanbanData` already filters released rows off the board (`.neq("release_status","Released")`). Staff also wanted releasing a consignment to *feel* like the milestone it is. User-reported UX gap, not a PRD item.
+
+**Decision.** UI-only, additive — no migration, no schema change, no new server action.
+
+1. **Two trigger affordances** for marking a Release-column card `Released`, both routing through one shared `releaseConsignment(card)` handler in `kanban-board.tsx`:
+   - **Per-card button** (`kanban-card.tsx`): a primary `✓ Mark Released` button rendered only when `card.active_stage === "release_status"` **and** the user `canDrag` (admin/operator). The button stops pointer/click propagation and does not carry the dnd drag listeners, so clicking it never starts a drag. It calls an `onRelease(card)` callback threaded board → `kanban-column.tsx` → card; the card never calls the server action itself (board stays the single orchestrator).
+   - **Drag-to-release zone** (`kanban-board.tsx`): a slim `useDroppable({ id: "__release__" })` target to the right of the Release column, highlighted on `isOver`. `handleDragEnd` special-cases `toField === "__release__"`: valid only when the dragged card's `active_stage === "release_status"` (already in Release); otherwise a friendly info message ("move it to Release first"), no release.
+
+2. **Shared release routine** reuses the existing optimistic-removal path (`applyOptimistic({ card, landingStage: "release_status", removed: true })` — the same mechanism the `fullyReleased` drag path already uses), calls `advanceStageAction` with `stage="release_status"`, `newValue="Released"`, reverts on error via `setError`, and on success fires the celebration.
+
+3. **Celebration = confetti + the board's existing `info` banner** (`🎉 <ref> released!`). The info/error banners are this codebase's established "toast" pattern (mirrors `settings/users/users-client.tsx`; consistent with the toast decision noted earlier in this file) — **no toast library is added**. Confetti uses the new **`canvas-confetti`** dependency (`@types/canvas-confetti` dev), `import()`-ed lazily inside the success handler so it stays out of the initial chunk and never touches SSR (the board is already `dynamic(ssr:false)`).
+
+**Permissions.** Gated by the same `canDrag = isAdmin || roles.includes("operator")` as every other advance; the DB `advance_stage()` re-checks caller role (D-029) and PRD §7.1 prerequisites, so no new server guard is needed.
+
+**Scope / non-goals.** Desktop board only — the gap the user described. Mobile/triage release is unaffected because `stage-action-menu.tsx` already exposes "Mark Release Released" for the active stage. No change to drag semantics for stages 1–9, to `advance_stage`, or to any data flow beyond the new release trigger.
+
+---
+
+## D-050 — Reference-data management in Settings (Clients, ICDs, Vessels) + vessel autocomplete
+
+**Date:** 2026-06-03
+**Status:** Active
+
+**Context.** New-consignment entry repeats a fixed set of values — client, ICD, vessel. `clients` and `icds` were already proper reference tables (seeded PRD §13; soft-delete, `is_active`, audit triggers, RLS = everyone reads / admins write) but had **no management UI**: new entries only appeared via the Excel import auto-create path (D-037) or a hand-written migration. `vessel_name` on `consignments` is free text (typo-prone) even though the same vessel recurs across many rows (the GUTA auto-pair trigger keys on it).
+
+**Decision.**
+
+1. **New `vessels` reference table** (migration `20260603090000_vessels.sql`), shaped exactly like `icds`: `id, name, is_active, deleted_at, created_at, updated_at`; unique index on `name where deleted_at is null`; `set_updated_at` + `log_table_change` triggers; RLS copied from `icds` (authenticated SELECT, admin-only write). Seeded by backfilling `select distinct trim(vessel_name) from consignments`. `vessel_name` on `consignments` **stays free text** — the table is a suggestion source, not a FK.
+2. **Three admin-only management screens** under the existing `/settings` area (`/settings/{clients,icds,vessels}`), gated by `settings/layout.tsx`'s existing `isAdmin` redirect. One shared configurable client component (`settings/reference-manager.tsx`) drives all three — the entities differ only in declarative field config + which server actions they call, so a single parameterised component beats three near-identical copies (the variation is data, not behaviour). New server actions in `src/server/actions/settings-reference.ts`.
+3. **"Remove" = an `is_active` toggle, not deletion** (user decision 2026-06-03). Inactive rows stay listed in Settings but are excluded from the consignment-form dropdowns/datalist (`.eq("is_active", true)`). Nothing is hard- or soft-deleted from these screens; `deleted_at` remains on the tables (schema/audit consistency, D-015) but is never set here. Fully reversible.
+4. **Vessel autocomplete:** the `vessel_name` input on the New + Edit consignment forms gains `list="vessel-options"` + a `<datalist>` populated from active vessels. Suggests known names, still accepts free text — no enum, no required match. This is the "Both" choice (managed list **and** free-text fallback).
+5. **Folded-in fix:** the client dropdowns on both forms now render `name — sub_label` (and fetch `sub_label`). The seed has 5× `PAPA` and 8× `JOYCE` variants distinguished only by `sub_label`, which were previously indistinguishable in the picker.
+
+**Why user-bound client, not admin client.** The new server actions use `getSupabaseServerClient()` (user JWT) for both reads and writes. Admin RLS on all three tables already permits the write, so routing through the user client keeps the D-026 admin-client allowlist at exactly 3 sites and keeps writes RLS-governed. `requireAdmin()` runs first as defense-in-depth + for friendly error messages.
+
+**Access model.** Admin-only, matching the existing `clients`/`icds` RLS (admins write / everyone reads). Operators who need a new client/ICD/vessel either ask an admin or rely on the Excel-import auto-create path (D-037), which is unchanged. Widening write access to operators would require RLS changes and was explicitly deferred.
+
+**Trade-offs.** A duplicate near-name (e.g. `MSC ANNA` vs `MSC ANNA.`) can still be added as a distinct vessel — acceptable; the datalist surfaces existing names to discourage it, and admins can deactivate duplicates. The vessel table can drift from `consignments.vessel_name` over time (free text means a typo'd consignment vessel won't auto-appear unless re-seeded) — acceptable for a suggestion list; the day-one backfill covers history.
+
+**Verification surface:** V-REFDATA in `validation.md`.
+
+## D-051 — Default theme is light; theme class applied to `<html>` pre-paint
+
+**Context.** The app previously defaulted to dark and toggled a `dark` class on a `<div>` *inside* the client-only `AppShell`. Server HTML shipped with no theme class, so every page load painted with the light `:root` palette for one frame before React hydrated and added `dark` — a visible flicker on navigation. PRD doesn't specify a default theme, so this is a decision.
+
+**Decision.**
+1. **Default theme = light.** `readThemeSync()` returns `"light"` unless `localStorage["kdl-theme"] === "dark"`.
+2. **Theme class lives on `<html>`**, set by a synchronous inline `<script>` in `src/app/layout.tsx` that runs before first paint (standard no-flash pattern). React state (`app-shell.tsx`) only drives the toggle icon + persistence and calls `applyTheme()` to keep `<html>` in sync on user toggles.
+3. **Login/auth pages follow the saved theme** (default light) rather than being locked to light — the class is on `<html>`, above the route groups.
+
+**Trade-off.** The localStorage key `"kdl-theme"` is duplicated as a string literal in the inline script (it can't import `THEME_KEY` — it runs pre-hydration). Coupling noted in comments in both files.
+

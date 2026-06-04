@@ -10,6 +10,7 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
+  useDroppable,
   pointerWithin,
   rectIntersection,
   type CollisionDetection,
@@ -27,6 +28,9 @@ import { usePermissions } from "@/hooks/use-permissions";
 import ForceStageDialog from "@/components/force-stage-dialog";
 import KanbanCard from "./kanban-card";
 import KanbanColumn from "./kanban-column";
+// Type-only — erased at compile time, so canvas-confetti stays out of the
+// initial/SSR bundle; the value is import()-ed lazily in celebrateRelease.
+import type { Options as ConfettiOptions } from "canvas-confetti";
 
 type Props = {
   byStage: Record<StageField, KanbanConsignment[]>;
@@ -69,6 +73,60 @@ const collisionDetection: CollisionDetection = (args) => {
   const within = pointerWithin(args);
   return within.length ? within : rectIntersection(args);
 };
+
+// Droppable id for the drag-to-release target. Sentinel (not a StageField) so
+// handleDragEnd can special-case it — see D-049.
+const RELEASE_DROP_ID = "__release__";
+
+// Celebration when a consignment is released (D-049). canvas-confetti is
+// browser-only and imported lazily so it stays out of the initial chunk and
+// never runs during SSR (the board is already dynamic ssr:false). Failure to
+// load is non-fatal — the release already succeeded; the toast still shows.
+async function celebrateRelease() {
+  try {
+    const confetti = (await import("canvas-confetti")).default;
+    const fire = (particleRatio: number, opts: ConfettiOptions) =>
+      confetti({
+        origin: { y: 0.7 },
+        spread: 70,
+        startVelocity: 45,
+        particleCount: Math.floor(200 * particleRatio),
+        ...opts,
+      });
+    fire(0.25, { spread: 26, startVelocity: 55 });
+    fire(0.35, { spread: 60 });
+    fire(0.2, { spread: 100, decay: 0.91, scalar: 0.8 });
+  } catch {
+    // confetti is pure delight — swallow any load/runtime error.
+  }
+}
+
+// Slim drop target to the right of the Release column. Dropping a Release-stage
+// card here releases it; the highlight reacts to isOver. Kept separate because
+// useDroppable is a hook and the board already wires its own droppables per
+// column via KanbanColumn — D-049.
+function ReleaseDropZone() {
+  const { setNodeRef, isOver } = useDroppable({ id: RELEASE_DROP_ID });
+  return (
+    <div
+      ref={setNodeRef}
+      className={[
+        "flex flex-col w-[120px] shrink-0 items-center justify-center rounded-xl border-2 border-dashed transition-colors text-center px-2",
+        isOver
+          ? "border-green-500 bg-green-500/10 text-green-600"
+          : "border-border/60 text-muted-foreground/70",
+      ].join(" ")}
+    >
+      <span className="text-2xl leading-none mb-1">🎉</span>
+      <span className="text-xs font-semibold uppercase tracking-wide">
+        Release ✓
+      </span>
+      <span className="mt-1 text-[10px] leading-tight">
+        Drop a Release card here
+      </span>
+    </div>
+  );
+}
 
 export default function KanbanBoard({ byStage, year, fetchError }: Props) {
   const [activeCard, setActiveCard] = useState<KanbanConsignment | null>(null);
@@ -142,9 +200,37 @@ export default function KanbanBoard({ byStage, year, fetchError }: Props) {
   function handleDragEnd(e: DragEndEvent) {
     setActiveCard(null);
     const card = e.active.data.current?.card as KanbanConsignment | undefined;
-    const toField = e.over?.id as StageField | undefined;
+    const overId = e.over?.id as StageField | typeof RELEASE_DROP_ID | undefined;
 
-    if (!card || !toField || toField === card.active_stage) return;
+    if (!card || !overId) return;
+
+    // Drag-to-release zone (D-049). releaseConsignment guards role + that the
+    // card is actually in Release, surfacing a friendly message otherwise.
+    if (overId === RELEASE_DROP_ID) {
+      releaseConsignment(card);
+      return;
+    }
+
+    // Resolve the drop target to a column (StageField). Because every card is a
+    // sortable droppable, dropping ON or ABOVE another card reports that card's
+    // id (a UUID) as `over.id`, not the column's field. We only care which
+    // column the card landed in — the "advance one stage" model ignores
+    // position within a column — so map a card drop to that card's stage. The
+    // dragged card carries its full record in over.data.card (see KanbanCard's
+    // useSortable data prop). Anything we still can't resolve is ignored rather
+    // than fed into stageIndex() as a bogus -1 (which surfaced as a spurious
+    // error when dropping near a card instead of on empty space).
+    const overCard = e.over?.data.current?.card as
+      | KanbanConsignment
+      | undefined;
+    const toField: StageField | undefined = STAGE_FIELDS.includes(
+      overId as StageField
+    )
+      ? (overId as StageField)
+      : overCard?.active_stage;
+
+    if (!toField) return;
+    if (toField === card.active_stage) return;
 
     // Belt-and-braces: even if a viewer bypasses the card-level `disabled`
     // flag, refuse here. The DB function rejects too (D-029).
@@ -239,6 +325,50 @@ export default function KanbanBoard({ byStage, year, fetchError }: Props) {
     });
   }
 
+  // Shared release routine for both triggers (the per-card "Mark Released"
+  // button and the drag-to-release zone — D-049). A card is releasable only
+  // when it's the active stage is release_status; the caller guarantees that,
+  // but we re-check role here (belt-and-braces; advance_stage() re-checks too,
+  // D-029). Optimistically removes the card (release filters it off the board
+  // on refetch), then advances release_status → "Released" and celebrates.
+  function releaseConsignment(card: KanbanConsignment) {
+    setError(null);
+    setInfo(null);
+
+    if (!canDrag) {
+      setError("Your role cannot release consignments.");
+      return;
+    }
+    if (card.active_stage !== "release_status") {
+      setInfo(`Move ${card.ref_no} to Release before releasing it.`);
+      return;
+    }
+
+    const fd = new FormData();
+    fd.set("consignmentId", card.id);
+    fd.set("stage", "release_status");
+    fd.set("newValue", STAGE_DONE_VALUE.release_status); // "Released"
+
+    startTransition(async () => {
+      applyOptimistic({ card, landingStage: "release_status", removed: true });
+
+      const res = await advanceStageAction(fd);
+      if (res?.error) {
+        console.error("[kanban] release failed", {
+          id: card.id,
+          ref_no: card.ref_no,
+          error: res.error,
+        });
+        setError(res.error);
+        return;
+      }
+
+      console.log("[kanban] released", { id: card.id, ref_no: card.ref_no });
+      setInfo(`🎉 ${card.ref_no} released!`);
+      void celebrateRelease();
+    });
+  }
+
   const currentYear = new Date().getFullYear();
   const yearOptions = [currentYear - 1, currentYear, currentYear + 1];
   const totalCards = PIPELINE_STAGES.reduce(
@@ -325,7 +455,7 @@ export default function KanbanBoard({ byStage, year, fetchError }: Props) {
           >
             <div
               className="flex gap-3 h-full"
-              style={{ minWidth: `${PIPELINE_STAGES.length * 260}px` }}
+              style={{ minWidth: `${PIPELINE_STAGES.length * 260 + (canDrag ? 132 : 0)}px` }}
             >
               {PIPELINE_STAGES.map((stage) => (
                 <KanbanColumn
@@ -335,8 +465,12 @@ export default function KanbanBoard({ byStage, year, fetchError }: Props) {
                   cards={optimisticBoard[stage.field] ?? []}
                   isPending={isPending}
                   canDrag={canDrag}
+                  onRelease={releaseConsignment}
                 />
               ))}
+
+              {/* Drag-to-release target, just past the Release column (D-049). */}
+              {canDrag && <ReleaseDropZone />}
             </div>
 
             <DragOverlay>
