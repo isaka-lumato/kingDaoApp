@@ -1,13 +1,21 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import {
+  Building2,
+  ShieldCheck,
+  Ship,
+  UsersRound,
+  Warehouse,
+  type LucideIcon,
+} from "lucide-react";
 import { getServerPermissions } from "@/lib/permissions";
 
-const SETTINGS_NAV = [
-  { href: "/settings/users", label: "Users", icon: "👥" },
-  { href: "/settings/roles", label: "Roles & Permissions", icon: "🔑" },
-  { href: "/settings/clients", label: "Clients", icon: "🏢" },
-  { href: "/settings/icds", label: "ICDs", icon: "🏭" },
-  { href: "/settings/vessels", label: "Vessels", icon: "🚢" },
+const SETTINGS_NAV: { href: string; label: string; Icon: LucideIcon }[] = [
+  { href: "/settings/users", label: "Users", Icon: UsersRound },
+  { href: "/settings/roles", label: "Roles & Permissions", Icon: ShieldCheck },
+  { href: "/settings/clients", label: "Clients", Icon: Building2 },
+  { href: "/settings/icds", label: "ICDs", Icon: Warehouse },
+  { href: "/settings/vessels", label: "Vessels", Icon: Ship },
 ];
 
 export default async function SettingsLayout({
@@ -36,9 +44,13 @@ export default async function SettingsLayout({
               <li key={item.href}>
                 <Link
                   href={item.href}
-                  className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
+                  className="group flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
                 >
-                  <span>{item.icon}</span>
+                  <item.Icon
+                    aria-hidden="true"
+                    strokeWidth={1.75}
+                    className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-sidebar-accent-foreground"
+                  />
                   {item.label}
                 </Link>
               </li>
