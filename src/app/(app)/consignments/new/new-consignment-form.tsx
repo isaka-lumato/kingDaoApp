@@ -203,7 +203,7 @@ export default function NewConsignmentForm({ clients, icds, vessels }: Props) {
               </select>
             </Field>
 
-            <Field label="Amount (TZS)" hint="Customs duty / declared value">
+            <Field label="Amount (TZS)">
               <input
                 name="amount"
                 type="number"
