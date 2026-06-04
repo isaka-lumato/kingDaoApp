@@ -5,6 +5,7 @@ import { useTransition } from "react";
 import Link from "next/link";
 import { formatTzs } from "@/lib/money";
 import BatchLink from "@/components/batch-link";
+import { PIPELINE_STAGES, resolveActiveStage, type StageField } from "@/lib/pipeline";
 
 type Client = { id: string; name: string };
 type Row = {
@@ -66,20 +67,27 @@ function StageBadge({ status }: { status: string }) {
 
 /** Compute the "current active stage" label for a row */
 function currentStageLabel(row: Row): string {
-  const stages = [
-    { label: "Manifest", status: row.manifest_status },
-    { label: "Shipping", status: row.shipping_batch_status },
-    { label: "TANESWS", status: row.tanesws_status },
-    { label: "Assessment", status: row.assessment_status },
-    { label: "TBS Loading", status: row.tbs_loading_status },
-    { label: "TBS Debit", status: row.tbs_debit_status },
-    { label: "Mfst Comp", status: row.manifest_comp_status },
-    { label: "Duty", status: row.duty_status },
-    { label: "Inspection", status: row.inspection_file_status },
-    { label: "Release", status: row.release_status },
-  ];
-  const active = stages.find((s) => s.status !== "Done");
-  return active ? `${active.label} — ${active.status}` : "Released";
+  const stageValues: Record<StageField, string> = {
+    manifest_status: row.manifest_status,
+    shipping_batch_status: row.shipping_batch_status,
+    tanesws_status: row.tanesws_status,
+    assessment_status: row.assessment_status,
+    tbs_loading_status: row.tbs_loading_status,
+    tbs_debit_status: row.tbs_debit_status,
+    manifest_comp_status: row.manifest_comp_status,
+    duty_status: row.duty_status,
+    inspection_file_status: row.inspection_file_status,
+    release_status: row.release_status,
+  };
+  const activeField = resolveActiveStage(stageValues);
+  const active = PIPELINE_STAGES.find((s) => s.field === activeField);
+  if (!active) return "—";
+
+  const status = stageValues[activeField];
+  if (activeField === "release_status" && status === active.doneValue) {
+    return "Released";
+  }
+  return `${active.label} — ${status}`;
 }
 
 export default function ConsignmentsClient({
