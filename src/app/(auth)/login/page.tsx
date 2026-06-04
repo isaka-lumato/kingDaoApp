@@ -1,4 +1,5 @@
 import { Metadata } from "next";
+import Image from "next/image";
 import LoginForm from "./login-form";
 
 export const metadata: Metadata = { title: "Sign In" };
@@ -25,24 +26,29 @@ export default function LoginPage() {
               "radial-gradient(circle, oklch(0.68 0.17 185) 0%, transparent 70%)",
           }}
         />
+        {/* Right-edge feather — the hero brightens toward the seam so it reaches
+            into the form side rather than ending in a hard vertical cut. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-y-0 right-0 w-40"
+          style={{
+            background:
+              "linear-gradient(to right, transparent 0%, oklch(0.68 0.17 185 / 0.10) 100%)",
+          }}
+        />
 
         {/* Logo / brand */}
         <div className="relative z-10">
           <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-xl bg-brand flex items-center justify-center shadow-lg shadow-brand/30">
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                className="w-6 h-6 text-white"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
-                />
-              </svg>
+            <div className="w-12 h-12 rounded-xl bg-white flex items-center justify-center shadow-lg shadow-brand/30 p-1.5">
+              <Image
+                src="/KINGDAO_LOGO.png"
+                alt="Kingdao Logistics"
+                width={48}
+                height={48}
+                className="object-contain"
+                priority
+              />
             </div>
             <div>
               <p className="text-white font-bold text-lg leading-none tracking-wide">
@@ -89,25 +95,38 @@ export default function LoginPage() {
       </div>
 
       {/* ── Right panel — sign-in form ────────────────────────────────────── */}
-      <div className="flex flex-1 items-center justify-center p-8 bg-background">
-        <div className="w-full max-w-md">
+      <div className="relative flex flex-1 items-center justify-center p-8 bg-background overflow-hidden">
+        {/* Connective tissue with the hero. A brand-tinted glow seeps in from
+            the left seam and fades to nothing, so the dark hero "bleeds" into
+            the light form side instead of meeting it at a hard line. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 hidden lg:block"
+          style={{
+            background:
+              "radial-gradient(120% 120% at 0% 50%, oklch(0.68 0.17 185 / 0.14) 0%, oklch(0.68 0.17 185 / 0.05) 28%, transparent 55%)",
+          }}
+        />
+        {/* Soft teal orb echoing the hero's glow orbs, anchored near the seam. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -left-40 top-1/2 -translate-y-1/2 w-[420px] h-[420px] rounded-full opacity-[0.07] hidden lg:block"
+          style={{
+            background:
+              "radial-gradient(circle, oklch(0.68 0.17 185) 0%, transparent 70%)",
+          }}
+        />
+        <div className="relative z-10 w-full max-w-md">
           {/* Mobile logo */}
           <div className="flex lg:hidden items-center gap-3 mb-10">
-            <div className="w-9 h-9 rounded-xl bg-brand flex items-center justify-center">
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                className="w-5 h-5 text-white"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
-                />
-              </svg>
-            </div>
+            <Image
+              src="/KINGDAO_LOGO.png"
+              alt="Kingdao Logistics"
+              width={36}
+              height={36}
+              className="rounded-lg object-contain shrink-0"
+              priority
+            />
             <span className="font-bold text-lg text-foreground">
               KDL Tracker
             </span>

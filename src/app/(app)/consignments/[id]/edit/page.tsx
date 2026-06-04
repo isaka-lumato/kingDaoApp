@@ -44,9 +44,10 @@ export default async function EditConsignmentPage({
     ? await supabase.from("icds").select("id, name, location").eq("id", consignment.icd_id).single()
     : { data: null };
 
-  const [{ data: clients }, { data: icds }] = await Promise.all([
-    supabase.from("clients").select("id, name").is("deleted_at", null).order("name"),
-    supabase.from("icds").select("id, name, location").is("deleted_at", null).order("name"),
+  const [{ data: clients }, { data: icds }, { data: vessels }] = await Promise.all([
+    supabase.from("clients").select("id, name, sub_label").is("deleted_at", null).eq("is_active", true).order("name"),
+    supabase.from("icds").select("id, name, location").is("deleted_at", null).eq("is_active", true).order("name"),
+    supabase.from("vessels").select("name").is("deleted_at", null).eq("is_active", true).order("name"),
   ]);
 
   // Serialize permissions as a plain object — functions can't cross the
@@ -60,6 +61,7 @@ export default async function EditConsignmentPage({
       consignment={{ ...consignment, clients: clientData, icds: icdData }}
       clients={clients ?? []}
       icds={icds ?? []}
+      vessels={(vessels ?? []).map((v) => v.name)}
       writableCols={writableCols}
     />
   );

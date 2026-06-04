@@ -6,12 +6,24 @@ export const THEME_KEY = "kdl-theme";
 
 /**
  * Synchronously read the persisted theme. Safe on the server (returns the
- * default "dark") so it can seed a useState initializer without a flash.
+ * default "light") so it can seed a useState initializer. The default is
+ * light: we only choose dark when the stored value is exactly "dark". Keep
+ * this in agreement with the pre-paint inline script in src/app/layout.tsx.
  */
 export function readThemeSync(): Theme {
-  if (typeof window === "undefined") return "dark";
+  if (typeof window === "undefined") return "light";
   const stored = window.localStorage.getItem(THEME_KEY);
-  return stored === "light" ? "light" : "dark";
+  return stored === "dark" ? "dark" : "light";
+}
+
+/**
+ * Apply the theme to the document. The `dark` class lives on <html> (set
+ * pre-paint by layout.tsx's inline script); this keeps it in sync when the
+ * user toggles. Single source of truth for *where* the class goes.
+ */
+export function applyTheme(theme: Theme): void {
+  if (typeof document === "undefined") return;
+  document.documentElement.classList.toggle("dark", theme === "dark");
 }
 
 export function ThemeToggle({

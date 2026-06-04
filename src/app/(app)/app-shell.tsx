@@ -6,7 +6,7 @@ import Image from "next/image";
 import { logoutAction } from "@/server/actions/auth";
 import { usePermissions } from "@/hooks/use-permissions";
 import { NavLinks } from "./nav-links";
-import { ThemeToggle, readThemeSync, THEME_KEY, type Theme } from "./theme-toggle";
+import { ThemeToggle, readThemeSync, applyTheme, THEME_KEY, type Theme } from "./theme-toggle";
 
 export type NavItem = {
   label: string;
@@ -110,11 +110,12 @@ export default function AppShell({
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [theme, setTheme] = useState<Theme>(readThemeSync);
 
-  // Keep the persisted choice in sync after the first client render. The
-  // useState initializer already read localStorage synchronously, so the
-  // initial paint is correct and this only handles persistence on change.
+  // Persist the choice and keep the <html> `dark` class in sync after the
+  // first client render. The pre-paint inline script (layout.tsx) already set
+  // the class for the initial paint, so this only handles user toggles.
   useEffect(() => {
     window.localStorage.setItem(THEME_KEY, theme);
+    applyTheme(theme);
   }, [theme]);
 
   const toggleTheme = () =>
@@ -132,8 +133,7 @@ export default function AppShell({
 
   return (
     <div
-      className={`flex h-screen overflow-hidden bg-background ${theme === "dark" ? "dark" : ""}`}
-      suppressHydrationWarning
+      className="flex h-screen overflow-hidden bg-background"
     >
       {/* ── Desktop sidebar ─────────────────────────────────────────────── */}
       <aside className="hidden md:flex w-60 shrink-0 flex-col bg-sidebar border-r border-sidebar-border">

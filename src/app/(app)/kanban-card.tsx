@@ -14,6 +14,13 @@ type Props = {
    * DB rejects unauthorized callers — see D-029.
    */
   canDrag?: boolean;
+  /**
+   * Called when the user clicks "Mark Released" on a card sitting in the
+   * Release column. The board owns the actual release (optimistic removal +
+   * confetti + toast) so all release paths share one routine — see D-049.
+   * Absent on the drag overlay clone.
+   */
+  onRelease?: (card: KanbanConsignment) => void;
 };
 
 const STATUS_DOT: Record<string, string> = {
@@ -22,7 +29,7 @@ const STATUS_DOT: Record<string, string> = {
   Done: "bg-stage-done",
 };
 
-export default function KanbanCard({ card, isDragging = false, canDrag = true }: Props) {
+export default function KanbanCard({ card, isDragging = false, canDrag = true, onRelease }: Props) {
   const {
     attributes,
     listeners,
@@ -39,6 +46,11 @@ export default function KanbanCard({ card, isDragging = false, canDrag = true }:
 
   const stageStatus = card[card.active_stage] as string;
   const isStuck = stageStatus === "Action"; // simplified — full stuck check needs stage_history
+  // A card resting in the Release column has no column to its right to drag
+  // toward, so it needs an explicit release trigger (D-049). Only show it to
+  // users who can actually move cards; the board + DB enforce the same.
+  const canRelease =
+    canDrag && !!onRelease && card.active_stage === "release_status";
   const containerLabel = card.container_count
     ? `${card.container_count} ${card.container_type ?? ""}`.trim()
     : null;
@@ -133,6 +145,24 @@ export default function KanbanCard({ card, isDragging = false, canDrag = true }:
           </span>
         )}
       </div>
+
+      {/* Release trigger — only on cards in the Release column. The button must
+          NOT inherit the drag listeners (they're on the root div), and it stops
+          propagation so a click never starts a drag. The board runs the actual
+          release (optimistic + confetti + toast) via onRelease — D-049. */}
+      {canRelease && (
+        <button
+          type="button"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onRelease!(card);
+          }}
+          className="w-full mt-1 rounded-md bg-green-600 px-2 py-1.5 text-[11px] font-semibold text-white hover:bg-green-500 transition-colors"
+        >
+          ✓ Mark Released
+        </button>
+      )}
     </div>
   );
 }

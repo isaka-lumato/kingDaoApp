@@ -5,8 +5,12 @@ import { useFormStatus } from "react-dom";
 import Link from "next/link";
 import { editConsignmentAction } from "@/server/actions/edit-consignment";
 
-type Client = { id: string; name: string };
+type Client = { id: string; name: string; sub_label: string | null };
 type ICD = { id: string; name: string; location: string | null };
+
+function clientLabel(c: Client) {
+  return c.sub_label ? `${c.name} — ${c.sub_label}` : c.name;
+}
 type Consignment = {
   id: string;
   ref_no: string;
@@ -31,6 +35,7 @@ type Props = {
   };
   clients: Client[];
   icds: ICD[];
+  vessels: string[];
   writableCols: readonly string[];
 };
 
@@ -79,7 +84,7 @@ function Field({
   );
 }
 
-export default function EditConsignmentForm({ consignment, clients, icds, writableCols }: Props) {
+export default function EditConsignmentForm({ consignment, clients, icds, vessels, writableCols }: Props) {
   const [state, action] = useActionState(editConsignmentAction, null);
 
   return (
@@ -134,7 +139,7 @@ export default function EditConsignmentForm({ consignment, clients, icds, writab
                 >
                   <option value="">Select client…</option>
                   {clients.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
+                    <option key={c.id} value={c.id}>{clientLabel(c)}</option>
                   ))}
                 </select>
               )}
@@ -218,13 +223,22 @@ export default function EditConsignmentForm({ consignment, clients, icds, writab
 
             <Field label="Vessel name" col="vessel_name" writableCols={writableCols}>
               {(disabled) => (
-                <input
-                  name="vessel_name"
-                  type="text"
-                  defaultValue={consignment.vessel_name ?? ""}
-                  disabled={disabled}
-                  className={inputCls}
-                />
+                <>
+                  <input
+                    name="vessel_name"
+                    type="text"
+                    list="vessel-options"
+                    autoComplete="off"
+                    defaultValue={consignment.vessel_name ?? ""}
+                    disabled={disabled}
+                    className={inputCls}
+                  />
+                  <datalist id="vessel-options">
+                    {vessels.map((v) => (
+                      <option key={v} value={v} />
+                    ))}
+                  </datalist>
+                </>
               )}
             </Field>
 

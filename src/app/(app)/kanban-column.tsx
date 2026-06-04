@@ -24,9 +24,11 @@ type Props = {
   cards: KanbanConsignment[];
   isPending: boolean;
   canDrag: boolean;
+  /** Forwarded to each card so Release-column cards can trigger release (D-049). */
+  onRelease?: (card: KanbanConsignment) => void;
 };
 
-export default function KanbanColumn({ field, label, cards, isPending, canDrag }: Props) {
+export default function KanbanColumn({ field, label, cards, isPending, canDrag, onRelease }: Props) {
   const { setNodeRef, isOver } = useDroppable({ id: field });
 
   return (
@@ -66,7 +68,12 @@ export default function KanbanColumn({ field, label, cards, isPending, canDrag }
             </div>
           ) : (
             cards.map((card) => (
-              <KanbanCard key={card.id} card={card} canDrag={canDrag} />
+              <KanbanCard
+                key={card.id}
+                card={card}
+                canDrag={canDrag}
+                onRelease={onRelease}
+              />
             ))
           )}
         </SortableContext>

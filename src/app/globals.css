@@ -69,7 +69,7 @@
   --radius-3xl: calc(var(--radius) * 2.4);
 }
 
-/* ─── Light theme (auth pages / login) ───────────────────────────────────── */
+/* ─── Light theme (app default; user-selectable everywhere) ──────────────── */
 :root {
   --radius: 0.625rem;
 
@@ -130,7 +130,7 @@
   --chart-5: oklch(0.60 0.22 27);
 }
 
-/* ─── Dark theme (the app shell — operators spend all day here) ───────────── */
+/* ─── Dark theme (opt-in via the header toggle; persisted per browser) ────── */
 .dark {
   /* Deep navy surfaces */
   --background:         oklch(0.12 0.025 255);
@@ -253,12 +253,26 @@
     @apply bg-white/80 backdrop-blur-xl border border-white/50 shadow-2xl;
   }
 
-  /* Branded gradient */
+  /* Branded gradient — sets a base color so the panel is never transparent
+     (showing the white body through) even when .dot-grid also sets a
+     background-image on the same element. */
   .brand-gradient {
-    background: linear-gradient(135deg, oklch(0.15 0.04 255) 0%, oklch(0.20 0.10 185) 100%);
+    background-color: oklch(0.15 0.04 255);
+    background-image: linear-gradient(135deg, oklch(0.15 0.04 255) 0%, oklch(0.20 0.10 185) 100%);
   }
 
-  /* Subtle dot grid pattern */
+  /* Subtle dot grid pattern. Stacks the dots ON TOP of the brand gradient when
+     both classes are present (the gradient is listed second as the base layer)
+     rather than replacing it — otherwise white hero text lands on a white
+     background. */
+  .dot-grid.brand-gradient {
+    background-image:
+      radial-gradient(circle, oklch(0.60 0.16 185 / 0.12) 1px, transparent 1px),
+      linear-gradient(135deg, oklch(0.15 0.04 255) 0%, oklch(0.20 0.10 185) 100%);
+    background-size: 24px 24px, cover;
+  }
+
+  /* Dot grid on its own (no gradient underneath). */
   .dot-grid {
     background-image: radial-gradient(circle, oklch(0.60 0.16 185 / 0.12) 1px, transparent 1px);
     background-size: 24px 24px;

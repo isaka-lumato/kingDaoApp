@@ -1,0 +1,17 @@
+$ next dev
+⚠ Port 3000 is in use by process 15428, using available port 3001 instead.
+▲ Next.js 16.2.6 (Turbopack)
+- Local:         http://localhost:3001
+- Network:       http://192.168.1.108:3001
+- Environments: .env.local
+✓ Ready in 633ms
+⨯ Another next dev server is already running.
+
+- Local:        http://localhost:3000
+- PID:          15428
+- Dir:          C:\Users\LUMATO TECH\Pictures\kingDaoApp
+- Log:          .next\dev\logs\next-development.log
+
+Run taskkill /PID 15428 /F to stop it.
+[?25h
+[ELIFECYCLE] Command failed with exit code 1.
