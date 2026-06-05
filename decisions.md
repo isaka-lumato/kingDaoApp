@@ -976,3 +976,21 @@ No data migration is needed. The xlsx itself is the operator's working copy and 
 
 **Trade-off.** The localStorage key `"kdl-theme"` is duplicated as a string literal in the inline script (it can't import `THEME_KEY` — it runs pre-hydration). Coupling noted in comments in both files.
 
+## D-052 — Client View (PRD §8.4): top-level nav, admin-gated revenue, year-scoped
+
+**Context.** PRD §8.4 specifies a "Client View" (all consignments for a client, total containers / total revenue / avg clearance time, active vs completed) that had not been built. Clients existed only as a Settings reference table. The specifics of *where* it lives, *how* revenue is gated, and *year scope* are not in the PRD, so they are decisions.
+
+**Decision.**
+1. **Placement = top-level `Clients` nav (master-detail) + clickable client names everywhere.** New route `/clients` (list, all roles via RLS) and `/clients/[id]` (deep-linkable detail). Client names in the consignments list (`consignments-client.tsx`) and consignment detail header (`consignment-detail.tsx`) now link to `/clients/[id]`. Nav item has no `roles` restriction (visible to admin/operator/viewer like Dashboard/Consignments).
+2. **Revenue stat is admin-only.** `total revenue` is computed and included in the page payload **only when `getServerPermissions().isAdmin`** — non-admins never receive the number (server-side omission, not just UI hiding). Note: this is stricter than the rest of the app today, where `amount` is shown to all in the consignment grid/detail; app-wide `amount` gating is deferred as a separate task.
+3. **Year-scoped, default current year.** Stats + job lists are for a selected year (selector in the detail header, default `new Date().getFullYear()`), matching the year-centric consignments list and dashboard.
+4. **Stats computed from fetched rows, not `v_client_volume`.** "Active" = any consignment whose `release_status` ≠ `Released` (matching the consignments-list semantics); the view's `active_count` only counts `Waiting` and would disagree with the displayed list. Avg clearance = mean of `release_date − arrival_date` over completed rows with both dates.
+
+**Reuse.** `+ New client` (admin-only button) reuses `createClientAction` (`settings-reference.ts`) — no second creation path. UI mirrors `settings/roles/roles-client.tsx` (left list + right detail + modal). `createClientAction` revalidates `/settings/clients`, so the view calls `router.refresh()` after a create.
+
+**Partial rendering (final: query-param, single route).** Selecting a client must **not** blank/re-render the list. A `/clients/[id]` **segment** route was tried and rejected: the `async` `clients/layout.tsx` re-rendered and *suspended* on each segment change, and the nearest loading boundary (`(app)/loading.tsx`) painted its skeleton over the whole list (visible "list blanks → spinner → list" flicker). A child `loading.tsx` can't fix this because the layout's own `await` suspends *above* it.
+
+Final design — **single `/clients` route, selection driven by `?c=<id>`** (the same query-param pattern the consignments batch panel uses via `?batch=`): `clients/page.tsx` (server) reads `searchParams.{c,year}`, fetches the list **and** the selected client's detail, renders both. `clients-list-panel.tsx` (client) highlights via `useSearchParams().get("c")` and selects via `router.push(/clients?c=…, { scroll:false })`; `client-detail.tsx` year selector pushes `?c=…&year=…` with `scroll:false`. Because the route **segment never changes**, the loading boundary doesn't fire and the client-component list panel (its search text / scroll state) stays mounted across selection — no flicker. Deep-links from the consignments list + detail point at `/clients?c=<id>`. No `[id]` segment, no `layout.tsx`, no `loading.tsx` for this route.
+
+**Trade-off.** Revenue gating here diverges from the (currently ungated) consignment grid until that's addressed app-wide. The year selector offers a fixed window (current year + 5 prior); older years aren't reachable from the UI without a manual `?year=` — acceptable for a 400-consignments/year operation.
+

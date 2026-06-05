@@ -240,7 +240,17 @@ export default function ConsignmentDetail({ consignment, auditLog, linkedEfds, g
               {consignment.ref_no}
             </h1>
             <p className="text-muted-foreground text-sm mt-0.5">
-              {client?.name ?? "—"} · {consignment.year}
+              {client?.id ? (
+                <Link
+                  href={`/clients?c=${client.id}`}
+                  className="hover:text-foreground hover:underline transition-colors"
+                >
+                  {client.name}
+                </Link>
+              ) : (
+                (client?.name ?? "—")
+              )}{" "}
+              · {consignment.year}
               {isReleased && (
                 <span className="ml-2 text-stage-done font-medium">✓ Released</span>
               )}
