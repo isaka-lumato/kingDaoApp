@@ -33,6 +33,22 @@ const CONSIGNMENT_COLUMNS = [
   "release_status", "release_date", "shared_with_consignment_id",
 ];
 
+// Short, accurate one-line summary shown under each system role in the list.
+function roleSubtitle(role: RoleRow): string {
+  switch (role.name) {
+    case "admin":
+      return "Full access (admin)";
+    case "operator":
+      return "Reads all, writes most fields (no amount / client)";
+    case "viewer":
+      return "Read-only — cannot edit any field";
+    default:
+      return role.is_system
+        ? role.description ?? "System role"
+        : `${role.writeableColumnCount} writable cols`;
+  }
+}
+
 export default function RolesClient({ roles, fetchError }: Props) {
   const [selectedRole, setSelectedRole] = useState<RoleRow | null>(null);
   const [permissions, setPermissions] = useState<
@@ -161,7 +177,7 @@ export default function RolesClient({ roles, fetchError }: Props) {
                 )}
               </div>
               <p className="text-xs text-muted-foreground mt-0.5">
-                {role.is_system ? "Full access (admin)" : `${role.writeableColumnCount} writable cols`}
+                {roleSubtitle(role)}
               </p>
             </button>
           ))}
@@ -176,6 +192,7 @@ export default function RolesClient({ roles, fetchError }: Props) {
                 {selectedRole.is_system && (
                   <span className="ml-2 text-xs text-muted-foreground">(system role — read only)</span>
                 )}
+                <p className="text-xs text-muted-foreground mt-0.5">{roleSubtitle(selectedRole)}</p>
               </div>
               <div className="flex gap-2">
                 {!selectedRole.is_system && (
@@ -197,11 +214,9 @@ export default function RolesClient({ roles, fetchError }: Props) {
               </div>
             </div>
 
-            {selectedRole.is_system ? (
+            {selectedRole.name === "admin" ? (
               <div className="px-4 py-8 text-center text-muted-foreground text-sm">
-                {selectedRole.name === "admin"
-                  ? "Admin has implicit read + write access to all columns."
-                  : "System role permissions are fixed. Clone this role to create a customisable variant."}
+                Admin has implicit read + write access to all columns.
               </div>
             ) : permLoading ? (
               <div className="px-4 py-8 text-center text-muted-foreground text-sm animate-pulse">
@@ -209,6 +224,11 @@ export default function RolesClient({ roles, fetchError }: Props) {
               </div>
             ) : (
               <div className="overflow-auto max-h-[60vh]">
+                {selectedRole.is_system && (
+                  <p className="px-4 py-2.5 text-xs text-muted-foreground border-b border-border bg-muted/20">
+                    These permissions are fixed for system roles. Clone this role to create a customisable variant.
+                  </p>
+                )}
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
                     <tr>
@@ -229,7 +249,7 @@ export default function RolesClient({ roles, fetchError }: Props) {
                             <Toggle
                               checked={canRead}
                               onChange={() => togglePerm(col, "can_read", canRead)}
-                              disabled={isPending}
+                              disabled={isPending || selectedRole.is_system}
                               id={`read-${col}`}
                             />
                           </td>
@@ -237,7 +257,7 @@ export default function RolesClient({ roles, fetchError }: Props) {
                             <Toggle
                               checked={canWrite}
                               onChange={() => togglePerm(col, "can_write", canWrite)}
-                              disabled={isPending}
+                              disabled={isPending || selectedRole.is_system}
                               id={`write-${col}`}
                             />
                           </td>
