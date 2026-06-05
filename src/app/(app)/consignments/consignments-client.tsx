@@ -259,7 +259,22 @@ export default function ConsignmentsClient({
                 </span>
               </div>
               <p className="text-xs font-semibold text-foreground/90 mt-1 truncate">
-                {(row.clients as unknown as { name: string } | null)?.name ?? "—"}
+                {row.client_id ? (
+                  <span
+                    role="link"
+                    tabIndex={0}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      router.push(`/clients?c=${row.client_id}`);
+                    }}
+                    className="hover:text-brand hover:underline cursor-pointer"
+                  >
+                    {(row.clients as unknown as { name: string } | null)?.name ?? "—"}
+                  </span>
+                ) : (
+                  ((row.clients as unknown as { name: string } | null)?.name ?? "—")
+                )}
               </p>
               {row.bl_number && (
                 <p className="text-[11px] text-muted-foreground mt-0.5 font-mono truncate">
@@ -326,8 +341,20 @@ export default function ConsignmentsClient({
                     <span className="font-mono font-bold text-foreground text-xs">{row.ref_no}</span>
                     <span className="ml-1.5 text-[10px] text-muted-foreground">{row.year}</span>
                   </td>
-                  <td className="px-4 py-3 text-foreground/80 font-medium text-xs max-w-[140px] truncate">
-                    {(row.clients as unknown as { name: string } | null)?.name ?? "—"}
+                  <td
+                    className="px-4 py-3 text-foreground/80 font-medium text-xs max-w-[140px] truncate"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {row.client_id ? (
+                      <Link
+                        href={`/clients?c=${row.client_id}`}
+                        className="hover:text-brand hover:underline"
+                      >
+                        {(row.clients as unknown as { name: string } | null)?.name ?? "—"}
+                      </Link>
+                    ) : (
+                      ((row.clients as unknown as { name: string } | null)?.name ?? "—")
+                    )}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground text-xs hidden md:table-cell font-mono">
                     {row.bl_number ?? "—"}
