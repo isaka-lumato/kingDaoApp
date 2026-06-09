@@ -14,6 +14,67 @@ export type Database = {
   }
   public: {
     Tables: {
+      attachments: {
+        Row: {
+          consignment_id: string
+          created_at: string
+          deleted_at: string | null
+          file_name: string
+          id: string
+          mime_type: string
+          size_bytes: number
+          storage_path: string
+          updated_at: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          consignment_id: string
+          created_at?: string
+          deleted_at?: string | null
+          file_name: string
+          id?: string
+          mime_type: string
+          size_bytes: number
+          storage_path: string
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          consignment_id?: string
+          created_at?: string
+          deleted_at?: string | null
+          file_name?: string
+          id?: string
+          mime_type?: string
+          size_bytes?: number
+          storage_path?: string
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attachments_consignment_id_fkey"
+            columns: ["consignment_id"]
+            isOneToOne: false
+            referencedRelation: "consignments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attachments_consignment_id_fkey"
+            columns: ["consignment_id"]
+            isOneToOne: false
+            referencedRelation: "v_pending_refunds"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attachments_consignment_id_fkey"
+            columns: ["consignment_id"]
+            isOneToOne: false
+            referencedRelation: "v_stuck_stages"
+            referencedColumns: ["consignment_id"]
+          },
+        ]
+      }
       audit_log: {
         Row: {
           actor_email: string | null

@@ -371,12 +371,14 @@ Run after any change to `src/app/api/reports/[kind]/pdf/route.ts`, `src/server/r
 
 ---
 
-## V-REFDATA — Reference-data management (Clients / ICDs / Vessels, D-050)
+## V-REFDATA — Reference-data management (ICDs / Vessels in Settings; Clients in `/clients`, D-050 / D-053)
 
-- [ ] `/settings/clients`, `/settings/icds`, `/settings/vessels` reachable as admin; each lists existing rows with an Active/Inactive badge.
+- [ ] `/settings/icds`, `/settings/vessels` reachable as admin; each lists existing rows with an Active/Inactive badge. **`/settings/clients` no longer exists** (D-053) — no "Clients" entry in the Settings nav; navigating to `/settings/clients` 404s.
 - [ ] Non-admin (operator/viewer) hitting any `/settings/*` route is redirected to `/` (inherited from `settings/layout.tsx`).
-- [ ] Add / Edit / Activate-Deactivate work for each entity; duplicate name returns a friendly "already exists" message (no raw `23505`).
-- [ ] "Deactivate" is a reversible toggle — nothing is deleted; inactive rows still appear in Settings.
+- [ ] Add / Edit / Activate-Deactivate work for ICDs & vessels; duplicate name returns a friendly "already exists" message (no raw `23505`).
+- [ ] For ICDs/vessels, "Deactivate" is a reversible toggle — nothing is deleted; inactive rows still appear in Settings.
+- [ ] **Clients (D-053):** the `/clients` left panel is the only client-management surface. As admin: search, `+ New`, per-row `⋯` → Edit (pre-filled, persists after refresh) and Delete all work. The `⋯` menu and `+ New` are hidden for non-admins.
+- [ ] **Client delete guard:** deleting a client with **no** consignments soft-deletes it (drops from the list; if it was selected, the detail clears). Deleting a client **with** consignments is refused with "This client has N consignment(s) and cannot be deleted." — the consignments are untouched.
 - [ ] Inactive clients/ICDs/vessels are **excluded** from the New / Edit consignment dropdowns + vessel datalist (`is_active = true` filter).
 - [ ] Vessel field on New + Edit forms suggests managed vessel names via `<datalist>` but still accepts a brand-new free-text value (saves fine).
 - [ ] Client dropdowns show `name — sub_label` so PAPA/JOYCE variants are distinguishable.

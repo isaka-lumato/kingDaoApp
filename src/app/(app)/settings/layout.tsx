@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import {
-  Building2,
   ShieldCheck,
   Ship,
   UsersRound,
@@ -13,7 +12,6 @@ import { getServerPermissions } from "@/lib/permissions";
 const SETTINGS_NAV: { href: string; label: string; Icon: LucideIcon }[] = [
   { href: "/settings/users", label: "Users", Icon: UsersRound },
   { href: "/settings/roles", label: "Roles & Permissions", Icon: ShieldCheck },
-  { href: "/settings/clients", label: "Clients", Icon: Building2 },
   { href: "/settings/icds", label: "ICDs", Icon: Warehouse },
   { href: "/settings/vessels", label: "Vessels", Icon: Ship },
 ];

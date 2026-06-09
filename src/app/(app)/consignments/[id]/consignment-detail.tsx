@@ -7,6 +7,8 @@ import { formatTzs } from "@/lib/money";
 import { usePermissions } from "@/hooks/use-permissions";
 import BatchLink from "@/components/batch-link";
 import StageActionShell from "@/components/stage-action-shell";
+import AttachmentsTab from "./_attachments/attachments-tab";
+import type { AttachmentRow } from "@/server/actions/attachment-actions";
 import {
   duplicateConsignmentAction,
   softDeleteConsignmentAction,
@@ -124,6 +126,7 @@ type Props = {
   auditLog: AuditEntry[];
   linkedEfds: LinkedEfd[];
   gutaPair: GutaPair | null;
+  attachments: AttachmentRow[];
 };
 
 const STATUS_STYLES: Record<string, string> = {
@@ -156,8 +159,11 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-export default function ConsignmentDetail({ consignment, auditLog, linkedEfds, gutaPair }: Props) {
-  const [tab, setTab] = useState<"overview" | "pipeline" | "audit">("overview");
+// `linkedEfds` (still on Props, still passed by the page) is intentionally not
+// destructured while the EFD UI is temporarily hidden — see the commented
+// "Linked EFDs" section below. Restore the destructure when re-enabling EFD.
+export default function ConsignmentDetail({ consignment, auditLog, gutaPair, attachments }: Props) {
+  const [tab, setTab] = useState<"overview" | "pipeline" | "files" | "audit">("overview");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteReason, setDeleteReason] = useState("");
   const [deleteState, deleteAction] = useActionState<
@@ -302,25 +308,29 @@ export default function ConsignmentDetail({ consignment, auditLog, linkedEfds, g
 
       {/* Tabs */}
       <div className="flex gap-0.5 border-b border-border">
-        {(["overview", "pipeline", "audit"] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={[
-              "flex-1 sm:flex-none px-4 py-2.5 text-sm font-medium capitalize transition-colors border-b-2 -mb-px text-center",
-              tab === t
-                ? "border-brand text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground",
-            ].join(" ")}
-          >
-            {t}
-            {t === "audit" && auditLog.length > 0 && (
-              <span className="ml-1.5 text-[10px] bg-muted text-muted-foreground rounded-full px-1.5 py-0.5">
-                {auditLog.length}
-              </span>
-            )}
-          </button>
-        ))}
+        {(["overview", "pipeline", "files", "audit"] as const).map((t) => {
+          const badgeCount =
+            t === "audit" ? auditLog.length : t === "files" ? attachments.length : 0;
+          return (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={[
+                "flex-1 sm:flex-none px-4 py-2.5 text-sm font-medium capitalize transition-colors border-b-2 -mb-px text-center",
+                tab === t
+                  ? "border-brand text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground",
+              ].join(" ")}
+            >
+              {t}
+              {badgeCount > 0 && (
+                <span className="ml-1.5 text-[10px] bg-muted text-muted-foreground rounded-full px-1.5 py-0.5">
+                  {badgeCount}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* ── Overview tab ── */}
@@ -502,7 +512,7 @@ export default function ConsignmentDetail({ consignment, auditLog, linkedEfds, g
             );
           })()}
 
-          {/* Linked EFDs */}
+          {/* Linked EFDs — EFD UI temporarily hidden, do not delete.
           <section className="rounded-xl border border-border bg-card p-5">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -564,6 +574,7 @@ export default function ConsignmentDetail({ consignment, auditLog, linkedEfds, g
               </div>
             )}
           </section>
+          */}
 
           {/* Remarks */}
           {consignment.remarks && (
@@ -672,6 +683,11 @@ export default function ConsignmentDetail({ consignment, auditLog, linkedEfds, g
             );
           })}
         </div>
+      )}
+
+      {/* ── Files tab ── */}
+      {tab === "files" && (
+        <AttachmentsTab consignmentId={consignment.id} initial={attachments} />
       )}
 
       {/* ── Audit tab ── */}

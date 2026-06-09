@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
-import { getServerPermissions } from "@/lib/permissions";
+// import { getServerPermissions } from "@/lib/permissions"; // EFD UI temporarily hidden
 import { formatTzs } from "@/lib/money";
 
 type Props = {
@@ -9,9 +9,10 @@ type Props = {
   year: number;
 };
 
-function isWriter(roles: string[]): boolean {
-  return roles.includes("admin") || roles.includes("operator");
-}
+// EFD UI temporarily hidden — restore alongside the "Create EFD for this batch" block.
+// function isWriter(roles: string[]): boolean {
+//   return roles.includes("admin") || roles.includes("operator");
+// }
 
 function currentStageLabel(c: {
   manifest_status: string;
@@ -43,7 +44,7 @@ function currentStageLabel(c: {
 
 export default async function BatchPanelContent({ inRef, clientId, year }: Props) {
   const supabase = await getSupabaseServerClient();
-  const perms = await getServerPermissions();
+  // const perms = await getServerPermissions(); // EFD UI temporarily hidden
 
   const [summaryRes, siblingsRes] = await Promise.all([
     supabase
@@ -83,7 +84,8 @@ export default async function BatchPanelContent({ inRef, clientId, year }: Props
   }
 
   const releasedCount = siblings.filter((c) => c.release_status === "Released").length;
-  const canCreateEfd = Boolean(perms && isWriter(perms.roles)) && !summary?.efd_code;
+  // EFD UI temporarily hidden — see app-shell nav. Restore with the JSX block below.
+  // const canCreateEfd = Boolean(perms && isWriter(perms.roles)) && !summary?.efd_code;
 
   return (
     <div className="space-y-5">
@@ -173,6 +175,7 @@ export default async function BatchPanelContent({ inRef, clientId, year }: Props
         </div>
       </div>
 
+      {/* EFD UI temporarily hidden — do not delete.
       {canCreateEfd && (
         <div className="border-t border-border pt-4">
           <Link
@@ -183,6 +186,7 @@ export default async function BatchPanelContent({ inRef, clientId, year }: Props
           </Link>
         </div>
       )}
+      */}
     </div>
   );
 }
