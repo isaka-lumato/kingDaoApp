@@ -60,7 +60,7 @@ export async function createClientAction(formData: FormData) {
   });
   if (error) return error.code === "23505" ? uniqueError("client") : { error: error.message };
 
-  revalidatePath("/settings/clients");
+  revalidatePath("/clients");
   return { success: true };
 }
 
@@ -91,7 +91,39 @@ export async function updateClientAction(formData: FormData) {
     .eq("id", id.data);
   if (error) return error.code === "23505" ? uniqueError("client") : { error: error.message };
 
-  revalidatePath("/settings/clients");
+  revalidatePath("/clients");
+  return { success: true };
+}
+
+// Soft-delete a client (D-053 / D-015). Admin-only. Refused when the client
+// still has any non-deleted consignment — referential integrity over orphaning.
+export async function deleteClientAction(formData: FormData) {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+
+  const id = z.uuid().safeParse(formData.get("id"));
+  if (!id.success) return { error: "Invalid client ID" };
+
+  const supabase = await getSupabaseServerClient();
+
+  const { count, error: countErr } = await supabase
+    .from("consignments")
+    .select("id", { count: "exact", head: true })
+    .eq("client_id", id.data)
+    .is("deleted_at", null);
+  if (countErr) return { error: countErr.message };
+  if ((count ?? 0) > 0) {
+    return { error: `This client has ${count} consignment(s) and cannot be deleted.` };
+  }
+
+  const { error } = await supabase
+    .from("clients")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", id.data)
+    .is("deleted_at", null);
+  if (error) return { error: error.message };
+
+  revalidatePath("/clients");
   return { success: true };
 }
 

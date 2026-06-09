@@ -52,6 +52,7 @@ export default async function ConsignmentPage({
     { data: icdData },
     { data: auditLog },
     { data: efdLinks },
+    { data: attachments },
   ] = await Promise.all([
     consignment.client_id
       ? supabase
@@ -81,6 +82,14 @@ export default async function ConsignmentPage({
          efd_records(id, efd_code, efd_time, is_private, is_transit, is_shared, created_at)`
       )
       .eq("consignment_id", id),
+    supabase
+      .from("attachments")
+      .select(
+        "id, consignment_id, storage_path, file_name, mime_type, size_bytes, uploaded_by, created_at"
+      )
+      .eq("consignment_id", id)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false }),
   ]);
   t.mark("fanout");
 
@@ -169,6 +178,7 @@ export default async function ConsignmentPage({
         auditLog={auditLog ?? []}
         linkedEfds={linkedEfds}
         gutaPair={gutaPair}
+        attachments={attachments ?? []}
       />
       {showBatch && (
         <BatchPanel inRef={batchInRef!}>

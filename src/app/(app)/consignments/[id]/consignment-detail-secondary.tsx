@@ -2,15 +2,16 @@ import Link from "next/link";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { formatTzs } from "@/lib/money";
 
-type LinkedEfd = {
-  id: string;
-  efd_code: string;
-  efd_time: string | null;
-  is_private: boolean;
-  is_transit: boolean;
-  is_shared: boolean;
-  created_at: string;
-};
+// EFD UI temporarily hidden — do not delete.
+// type LinkedEfd = {
+//   id: string;
+//   efd_code: string;
+//   efd_time: string | null;
+//   is_private: boolean;
+//   is_transit: boolean;
+//   is_shared: boolean;
+//   created_at: string;
+// };
 
 type AuditEntry = {
   id: string;
@@ -70,35 +71,36 @@ function renderColumnLabel(col: string | null): string {
   return col;
 }
 
-async function fetchLinkedEfds(consignmentId: string): Promise<LinkedEfd[]> {
-  const supabase = await getSupabaseServerClient();
-  const { data } = await supabase
-    .from("efd_record_consignments")
-    .select(
-      `efd_record_id,
-       efd_records(id, efd_code, efd_time, is_private, is_transit, is_shared, created_at)`
-    )
-    .eq("consignment_id", consignmentId);
-
-  return (data ?? [])
-    .map((l) => {
-      const raw = l.efd_records as unknown;
-      const e = Array.isArray(raw)
-        ? (raw[0] as Record<string, unknown> | undefined)
-        : (raw as Record<string, unknown> | null);
-      if (!e) return null;
-      return {
-        id: e.id as string,
-        efd_code: e.efd_code as string,
-        efd_time: (e.efd_time as string | null) ?? null,
-        is_private: Boolean(e.is_private),
-        is_transit: Boolean(e.is_transit),
-        is_shared: Boolean(e.is_shared),
-        created_at: e.created_at as string,
-      };
-    })
-    .filter((x): x is LinkedEfd => x !== null);
-}
+// EFD UI temporarily hidden — do not delete.
+// async function fetchLinkedEfds(consignmentId: string): Promise<LinkedEfd[]> {
+//   const supabase = await getSupabaseServerClient();
+//   const { data } = await supabase
+//     .from("efd_record_consignments")
+//     .select(
+//       `efd_record_id,
+//        efd_records(id, efd_code, efd_time, is_private, is_transit, is_shared, created_at)`
+//     )
+//     .eq("consignment_id", consignmentId);
+//
+//   return (data ?? [])
+//     .map((l) => {
+//       const raw = l.efd_records as unknown;
+//       const e = Array.isArray(raw)
+//         ? (raw[0] as Record<string, unknown> | undefined)
+//         : (raw as Record<string, unknown> | null);
+//       if (!e) return null;
+//       return {
+//         id: e.id as string,
+//         efd_code: e.efd_code as string,
+//         efd_time: (e.efd_time as string | null) ?? null,
+//         is_private: Boolean(e.is_private),
+//         is_transit: Boolean(e.is_transit),
+//         is_shared: Boolean(e.is_shared),
+//         created_at: e.created_at as string,
+//       };
+//     })
+//     .filter((x): x is LinkedEfd => x !== null);
+// }
 
 async function fetchGutaPair(
   consignmentId: string,
@@ -232,6 +234,7 @@ function GutaPairSection({
   );
 }
 
+/* EFD UI temporarily hidden — do not delete.
 function LinkedEfdsSection({ linkedEfds }: { linkedEfds: LinkedEfd[] }) {
   return (
     <section className="rounded-xl border border-border bg-card p-5">
@@ -294,6 +297,7 @@ function LinkedEfdsSection({ linkedEfds }: { linkedEfds: LinkedEfd[] }) {
     </section>
   );
 }
+*/
 
 export async function OverviewSecondary({
   consignmentId,
@@ -306,10 +310,9 @@ export async function OverviewSecondary({
   isReleased: boolean;
   releaseStatus: string;
 }) {
-  const [gutaPair, linkedEfds] = await Promise.all([
-    fetchGutaPair(consignmentId, gutaPairId),
-    fetchLinkedEfds(consignmentId),
-  ]);
+  const gutaPair = await fetchGutaPair(consignmentId, gutaPairId);
+  // EFD UI temporarily hidden — skip the linked-EFD fetch + section.
+  // const linkedEfds = await fetchLinkedEfds(consignmentId);
 
   return (
     <>
@@ -320,7 +323,9 @@ export async function OverviewSecondary({
           releaseStatus={releaseStatus}
         />
       )}
+      {/* EFD UI temporarily hidden — do not delete.
       <LinkedEfdsSection linkedEfds={linkedEfds} />
+      */}
     </>
   );
 }

@@ -994,3 +994,19 @@ Final design — **single `/clients` route, selection driven by `?c=<id>`** (the
 
 **Trade-off.** Revenue gating here diverges from the (currently ungated) consignment grid until that's addressed app-wide. The year selector offers a fixed window (current year + 5 prior); older years aren't reachable from the UI without a manual `?year=` — acceptable for a 400-consignments/year operation.
 
+## D-053 — Client CRUD consolidated into the `/clients` left panel; Settings → Clients removed
+
+**Date:** 2026-06-09
+**Status:** Active — amends D-050 (reference-data management) and D-052 (Client View).
+
+**Context.** Clients were managed in two places: the admin reference screen `/settings/clients` (a `ReferenceManager` with add/edit/activate-deactivate) and the `/clients` left panel (browse + an "Add" modal that already reused `createClientAction`). Two creation paths and a separate settings screen for the same entity is redundant now that `/clients` is a first-class master-detail view (D-052). Per-user request, client management consolidates into the `/clients` left panel.
+
+**Decision.**
+1. **Single home = the `/clients` left panel.** The left panel (`clients-list-panel.tsx`) is now the full CRUD surface: search, add, and an **admin-only per-row `⋯` actions menu** with Edit and Delete. The Settings → Clients subsection (`/settings/clients` route + nav entry) is **removed**. `ReferenceManager` stays for ICDs and vessels.
+2. **Delete = guarded soft delete.** `deleteClientAction` (admin-only) sets `deleted_at = now()` per D-015, **but only when the client has zero non-deleted consignments**. If any consignment references the client, the action refuses with "This client has N consignment(s) and cannot be deleted." This protects referential integrity in the absence of a hard FK-cascade story and keeps deletion a deliberate, reversible act. No activate/deactivate control is carried over to the panel — delete replaces it for the `/clients` surface (`setClientActiveAction` is left in place, now unused by the UI).
+3. **Revalidation retargets to `/clients`.** `createClientAction` / `updateClientAction` / `deleteClientAction` revalidate `/clients` (the surviving surface) rather than the removed `/settings/clients`.
+
+**Reuse.** `deleteClientAction` mirrors the soft-delete shape of `softDeleteConsignmentAction` (`consignment-actions.ts`). Create/edit reuse the existing client actions and the panel's `ModalField` + `useTransition` error pattern.
+
+**Trade-off.** Blocking delete on linked consignments means an admin must first reassign/clear a client's consignments before deleting — accepted as the safer default over orphaning `client_id` references or cascading.
+
