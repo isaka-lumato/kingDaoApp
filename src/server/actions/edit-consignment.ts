@@ -3,23 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getServerPermissions } from "@/lib/permissions";
-import { z } from "zod";
+import { friendlyConsignmentDbError } from "@/lib/db-errors";
 
-const editSchema = z.object({
-  id: z.uuid(),
-  client_id: z.uuid().optional(),
-  bl_number: z.string().max(100).nullable().optional(),
-  tansad_no: z.string().max(100).nullable().optional(),
-  vessel_name: z.string().max(200).nullable().optional(),
-  arrival_date: z.string().nullable().optional(),
-  container_count: z.coerce.number().int().min(1).nullable().optional(),
-  container_type: z.enum(["40FT", "20FT", "CAR", "COIL"]).nullable().optional(),
-  goods_description: z.string().max(1000).nullable().optional(),
-  icd_id: z.uuid().nullable().optional(),
-  amount: z.coerce.number().int().min(0).nullable().optional(),
-  remarks: z.string().max(2000).nullable().optional(),
-  tansad_no_update: z.string().max(100).nullable().optional(),
-});
+// container_count and container_type are NOT NULL in the DB — never allow a
+// blank edit to clear them (it would trigger a not-null constraint violation).
+const NON_NULLABLE_FIELDS = new Set(["container_count", "container_type"]);
 
 export async function editConsignmentAction(
   _prevState: { error?: string; success?: boolean } | null,
@@ -49,6 +37,10 @@ export async function editConsignmentAction(
     const raw = formData.get(field);
     const val = raw === "" || raw === null ? null : raw;
 
+    // Don't push a null into a NOT-NULL column — skip the field so the
+    // existing value is preserved instead of hitting a DB constraint.
+    if (val === null && NON_NULLABLE_FIELDS.has(field)) continue;
+
     if (field === "container_count" || field === "amount") {
       updates[field] = val === null ? null : Number(val);
     } else {
@@ -66,7 +58,7 @@ export async function editConsignmentAction(
     .update(updates)
     .eq("id", id);
 
-  if (error) return { error: error.message };
+  if (error) return { error: friendlyConsignmentDbError(error) };
 
   revalidatePath(`/consignments/${id}`);
   revalidatePath("/consignments");

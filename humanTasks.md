@@ -291,6 +291,30 @@ After ~30 minutes, check the function logs in Studio → **Edge Functions** → 
 
 ---
 
+## H-011 — Push the amount→bigint migration to dev
+
+**Why:** Claude wrote `supabase/migrations/20260610120000_consignment_amount_bigint.sql` to widen `consignments.amount` from `integer` (capped ≈ 2.1B TZS) to `bigint`, matching D-017 / `money.ts`. Migrations are never applied via Studio (CLAUDE.md §7) — they go through the CLI, which needs your authenticated session (H-007). Until this is pushed, large amounts are still rejected by the dev DB.
+**Status:** [ ]
+**Depends on:** H-007 (CLI linked to dev).
+
+Run in PowerShell from the repo root:
+
+```powershell
+# Applies any unpushed migrations to the linked dev project.
+supabase db push
+```
+
+After it completes, confirm the column type changed:
+
+```powershell
+# Should report data_type = bigint
+supabase db remote query "select data_type from information_schema.columns where table_name='consignments' and column_name='amount';"
+```
+
+**Tell Claude when done:** "H-011 done" — Claude will verify by creating a consignment with a >2.1B amount and mark the task complete.
+
+---
+
 ## Notes / blockers
 
 > Use this section to write down anything that didn't go to plan, errors you hit, decisions you want to revisit, etc. Claude will read this before suggesting fixes.
