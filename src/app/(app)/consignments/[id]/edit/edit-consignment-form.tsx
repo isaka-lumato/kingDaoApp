@@ -181,7 +181,7 @@ export default function EditConsignmentForm({ consignment, clients, icds, vessel
                   name="amount"
                   type="number"
                   min={0}
-                  step={1000}
+                  step={1}
                   defaultValue={consignment.amount ?? ""}
                   disabled={disabled}
                   className={inputCls}

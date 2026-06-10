@@ -1010,3 +1010,18 @@ Final design — **single `/clients` route, selection driven by `?c=<id>`** (the
 
 **Trade-off.** Blocking delete on linked consignments means an admin must first reassign/clear a client's consignments before deleting — accepted as the safer default over orphaning `client_id` references or cascading.
 
+
+## D-054 — New-consignment required fields + human-readable validation
+
+**Date:** 2026-06-10
+**Status:** Active.
+
+**Context.** The new-consignment form surfaced developer-facing validation: zod `path.join(".")` strings and raw Postgres errors (e.g. `null value in column "container_count" violates not-null constraint`). Per-user request, validation must be human-readable, required fields must block blank submits, and duplicate B/L numbers must be reported clearly. The set of required fields beyond DB-enforced ones is not in the PRD, so it is a decision.
+
+**Decision.**
+1. **Required fields = Client, Year, Container type, Vessel name.** Client/Year/Container type are NOT NULL in the DB; Vessel name is a product choice (voyages group by `vessel_name + arrival_date`, PRD §8.2/§8.3, so a name is operationally needed). All enforced both in the form (`required`) and in the zod schema with plain-English messages.
+2. **Arrival date stays OPTIONAL** — per PRD §8.1, `arrival_date IS NULL` is the meaningful "vessel not yet docked" state; consignments are routinely created before arrival. Not made required.
+3. **B/L number stays OPTIONAL but unique-when-present.** PRD §8.2 says B/L is nullable (cars/RoRo) but unique per year. The action pre-checks for an existing non-deleted consignment with the same `bl_number + year` and returns a field-level error ("A consignment with this B/L number already exists for <year>.") before insert, in addition to the existing unique index as the DB backstop.
+4. **Errors render per-field, not as one banner.** The action returns `{ error, fieldErrors }`; the form shows each message under its input. Raw DB errors are translated via `friendlyConsignmentDbError()` (`src/lib/db-errors.ts`), shared by create + edit actions.
+
+**Trade-off.** Requiring vessel name means a consignment can't be logged before the vessel is known; accepted per user. The B/L pre-check is a non-atomic read-then-insert (a race could still let the unique index catch a duplicate), which is why the index remains the source of truth and its violation is translated too.

@@ -16,8 +16,17 @@ function clientLabel(c: { name: string; sub_label: string | null }) {
 }
 
 const CONTAINER_TYPES = ["40FT", "20FT", "CAR", "COIL"] as const;
-const CURRENT_YEAR = new Date().getFullYear();
-const YEAR_OPTIONS = [CURRENT_YEAR - 1, CURRENT_YEAR, CURRENT_YEAR + 1];
+const NOW = new Date();
+const CURRENT_YEAR = NOW.getFullYear();
+// Always offer previous + current year (late-arriving prior-year jobs are entered
+// well into the new year). Only surface next year from October onward, when
+// pre-registering an early-January arrival is realistic — otherwise it's just a
+// typo risk against the (ref_no, year) / (bl_number, year) uniqueness keys.
+// getMonth() is 0-indexed, so >= 9 means October–December.
+const YEAR_OPTIONS =
+  NOW.getMonth() >= 9
+    ? [CURRENT_YEAR - 1, CURRENT_YEAR, CURRENT_YEAR + 1]
+    : [CURRENT_YEAR - 1, CURRENT_YEAR];
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -37,11 +46,13 @@ function Field({
   required,
   children,
   hint,
+  error,
 }: {
   label: string;
   required?: boolean;
   children: React.ReactNode;
   hint?: string;
+  error?: string;
 }) {
   return (
     <div className="space-y-1.5">
@@ -50,7 +61,11 @@ function Field({
         {required && <span className="text-destructive ml-1">*</span>}
       </label>
       {children}
-      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      {error ? (
+        <p className="text-xs text-destructive">{error}</p>
+      ) : (
+        hint && <p className="text-xs text-muted-foreground">{hint}</p>
+      )}
     </div>
   );
 }
@@ -60,6 +75,7 @@ const inputCls =
 
 export default function NewConsignmentForm({ clients, icds, vessels }: Props) {
   const [state, action] = useActionState(createConsignmentAction, null);
+  const errs = state?.fieldErrors ?? {};
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -94,7 +110,7 @@ export default function NewConsignmentForm({ clients, icds, vessels }: Props) {
           </h2>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Client" required>
+            <Field label="Client" required error={errs.client_id}>
               <select name="client_id" required className={inputCls}>
                 <option value="">Select client…</option>
                 {clients.map((c) => (
@@ -105,7 +121,7 @@ export default function NewConsignmentForm({ clients, icds, vessels }: Props) {
               </select>
             </Field>
 
-            <Field label="Year" required>
+            <Field label="Year" required error={errs.year}>
               <select name="year" defaultValue={CURRENT_YEAR} required className={inputCls}>
                 {YEAR_OPTIONS.map((y) => (
                   <option key={y} value={y}>{y}</option>
@@ -114,7 +130,7 @@ export default function NewConsignmentForm({ clients, icds, vessels }: Props) {
             </Field>
           </div>
 
-          <Field label="Goods description">
+          <Field label="Goods description" error={errs.goods_description}>
             <textarea
               name="goods_description"
               rows={2}
@@ -131,7 +147,7 @@ export default function NewConsignmentForm({ clients, icds, vessels }: Props) {
           </h2>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="B/L Number">
+            <Field label="B/L Number" error={errs.bl_number}>
               <input
                 name="bl_number"
                 type="text"
@@ -140,7 +156,7 @@ export default function NewConsignmentForm({ clients, icds, vessels }: Props) {
               />
             </Field>
 
-            <Field label="TANSAD No">
+            <Field label="TANSAD No" error={errs.tansad_no}>
               <input
                 name="tansad_no"
                 type="text"
@@ -149,10 +165,11 @@ export default function NewConsignmentForm({ clients, icds, vessels }: Props) {
               />
             </Field>
 
-            <Field label="Vessel name" hint="Pick a known vessel or type a new one">
+            <Field label="Vessel name" required hint="Pick a known vessel or type a new one" error={errs.vessel_name}>
               <input
                 name="vessel_name"
                 type="text"
+                required
                 list="vessel-options"
                 placeholder="e.g. MSC ANNA"
                 className={inputCls}
@@ -165,7 +182,7 @@ export default function NewConsignmentForm({ clients, icds, vessels }: Props) {
               </datalist>
             </Field>
 
-            <Field label="Arrival date">
+            <Field label="Arrival date" error={errs.arrival_date}>
               <input
                 name="arrival_date"
                 type="date"
@@ -173,7 +190,7 @@ export default function NewConsignmentForm({ clients, icds, vessels }: Props) {
               />
             </Field>
 
-            <Field label="Container count">
+            <Field label="Container count" hint="Defaults to 1 if left blank" error={errs.container_count}>
               <input
                 name="container_count"
                 type="number"
@@ -183,16 +200,16 @@ export default function NewConsignmentForm({ clients, icds, vessels }: Props) {
               />
             </Field>
 
-            <Field label="Container type">
-              <select name="container_type" className={inputCls}>
-                <option value="">Select type…</option>
+            <Field label="Container type" required error={errs.container_type}>
+              <select name="container_type" required defaultValue="" className={inputCls}>
+                <option value="" disabled>Select type…</option>
                 {CONTAINER_TYPES.map((t) => (
                   <option key={t} value={t}>{t}</option>
                 ))}
               </select>
             </Field>
 
-            <Field label="ICD">
+            <Field label="ICD" error={errs.icd_id}>
               <select name="icd_id" className={inputCls}>
                 <option value="">Select ICD…</option>
                 {icds.map((icd) => (
@@ -203,12 +220,12 @@ export default function NewConsignmentForm({ clients, icds, vessels }: Props) {
               </select>
             </Field>
 
-            <Field label="Amount (TZS)">
+            <Field label="Amount (TZS)" error={errs.amount}>
               <input
                 name="amount"
                 type="number"
                 min={0}
-                step={1000}
+                step={1}
                 placeholder="e.g. 1500000"
                 className={inputCls}
               />
@@ -221,7 +238,7 @@ export default function NewConsignmentForm({ clients, icds, vessels }: Props) {
           <h2 className="text-sm font-semibold text-foreground uppercase tracking-wide">
             Remarks
           </h2>
-          <Field label="Internal remarks">
+          <Field label="Internal remarks" error={errs.remarks}>
             <textarea
               name="remarks"
               rows={3}
