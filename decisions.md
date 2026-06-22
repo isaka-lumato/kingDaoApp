@@ -1025,3 +1025,31 @@ Final design — **single `/clients` route, selection driven by `?c=<id>`** (the
 4. **Errors render per-field, not as one banner.** The action returns `{ error, fieldErrors }`; the form shows each message under its input. Raw DB errors are translated via `friendlyConsignmentDbError()` (`src/lib/db-errors.ts`), shared by create + edit actions.
 
 **Trade-off.** Requiring vessel name means a consignment can't be logged before the vessel is known; accepted per user. The B/L pre-check is a non-atomic read-then-insert (a race could still let the unique index catch a duplicate), which is why the index remains the source of truth and its violation is translated too.
+
+---
+
+## D-055 — Folder-based file system per consignment (evolves the flat attachments feature)
+
+**Date:** 2026-06-22
+**Status:** Active. Builds on the original attachments feature (private bucket `consignment-attachments`, signed-URL downloads, RLS, soft-delete, audit triggers).
+
+**Context.** The original attachments feature stored a flat list of files per consignment (images + PDF only). Per user request, staff want a "well-organised file system" — folders and subfolders, free-form, into which they can drop PDFs, Word docs, images, text files, and (since the whole product replaces an Excel tracker) spreadsheets. None of this is in the PRD, so it is a decision. Note: the original attachments migration's header comment cites "T-089 / D-054", but D-054 is actually the new-consignment-fields decision and no T-089 existed in `tasks.md` — that feature shipped without a logged decision. This entry is the canonical record going forward, and the folder work is tracked as T-089.
+
+**Decision.**
+
+1. **Free-form folder tree, modeled as a table — not a Storage path string.** New table `consignment_folders (id, consignment_id, parent_folder_id self-ref nullable, name, uploaded_by, created_at, updated_at, deleted_at)`. `parent_folder_id IS NULL` = a top-level folder of that consignment. Arbitrary nesting allowed. Chosen over a `folder_path text` column because free-form nesting makes rename (one-row update vs. multi-row path rewrite) and empty-folder creation trivial, and the table gets RLS + audit + soft-delete like every other table (principles #2/#4/#5). Cost: one recursive/iterative query to build the tree — negligible at ~400 consignments/yr.
+
+2. **`attachments` gains a nullable `folder_id` → `consignment_folders(id)`.** `NULL` = the consignment's root. Existing rows stay valid with no backfill. The Storage object key stays flat (`consignments/<consignmentId>/<uuid>-<filename>`) — the tree lives entirely in the DB; Storage "folders" are just key prefixes and provide no audit/permission/realtime value.
+
+3. **Permissions mirror the existing attachments model (user's choice).** Folder + file create/upload = operator or admin; soft-delete + rename + move = admin only. Same RLS posture as the `attachments` table and `storage.objects` policies already in place. No new role machinery (principle #8).
+
+4. **Deleting a folder soft-deletes its entire subtree** (descendant folders + their attachments) in one server action, recursively. Soft-delete only (principle #5); bytes are best-effort removed from Storage after the rows are marked deleted, same as single-file delete.
+
+5. **Widened file types (user's choice).** Add to the bucket `allowed_mime_types`, the zod enum, and the `<input accept>`: `text/plain` (.txt), `application/msword` (.doc), `application/vnd.openxmlformats-officedocument.wordprocessingml.document` (.docx), `application/vnd.ms-excel` (.xls), `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` (.xlsx). 10 MB cap unchanged. Widening the bucket's `allowed_mime_types` is a schema change → done in a migration, never Studio (D-007/D-019).
+
+6. **UI replaces the flat tab in place (user's choice).** The existing Attachments tab becomes a folder browser: breadcrumb + folder grid on top, files below, upload targets the current folder, "New folder" for operator+admin, rename/delete/move for admin. Word and Excel files download via signed URL rather than preview inline — browsers can't render them in a tab; expected behaviour, not a bug.
+
+**Trade-offs.**
+- A unique constraint on `(consignment_id, parent_folder_id, name) WHERE deleted_at IS NULL` blocks duplicate sibling folder names; a soft-deleted folder's name is freed for reuse. Accepted.
+- `.doc/.docx/.xls/.xlsx` don't preview inline — they download. Accepted; previewing Office formats in-browser would require a converter we don't want.
+- MIME types are spoofable client-side, so the bucket's `allowed_mime_types` (checked by Storage against the real upload) remains the un-bypassable guard; the zod enum + server re-check are defense in depth, consistent with the original feature.

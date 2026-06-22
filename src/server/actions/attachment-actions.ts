@@ -11,12 +11,14 @@ import {
   recordAttachmentSchema,
   type RecordAttachmentInput,
 } from "@/schemas/attachment";
+import { moveAttachmentSchema, type MoveAttachmentInput } from "@/schemas/folder";
 
 // ── Shared types ────────────────────────────────────────────────────────────
 
 export type AttachmentRow = {
   id: string;
   consignment_id: string;
+  folder_id: string | null;
   storage_path: string;
   file_name: string;
   mime_type: string;
@@ -26,7 +28,7 @@ export type AttachmentRow = {
 };
 
 const ATTACHMENT_COLUMNS =
-  "id, consignment_id, storage_path, file_name, mime_type, size_bytes, uploaded_by, created_at";
+  "id, consignment_id, folder_id, storage_path, file_name, mime_type, size_bytes, uploaded_by, created_at";
 
 function isOperatorOrAdmin(perms: { isAdmin: boolean; roles: string[] }): boolean {
   return perms.isAdmin || perms.roles.includes("operator");
@@ -52,7 +54,8 @@ export async function recordAttachmentAction(
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid attachment" };
   }
-  const { consignmentId, storagePath, fileName, mimeType, sizeBytes } = parsed.data;
+  const { consignmentId, folderId, storagePath, fileName, mimeType, sizeBytes } =
+    parsed.data;
 
   // Defense in depth beyond zod: the path must live under this consignment's
   // prefix, and MIME/size must be within bounds.
@@ -79,10 +82,25 @@ export async function recordAttachmentAction(
     .single();
   if (cErr || !consignment) return { error: "Consignment not found" };
 
+  // If a target folder is given, it must be live and belong to this consignment.
+  if (folderId) {
+    const { data: folder, error: folderErr } = await supabase
+      .from("consignment_folders")
+      .select("id, consignment_id")
+      .eq("id", folderId)
+      .is("deleted_at", null)
+      .single();
+    if (folderErr || !folder) return { error: "Folder not found" };
+    if (folder.consignment_id !== consignmentId) {
+      return { error: "Folder belongs to a different consignment." };
+    }
+  }
+
   const { data: row, error: insErr } = await supabase
     .from("attachments")
     .insert({
       consignment_id: consignmentId,
+      folder_id: folderId,
       storage_path: storagePath,
       file_name: fileName,
       mime_type: mimeType,
@@ -164,4 +182,59 @@ export async function deleteAttachmentAction(
 
   revalidatePath(`/consignments/${row.consignment_id}`);
   return { success: true };
+}
+
+// ── Move an attachment to a folder (admins only — D-055) ──────────────────────
+//
+// folderId = null moves the file to the consignment root. The target folder, if
+// given, must be live and belong to the same consignment as the attachment.
+// Admin-only, matching the attachments_update RLS policy (the only sanctioned
+// non-delete update).
+
+export async function moveAttachmentAction(
+  input: MoveAttachmentInput,
+): Promise<{ error: string } | { success: true; attachment: AttachmentRow }> {
+  const perms = await getServerPermissions();
+  if (!perms?.isAdmin) return { error: "Only admins can move files." };
+
+  const parsed = moveAttachmentSchema.safeParse(input);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid move" };
+  }
+  const { attachmentId, folderId } = parsed.data;
+
+  const supabase = await getSupabaseServerClient();
+
+  const { data: attachment, error: aErr } = await supabase
+    .from("attachments")
+    .select("id, consignment_id")
+    .eq("id", attachmentId)
+    .is("deleted_at", null)
+    .single();
+  if (aErr || !attachment) return { error: "Attachment not found" };
+
+  if (folderId) {
+    const { data: folder, error: folderErr } = await supabase
+      .from("consignment_folders")
+      .select("id, consignment_id")
+      .eq("id", folderId)
+      .is("deleted_at", null)
+      .single();
+    if (folderErr || !folder) return { error: "Folder not found" };
+    if (folder.consignment_id !== attachment.consignment_id) {
+      return { error: "Folder belongs to a different consignment." };
+    }
+  }
+
+  const { data: row, error: updErr } = await supabase
+    .from("attachments")
+    .update({ folder_id: folderId })
+    .eq("id", attachmentId)
+    .is("deleted_at", null)
+    .select(ATTACHMENT_COLUMNS)
+    .single();
+  if (updErr || !row) return { error: updErr?.message ?? "Failed to move file" };
+
+  revalidatePath(`/consignments/${row.consignment_id}`);
+  return { success: true, attachment: row as AttachmentRow };
 }

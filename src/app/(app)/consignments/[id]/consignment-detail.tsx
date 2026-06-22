@@ -9,6 +9,7 @@ import BatchLink from "@/components/batch-link";
 import StageActionShell from "@/components/stage-action-shell";
 import AttachmentsTab from "./_attachments/attachments-tab";
 import type { AttachmentRow } from "@/server/actions/attachment-actions";
+import type { FolderRow } from "@/server/actions/folder-actions";
 import {
   duplicateConsignmentAction,
   softDeleteConsignmentAction,
@@ -127,6 +128,7 @@ type Props = {
   linkedEfds: LinkedEfd[];
   gutaPair: GutaPair | null;
   attachments: AttachmentRow[];
+  folders: FolderRow[];
 };
 
 const STATUS_STYLES: Record<string, string> = {
@@ -162,7 +164,7 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
 // `linkedEfds` (still on Props, still passed by the page) is intentionally not
 // destructured while the EFD UI is temporarily hidden — see the commented
 // "Linked EFDs" section below. Restore the destructure when re-enabling EFD.
-export default function ConsignmentDetail({ consignment, auditLog, gutaPair, attachments }: Props) {
+export default function ConsignmentDetail({ consignment, auditLog, gutaPair, attachments, folders }: Props) {
   const [tab, setTab] = useState<"overview" | "pipeline" | "files" | "audit">("overview");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteReason, setDeleteReason] = useState("");
@@ -687,7 +689,11 @@ export default function ConsignmentDetail({ consignment, auditLog, gutaPair, att
 
       {/* ── Files tab ── */}
       {tab === "files" && (
-        <AttachmentsTab consignmentId={consignment.id} initial={attachments} />
+        <AttachmentsTab
+          consignmentId={consignment.id}
+          initialFiles={attachments}
+          initialFolders={folders}
+        />
       )}
 
       {/* ── Audit tab ── */}
