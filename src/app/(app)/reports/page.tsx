@@ -365,9 +365,9 @@ function ClientVolumeReport({
                   <div className="font-medium text-foreground truncate">
                     {r.client_name ?? "—"}
                   </div>
-                  {r.sub_label && (
+                  {r.display_name && (
                     <div className="text-[11px] text-muted-foreground truncate">
-                      {r.sub_label}
+                      {r.display_name}
                     </div>
                   )}
                 </td>
@@ -452,9 +452,9 @@ function TurnaroundClientReport({
                   <div className="font-medium text-foreground truncate">
                     {r.client_name ?? "—"}
                   </div>
-                  {r.sub_label && (
+                  {r.display_name && (
                     <div className="text-[11px] text-muted-foreground truncate">
-                      {r.sub_label}
+                      {r.display_name}
                     </div>
                   )}
                 </td>

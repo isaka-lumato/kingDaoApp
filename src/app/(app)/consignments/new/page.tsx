@@ -11,7 +11,7 @@ export default async function NewConsignmentPage() {
   const [{ data: clients }, { data: icds }, { data: vessels }] = await Promise.all([
     supabase
       .from("clients")
-      .select("id, name, sub_label")
+      .select("id, name, display_name")
       .is("deleted_at", null)
       .eq("is_active", true)
       .order("name"),

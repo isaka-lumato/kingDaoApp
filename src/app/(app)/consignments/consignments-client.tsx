@@ -5,7 +5,8 @@ import { useTransition } from "react";
 import Link from "next/link";
 import { formatTzs } from "@/lib/money";
 import BatchLink from "@/components/batch-link";
-import { PIPELINE_STAGES, resolveActiveStage, type StageField } from "@/lib/pipeline";
+import { currentStageLabel } from "@/lib/pipeline";
+import { type SortKey, type SortDir } from "@/lib/consignments-list";
 
 type Client = { id: string; name: string };
 type Row = {
@@ -45,49 +46,59 @@ type Props = {
   pageSize: number;
   year: number;
   clients: Client[];
-  filters: { client?: string; stage?: string; q?: string };
+  filters: {
+    client?: string;
+    stage?: string;
+    q?: string;
+    sort: SortKey;
+    dir: SortDir;
+  };
   fetchError?: string;
 };
 
-const STAGE_COLORS: Record<string, string> = {
-  Done: "bg-stage-done/15 text-stage-done border-stage-done/30",
-  Action: "bg-stage-action/15 text-stage-action border-stage-action/30",
-  Waiting: "bg-stage-waiting/15 text-stage-waiting border-stage-waiting/30",
-};
-
-function StageBadge({ status }: { status: string }) {
+/**
+ * Clickable sortable column header. Sortable columns only (D-056) — Client +
+ * Pipeline Stage are not server-sortable and render as plain `<th>`s.
+ */
+function SortHeader({
+  column,
+  label,
+  activeSort,
+  activeDir,
+  onSort,
+  align = "left",
+  className = "",
+}: {
+  column: SortKey;
+  label: string;
+  activeSort: SortKey;
+  activeDir: SortDir;
+  onSort: (column: SortKey) => void;
+  align?: "left" | "right";
+  className?: string;
+}) {
+  const active = activeSort === column;
   return (
-    <span
-      className={`inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded border ${STAGE_COLORS[status] ?? "bg-muted text-muted-foreground border-border"}`}
+    <th
+      className={`px-4 py-2.5 font-medium text-muted-foreground whitespace-nowrap ${className}`}
     >
-      {status}
-    </span>
+      <button
+        type="button"
+        onClick={() => onSort(column)}
+        className={[
+          "inline-flex items-center gap-1 hover:text-foreground transition-colors",
+          align === "right" ? "flex-row-reverse" : "",
+          active ? "text-foreground" : "",
+        ].join(" ")}
+        aria-label={`Sort by ${label}${active ? ` (${activeDir === "asc" ? "ascending" : "descending"})` : ""}`}
+      >
+        {label}
+        <span className="text-[9px] leading-none w-2 inline-block">
+          {active ? (activeDir === "asc" ? "▲" : "▼") : ""}
+        </span>
+      </button>
+    </th>
   );
-}
-
-/** Compute the "current active stage" label for a row */
-function currentStageLabel(row: Row): string {
-  const stageValues: Record<StageField, string> = {
-    manifest_status: row.manifest_status,
-    shipping_batch_status: row.shipping_batch_status,
-    tanesws_status: row.tanesws_status,
-    assessment_status: row.assessment_status,
-    tbs_loading_status: row.tbs_loading_status,
-    tbs_debit_status: row.tbs_debit_status,
-    manifest_comp_status: row.manifest_comp_status,
-    duty_status: row.duty_status,
-    inspection_file_status: row.inspection_file_status,
-    release_status: row.release_status,
-  };
-  const activeField = resolveActiveStage(stageValues);
-  const active = PIPELINE_STAGES.find((s) => s.field === activeField);
-  if (!active) return "—";
-
-  const status = stageValues[activeField];
-  if (activeField === "release_status" && status === active.doneValue) {
-    return "Released";
-  }
-  return `${active.label} — ${status}`;
 }
 
 export default function ConsignmentsClient({
@@ -129,6 +140,31 @@ export default function ConsignmentsClient({
     navigate(buildUrl({ q: fd.get("q") as string, page: "1" }));
   }
 
+  // Export download URL — carries the exact year + filters + sort + search
+  // currently on screen, minus pagination, so the file mirrors the view.
+  function exportHref(format: "xlsx" | "pdf") {
+    const params = new URLSearchParams();
+    const merged: Record<string, string | undefined> = {
+      year: String(year),
+      ...filters,
+    };
+    for (const [k, v] of Object.entries(merged)) {
+      if (v) params.set(k, v);
+    }
+    return `/api/consignments/export/${format}?${params.toString()}`;
+  }
+
+  // Click a sortable header: first click sorts ascending; clicking the active
+  // column flips direction. Page resets to 1.
+  function onSort(column: SortKey) {
+    const active = filters.sort === column;
+    const nextDir: SortDir = active && filters.dir === "asc" ? "desc" : "asc";
+    navigate(buildUrl({ sort: column, dir: nextDir, page: "1" }));
+  }
+
+  const exportAnchorCls =
+    "inline-flex items-center gap-1.5 rounded-lg border border-border bg-card hover:bg-muted px-3 py-2 text-sm font-medium text-foreground transition-colors";
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -139,15 +175,30 @@ export default function ConsignmentsClient({
             {total.toLocaleString()} record{total !== 1 ? "s" : ""} · {year}
           </p>
         </div>
-        <Link
-          href="/consignments/new"
-          className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 transition-opacity"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-          </svg>
-          New consignment
-        </Link>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Export the current view (all matching rows, current sort) — D-056 */}
+          <a href={exportHref("xlsx")} className={exportAnchorCls} download>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" />
+            </svg>
+            Excel
+          </a>
+          <a href={exportHref("pdf")} className={exportAnchorCls} download>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 13h6m-6 4h6m2 4H7a2 2 0 01-2-2V5a2 2 0 012-2h7l5 5v11a2 2 0 01-2 2z" />
+            </svg>
+            PDF
+          </a>
+          <Link
+            href="/consignments/new"
+            className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 transition-opacity"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+            New consignment
+          </Link>
+        </div>
       </div>
 
       {/* Filters bar */}
@@ -198,8 +249,9 @@ export default function ConsignmentsClient({
           <input
             name="q"
             defaultValue={filters.q ?? ""}
-            placeholder="Search ref no…"
-            className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring w-40"
+            placeholder="Search ref, B/L, TANSAD, vessel, client…"
+            aria-label="Search consignments by ref, B/L, TANSAD, in-ref, vessel, goods, or client"
+            className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring w-56 sm:w-64"
           />
           <button
             type="submit"
@@ -312,14 +364,14 @@ export default function ConsignmentsClient({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/40">
-                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground whitespace-nowrap">Ref No</th>
+                <SortHeader column="ref_no" label="Ref No" className="text-left" activeSort={filters.sort} activeDir={filters.dir} onSort={onSort} />
                 <th className="text-left px-4 py-2.5 font-medium text-muted-foreground whitespace-nowrap">Client</th>
-                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground whitespace-nowrap hidden md:table-cell">B/L</th>
-                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground whitespace-nowrap hidden lg:table-cell">In Ref</th>
-                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground whitespace-nowrap hidden lg:table-cell">Vessel</th>
-                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground whitespace-nowrap hidden lg:table-cell">Arrival</th>
+                <SortHeader column="bl_number" label="B/L" className="text-left hidden md:table-cell" activeSort={filters.sort} activeDir={filters.dir} onSort={onSort} />
+                <SortHeader column="in_ref" label="In Ref" className="text-left hidden lg:table-cell" activeSort={filters.sort} activeDir={filters.dir} onSort={onSort} />
+                <SortHeader column="vessel_name" label="Vessel" className="text-left hidden lg:table-cell" activeSort={filters.sort} activeDir={filters.dir} onSort={onSort} />
+                <SortHeader column="arrival_date" label="Arrival" className="text-left hidden lg:table-cell" activeSort={filters.sort} activeDir={filters.dir} onSort={onSort} />
                 <th className="text-left px-4 py-2.5 font-medium text-muted-foreground whitespace-nowrap">Pipeline Stage</th>
-                <th className="text-right px-4 py-2.5 font-medium text-muted-foreground whitespace-nowrap hidden xl:table-cell">Amount</th>
+                <SortHeader column="amount" label="Amount" align="right" className="text-right hidden xl:table-cell" activeSort={filters.sort} activeDir={filters.dir} onSort={onSort} />
                 <th className="px-4 py-2.5 w-16" />
               </tr>
             </thead>

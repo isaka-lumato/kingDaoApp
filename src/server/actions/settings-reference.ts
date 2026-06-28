@@ -34,8 +34,10 @@ function uniqueError(label: string) {
 
 const clientSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(120),
-  sub_label: z.string().trim().max(120).optional().nullable(),
+  company: z.string().trim().max(200).optional().nullable(),
+  display_name: z.string().trim().max(120).optional().nullable(),
   contact_email: z.union([z.email(), z.literal("")]).optional().nullable(),
+  phone: z.string().trim().max(40).optional().nullable(),
   notes: z.string().trim().max(2000).optional().nullable(),
 });
 
@@ -45,8 +47,10 @@ export async function createClientAction(formData: FormData) {
 
   const parsed = clientSchema.safeParse({
     name: formData.get("name") ?? "",
-    sub_label: trimmedOrNull(formData.get("sub_label")),
+    company: trimmedOrNull(formData.get("company")),
+    display_name: trimmedOrNull(formData.get("display_name")),
     contact_email: trimmedOrNull(formData.get("contact_email")),
+    phone: trimmedOrNull(formData.get("phone")),
     notes: trimmedOrNull(formData.get("notes")),
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
@@ -54,8 +58,10 @@ export async function createClientAction(formData: FormData) {
   const supabase = await getSupabaseServerClient();
   const { error } = await supabase.from("clients").insert({
     name: parsed.data.name,
-    sub_label: parsed.data.sub_label ?? null,
+    company: parsed.data.company ?? null,
+    display_name: parsed.data.display_name ?? null,
     contact_email: parsed.data.contact_email || null,
+    phone: parsed.data.phone ?? null,
     notes: parsed.data.notes ?? null,
   });
   if (error) return error.code === "23505" ? uniqueError("client") : { error: error.message };
@@ -73,8 +79,10 @@ export async function updateClientAction(formData: FormData) {
 
   const parsed = clientSchema.safeParse({
     name: formData.get("name") ?? "",
-    sub_label: trimmedOrNull(formData.get("sub_label")),
+    company: trimmedOrNull(formData.get("company")),
+    display_name: trimmedOrNull(formData.get("display_name")),
     contact_email: trimmedOrNull(formData.get("contact_email")),
+    phone: trimmedOrNull(formData.get("phone")),
     notes: trimmedOrNull(formData.get("notes")),
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
@@ -84,8 +92,10 @@ export async function updateClientAction(formData: FormData) {
     .from("clients")
     .update({
       name: parsed.data.name,
-      sub_label: parsed.data.sub_label ?? null,
+      company: parsed.data.company ?? null,
+      display_name: parsed.data.display_name ?? null,
       contact_email: parsed.data.contact_email || null,
+      phone: parsed.data.phone ?? null,
       notes: parsed.data.notes ?? null,
     })
     .eq("id", id.data);
@@ -130,7 +140,7 @@ export async function deleteClientAction(formData: FormData) {
 export async function setClientActiveAction(formData: FormData) {
   const denied = await requireAdmin();
   if (denied) return denied;
-  return setActive("clients", "/settings/clients", formData);
+  return setActive("clients", "/clients", formData);
 }
 
 // ── ICDs ─────────────────────────────────────────────────────────────────────

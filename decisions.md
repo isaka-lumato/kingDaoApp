@@ -1053,3 +1053,58 @@ Final design — **single `/clients` route, selection driven by `?c=<id>`** (the
 - A unique constraint on `(consignment_id, parent_folder_id, name) WHERE deleted_at IS NULL` blocks duplicate sibling folder names; a soft-deleted folder's name is freed for reuse. Accepted.
 - `.doc/.docx/.xls/.xlsx` don't preview inline — they download. Accepted; previewing Office formats in-browser would require a converter we don't want.
 - MIME types are spoofable client-side, so the bucket's `allowed_mime_types` (checked by Storage against the real upload) remains the un-bypassable guard; the zod enum + server re-check are defense in depth, consistent with the original feature.
+
+---
+
+## D-056 — Consignments list: multi-field search, allowlisted column sort, all-rows XLSX/PDF export
+
+**Date:** 2026-06-23
+**Status:** Active. User-requested, not a tracked task.
+
+**Context.** The `/consignments` list — the screen staff live in — only let users search by `ref_no` (a single `ilike`), hard-sorted by `serial_no` asc with no way to reorder, and had no export, even though `/reports` already ships polished XLSX + PDF exports. Per user request: add Excel (and PDF) export of "the data displayed at that moment… sorted as it is", clickable column-header sorting, and "a proper search" across every uniquely-identifying field. None of this is in the PRD, so it is a decision.
+
+**Decision.**
+
+1. **Export scope = all matching rows, not the current page (user's choice).** The list is server-paginated at 50/page; the export re-runs the same filtered/searched/sorted query with **no `.range()`**, so the file contains every row matching the on-screen year + filters + search, in the on-screen sort order. "What's displayed" is interpreted as "the current filtered view", not "the literal 50 visible rows".
+
+2. **Shared query layer.** Filter/sort/search logic is extracted to one module so the page and the export apply byte-identical filtering — only pagination differs. Pure params (sort allowlist, `parseListParams`, search-column list, sanitizer) live in `src/lib/consignments-list.ts` (no `server-only` barrier, so the client grid imports the `SortKey`/`SortDir` types + allowlist); the Supabase-touching builders (`resolvePrereqs`, `buildListQuery`, `CONSIGNMENT_SELECT`) live in `src/server/consignments/list-query.ts`.
+
+3. **Sort = data columns only (user's choice).** An allowlist map (`SORTABLE_COLUMNS`: ref_no, year, serial_no, arrival_date, amount, vessel_name, bl_number, in_ref) gates the `sort` query param → real DB column, preventing arbitrary `.order()` injection. **Client (a joined table) and Pipeline Stage (a computed value) are intentionally not sortable** — sorting them server-side would need a name-join order / a computed stage-rank expression not worth the complexity. Headers click to sort asc; clicking the active column flips direction; a stable `.order("id")` tiebreaker keeps pagination deterministic.
+
+4. **Search = multi-field, including client name.** Free-text `q` builds a PostgREST `.or()` across `ref_no, tansad_no, bl_number, in_ref, vessel_name, goods_description`. Because client is a foreign table, client-name search is folded in via a **pre-query**: `resolvePrereqs` looks up `clients` whose `name ilike %q%` and adds `client_id.in.(…)` to the `.or()`. The pre-query runs inside the page's existing tier-1 `Promise.all` (D-042), so it adds no round-trip. `q` is sanitized (strip `,()*"\`) before interpolation into the filter string.
+
+5. **Exports reuse the reports builder pattern (T-071/T-072).** New `build-consignments-xlsx.ts` and `build-consignments-pdf.tsx` mirror `src/server/reports/build-{xlsx,pdf}` (title/meta banner, frozen bold header, money `numFmt`, real Date cells, TOTAL row, A4-landscape logo header). A single `export-columns.ts` is the shared column spec. New route `src/app/api/consignments/export/[format]/route.ts` mirrors the reports routes (`runtime=nodejs`, `getServerPermissions()` 401 gate — viewers+ may export, D-026 user-bound client, `attachment` download). `currentStageLabel` moved from the client component into `src/lib/pipeline.ts` so the "Pipeline Stage" column reads identically on screen and in exports.
+
+**Trade-offs.**
+- **PDF carries a trimmed column subset** (Ref No, Client, B/L, In Ref, Vessel, Arrival, Pipeline Stage, Amount). The list has 14 export columns; A4 landscape can't hold all legibly. XLSX carries the full set for anyone who needs everything. Accepted.
+- **Client-name search is a two-step (prequery → `in`)**, not a single SQL join. Cheap at this scale (~hundreds of clients) and keeps the main query a plain PostgREST builder. Accepted.
+- Export auth matches `/reports`: any signed-in role may export the rows their RLS already lets them read. Revenue/amount is part of the consignments grid the user already sees, so no extra admin gate was added.
+
+---
+
+## D-057 — Client model expansion: six-field CRUD (rename sub_label → display_name, add company + phone)
+
+**Date:** 2026-06-27
+**Status:** Active. User-requested, not a tracked task. **Supersedes the PRD §5.4 client field list** (`name`, `sub_label`, `contact_email`, `notes`).
+
+**Context.** The client CRUD captured only Name, a "Variant" (`sub_label`, e.g. `PAPA — SAAJT`), Email, and a free-text note. The user asked the client form to capture six fields: **Name, Company, Displayed Name, Email, Phone Number, Remark.** PRD §5.4 is frozen, so this is logged here.
+
+**Decision.** Field → column mapping:
+
+| UI label       | Column          | Change                            |
+|----------------|-----------------|-----------------------------------|
+| Name           | `name`          | unchanged, the **only** required field |
+| Company        | `company`       | **new** nullable text             |
+| Displayed Name | `display_name`  | **rename** of `sub_label` (data preserved) |
+| Email          | `contact_email` | unchanged, nullable               |
+| Phone Number   | `phone`         | **new** nullable text             |
+| Remark         | `notes`         | unchanged, nullable               |
+
+1. **Displayed Name replaces Variant entirely (user's choice).** `sub_label` is renamed to `display_name` rather than kept alongside a new field — there is one label concept, not two. It becomes "the name shown everywhere".
+2. **Label helper changes from `name — sub_label` to `display_name?.trim() || name`.** Where a Displayed Name is set it is shown verbatim (no `name — ` prefix); otherwise the row falls back to `name`. Applied in the clients list/panel, both consignment-form dropdowns, the dashboard top-clients widget, and the Client Volume + Turnaround reports. Existing seeded clients (no `display_name`) keep showing their `name`.
+3. **Only Name required (user's choice).** Company / Displayed Name / Email / Phone / Remark are all optional. Email keeps its `z.email()` validation when present.
+4. **Reporting views recreated.** `v_client_volume` and `v_turnaround_by_client` selected `cl.sub_label`; both are recreated to select `cl.display_name`. The view output column (and the report XLSX/PDF header) is renamed `sub_label` → `display_name` ("Displayed Name").
+
+**Trade-offs.**
+- The `clients_name_active_uq` unique index spans `(name, coalesce(display_name, ''))`; after the rename the constraint is identical in behaviour (two same-named clients need distinct Displayed Names). Accepted.
+- No RLS/policy changes — `clients` writes already go through admin RLS via the user-bound server client (D-026 allowlist unaffected; the D-046 column-write guard is on `consignments` only).

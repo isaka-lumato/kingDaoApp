@@ -6,13 +6,13 @@ import Link from "next/link";
 import { createConsignmentAction } from "@/server/actions/create-consignment";
 
 type Props = {
-  clients: { id: string; name: string; sub_label: string | null }[];
+  clients: { id: string; name: string; display_name: string | null }[];
   icds: { id: string; name: string; location: string | null }[];
   vessels: string[];
 };
 
-function clientLabel(c: { name: string; sub_label: string | null }) {
-  return c.sub_label ? `${c.name} — ${c.sub_label}` : c.name;
+function clientLabel(c: { name: string; display_name: string | null }) {
+  return c.display_name?.trim() || c.name;
 }
 
 const CONTAINER_TYPES = ["40FT", "20FT", "CAR", "COIL"] as const;

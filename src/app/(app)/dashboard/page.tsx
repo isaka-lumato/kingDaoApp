@@ -172,7 +172,7 @@ export default async function DashboardPage() {
       "v_client_volume",
       supabase
         .from("v_client_volume")
-        .select("client_id, client_name, sub_label, total_containers, job_count")
+        .select("client_id, client_name, display_name, total_containers, job_count")
         .eq("year", year)
         .order("total_containers", { ascending: false })
         .limit(5),
@@ -337,13 +337,8 @@ export default async function DashboardPage() {
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-foreground">
-                      {c.client_name ?? "—"}
+                      {c.display_name?.trim() || c.client_name || "—"}
                     </p>
-                    {c.sub_label && (
-                      <p className="truncate text-[11px] text-muted-foreground">
-                        {c.sub_label}
-                      </p>
-                    )}
                   </div>
                   <div className="shrink-0 text-right">
                     <p className="font-mono text-sm font-semibold tabular-nums text-foreground">

@@ -113,36 +113,42 @@ export type Database = {
       }
       clients: {
         Row: {
+          company: string | null
           contact_email: string | null
           created_at: string
           deleted_at: string | null
+          display_name: string | null
           id: string
           is_active: boolean
           name: string
           notes: string | null
-          sub_label: string | null
+          phone: string | null
           updated_at: string
         }
         Insert: {
+          company?: string | null
           contact_email?: string | null
           created_at?: string
           deleted_at?: string | null
+          display_name?: string | null
           id?: string
           is_active?: boolean
           name: string
           notes?: string | null
-          sub_label?: string | null
+          phone?: string | null
           updated_at?: string
         }
         Update: {
+          company?: string | null
           contact_email?: string | null
           created_at?: string
           deleted_at?: string | null
+          display_name?: string | null
           id?: string
           is_active?: boolean
           name?: string
           notes?: string | null
-          sub_label?: string | null
+          phone?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -832,9 +838,9 @@ export type Database = {
           active_count: number | null
           client_id: string | null
           client_name: string | null
+          display_name: string | null
           job_count: number | null
           released_count: number | null
-          sub_label: string | null
           total_containers: number | null
           total_revenue: number | null
           year: number | null
@@ -941,10 +947,10 @@ export type Database = {
           avg_days: number | null
           client_id: string | null
           client_name: string | null
+          display_name: string | null
           max_days: number | null
           min_days: number | null
           released_count: number | null
-          sub_label: string | null
           year: number | null
         }
         Relationships: []

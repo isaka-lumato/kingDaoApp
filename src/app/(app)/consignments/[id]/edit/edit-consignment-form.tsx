@@ -5,11 +5,11 @@ import { useFormStatus } from "react-dom";
 import Link from "next/link";
 import { editConsignmentAction } from "@/server/actions/edit-consignment";
 
-type Client = { id: string; name: string; sub_label: string | null };
+type Client = { id: string; name: string; display_name: string | null };
 type ICD = { id: string; name: string; location: string | null };
 
 function clientLabel(c: Client) {
-  return c.sub_label ? `${c.name} — ${c.sub_label}` : c.name;
+  return c.display_name?.trim() || c.name;
 }
 type Consignment = {
   id: string;

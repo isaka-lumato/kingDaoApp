@@ -43,7 +43,7 @@ export type RevenueRow = {
 export type ClientVolumeRow = {
   client_id: string | null;
   client_name: string | null;
-  sub_label: string | null;
+  display_name: string | null;
   job_count: number | null;
   total_containers: number | null;
   total_revenue: number | null;
@@ -54,7 +54,7 @@ export type ClientVolumeRow = {
 export type TurnaroundClientRow = {
   client_id: string | null;
   client_name: string | null;
-  sub_label: string | null;
+  display_name: string | null;
   released_count: number | null;
   avg_days: number | null;
   min_days: number | null;
