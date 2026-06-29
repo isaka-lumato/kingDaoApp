@@ -11,7 +11,7 @@ export const metadata: Metadata = { title: "Edit Consignment — KDL Tracker" };
 const EDITABLE_COLS = [
   "ref_no", "year", "serial_no", "client_id", "icd_id",
   "bl_number", "tansad_no", "vessel_name", "arrival_date",
-  "container_count", "container_type", "goods_description",
+  "cargo_count", "cargo_type", "efd_receipt_no", "goods_description",
   "amount", "remarks",
   ...STAGE_FIELDS,
 ] as const;

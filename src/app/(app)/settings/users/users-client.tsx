@@ -1,11 +1,13 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   inviteUserAction,
   deactivateUserAction,
   reactivateUserAction,
   removeRoleAction,
+  updateUserRolesAction,
 } from "@/server/actions/settings-users";
 
 type Role = { id: string; name: string };
@@ -25,9 +27,13 @@ type Props = {
 };
 
 export default function UsersClient({ users, roles, fetchError }: Props) {
+  const router = useRouter();
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [editingRolesFor, setEditingRolesFor] = useState<UserRow | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
+  const [roleEditError, setRoleEditError] = useState<string | null>(null);
+  const [roleEditSuccess, setRoleEditSuccess] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   function handleInvite(e: React.FormEvent<HTMLFormElement>) {
@@ -43,6 +49,31 @@ export default function UsersClient({ users, roles, fetchError }: Props) {
         setInviteSuccess(`User ${res.email} created successfully`);
         setInviteOpen(false);
         (e.target as HTMLFormElement).reset();
+        router.refresh();
+      }
+    });
+  }
+
+  function openRoleEditor(user: UserRow) {
+    setRoleEditError(null);
+    setRoleEditSuccess(null);
+    setEditingRolesFor(user);
+  }
+
+  function handleRoleEdit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setRoleEditError(null);
+    setRoleEditSuccess(null);
+    const fd = new FormData(e.currentTarget);
+    startTransition(async () => {
+      const res = await updateUserRolesAction(fd);
+      if (res && "error" in res) {
+        setRoleEditError(res.error ?? null);
+      } else if (res?.success) {
+        const email = editingRolesFor?.email ?? "User";
+        setRoleEditSuccess(`${email} roles updated`);
+        setEditingRolesFor(null);
+        router.refresh();
       }
     });
   }
@@ -71,6 +102,12 @@ export default function UsersClient({ users, roles, fetchError }: Props) {
       {inviteSuccess && (
         <div className="rounded-lg border border-brand/30 bg-brand/10 px-4 py-3 text-sm text-brand">
           ✓ {inviteSuccess}
+        </div>
+      )}
+
+      {roleEditSuccess && (
+        <div className="rounded-lg border border-brand/30 bg-brand/10 px-4 py-3 text-sm text-brand">
+          {roleEditSuccess}
         </div>
       )}
 
@@ -105,23 +142,32 @@ export default function UsersClient({ users, roles, fetchError }: Props) {
               <UserRow
                 key={user.id}
                 user={user}
-                allRoles={roles}
                 onDeactivate={(id) => {
                   const fd = new FormData();
                   fd.set("userId", id);
-                  startTransition(async () => { await deactivateUserAction(fd); });
+                  startTransition(async () => {
+                    await deactivateUserAction(fd);
+                    router.refresh();
+                  });
                 }}
                 onReactivate={(id) => {
                   const fd = new FormData();
                   fd.set("userId", id);
-                  startTransition(async () => { await reactivateUserAction(fd); });
+                  startTransition(async () => {
+                    await reactivateUserAction(fd);
+                    router.refresh();
+                  });
                 }}
                 onRemoveRole={(userId, roleId) => {
                   const fd = new FormData();
                   fd.set("userId", userId);
                   fd.set("roleId", roleId);
-                  startTransition(async () => { await removeRoleAction(fd); });
+                  startTransition(async () => {
+                    await removeRoleAction(fd);
+                    router.refresh();
+                  });
                 }}
+                onEditRoles={openRoleEditor}
               />
             ))}
           </tbody>
@@ -220,25 +266,88 @@ export default function UsersClient({ users, roles, fetchError }: Props) {
           </div>
         </div>
       )}
+
+      {editingRolesFor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setEditingRolesFor(null)}
+          />
+          <div className="relative z-10 w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl">
+            <h3 className="text-lg font-semibold text-foreground mb-1">Edit roles</h3>
+            <p className="text-muted-foreground text-sm mb-5">
+              {editingRolesFor.email}
+            </p>
+
+            {roleEditError && (
+              <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                {roleEditError}
+              </div>
+            )}
+
+            <form onSubmit={handleRoleEdit} className="space-y-4">
+              <input type="hidden" name="userId" value={editingRolesFor.id} />
+              <div className="space-y-2">
+                {roles.length === 0 && (
+                  <p className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                    No roles exist yet.
+                  </p>
+                )}
+                {roles.map((role) => (
+                  <label
+                    key={role.id}
+                    className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                  >
+                    <span className="font-medium text-foreground">{role.name}</span>
+                    <input
+                      type="checkbox"
+                      name="roleIds"
+                      value={role.id}
+                      defaultChecked={editingRolesFor.roles.some((r) => r.id === role.id)}
+                      className="h-4 w-4 accent-primary"
+                    />
+                  </label>
+                ))}
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingRolesFor(null)}
+                  className="flex-1 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isPending}
+                  className="flex-1 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60 transition-opacity"
+                >
+                  {isPending ? "Saving..." : "Save roles"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 function UserRow({
   user,
-  allRoles,
   onDeactivate,
   onReactivate,
   onRemoveRole,
+  onEditRoles,
 }: {
   user: UserRow;
-  allRoles: Role[];
   onDeactivate: (id: string) => void;
   onReactivate: (id: string) => void;
   onRemoveRole: (userId: string, roleId: string) => void;
+  onEditRoles: (user: UserRow) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const isBanned = false; // Supabase doesn't expose ban status in list; use lastSignIn heuristic
 
   return (
     <tr className="hover:bg-muted/20 transition-colors">
@@ -268,6 +377,12 @@ function UserRow({
               </button>
             </span>
           ))}
+          <button
+            onClick={() => onEditRoles(user)}
+            className="rounded-md border border-border px-2 py-0.5 text-xs font-medium text-foreground hover:bg-muted transition-colors"
+          >
+            Edit
+          </button>
         </div>
       </td>
       <td className="px-4 py-3">
@@ -301,6 +416,12 @@ function UserRow({
             <>
               <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
               <div className="absolute right-0 top-7 z-20 w-44 rounded-lg border border-border bg-card shadow-xl py-1">
+                <button
+                  onClick={() => { onEditRoles(user); setMenuOpen(false); }}
+                  className="w-full text-left px-3 py-2 text-sm text-foreground hover:bg-muted/40 transition-colors"
+                >
+                  Edit roles
+                </button>
                 <button
                   onClick={() => { onDeactivate(user.id); setMenuOpen(false); }}
                   className="w-full text-left px-3 py-2 text-sm text-destructive hover:bg-muted/40 transition-colors"

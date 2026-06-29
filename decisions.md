@@ -1108,3 +1108,21 @@ Final design — **single `/clients` route, selection driven by `?c=<id>`** (the
 **Trade-offs.**
 - The `clients_name_active_uq` unique index spans `(name, coalesce(display_name, ''))`; after the rename the constraint is identical in behaviour (two same-named clients need distinct Displayed Names). Accepted.
 - No RLS/policy changes — `clients` writes already go through admin RLS via the user-bound server client (D-026 allowlist unaffected; the D-046 column-write guard is on `consignments` only).
+
+---
+
+## D-058 - Users have exactly one role
+
+**Date:** 2026-06-28
+**Status:** Active. Supersedes the original `user_roles` many-to-many intent from D-004 / migration `20260518175820`.
+
+**Context.** The initial permission model allowed a user to hold multiple roles through the `user_roles` join table. That made the effective permission set permissive: if any role granted a column permission, the user received it. For a small internal operations team, that is harder for admins to reason about than a single current role per staff member.
+
+**Decision.**
+1. **Exactly one role per user.** A staff account has one active role at a time: admin, operator, viewer, or one custom role.
+2. **UI uses single selection.** Settings -> Users role editing uses one selected role, not checkboxes.
+3. **Server actions replace, not merge.** Editing an existing user's role deletes their old assignment and inserts the selected role. Creating a new user already selects one role.
+4. **Database enforces it.** `user_roles` keeps its existing table name and `(user_id, role_id)` primary key for compatibility, but gains a unique constraint on `user_id` so a second role assignment is rejected at the source of truth.
+5. **Backfill collapse rule.** If any existing user has multiple roles when the migration runs, keep the highest-precedence assignment: `admin`, then `operator`, then `viewer`, then the oldest custom assignment; delete the rest.
+
+**Trade-off.** This removes role-composition flexibility, but the permission matrix already supports custom roles for special cases. Single-role assignment makes audits, support, and admin mental models simpler.

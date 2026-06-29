@@ -29,6 +29,11 @@ const assignRoleSchema = z.object({
   roleId: z.uuid(),
 });
 
+const updateUserRolesSchema = z.object({
+  userId: z.uuid(),
+  roleIds: z.array(z.uuid()),
+});
+
 // ── Actions ────────────────────────────────────────────────────────────────
 
 /**
@@ -173,6 +178,76 @@ export async function assignRoleAction(formData: FormData) {
     if (error.code === "23505") return { error: "Role already assigned." };
     return { error: error.message };
   }
+
+  invalidatePermissionsCache(parsed.data.userId);
+  revalidatePath("/settings/users");
+  return { success: true };
+}
+
+/**
+ * Replace the complete role set for an existing user.
+ */
+export async function updateUserRolesAction(formData: FormData) {
+  const perms = await requireAdmin();
+  const parsed = updateUserRolesSchema.safeParse({
+    userId: formData.get("userId"),
+    roleIds: formData.getAll("roleIds"),
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+
+  const roleIds = Array.from(new Set(parsed.data.roleIds));
+  const admin = getSupabaseAdminClient();
+
+  if (roleIds.length > 0) {
+    const { data: roles, error: rolesErr } = await admin
+      .from("roles")
+      .select("id")
+      .in("id", roleIds);
+
+    if (rolesErr) return { error: rolesErr.message };
+    if ((roles ?? []).length !== roleIds.length) {
+      return { error: "One or more selected roles no longer exists." };
+    }
+  }
+
+  if (perms.userId === parsed.data.userId) {
+    const { data: adminRole, error: adminRoleErr } = await admin
+      .from("roles")
+      .select("id")
+      .eq("name", "admin")
+      .single();
+
+    if (adminRoleErr) return { error: adminRoleErr.message };
+    if (adminRole && !roleIds.includes(adminRole.id)) {
+      return { error: "You cannot remove your own admin role." };
+    }
+  }
+
+  if (roleIds.length > 0) {
+    const { error: upsertErr } = await admin.from("user_roles").upsert(
+      roleIds.map((roleId) => ({
+        user_id: parsed.data.userId,
+        role_id: roleId,
+      })),
+      { onConflict: "user_id,role_id" },
+    );
+
+    if (upsertErr) return { error: upsertErr.message };
+  }
+
+  let deleteQuery = admin
+    .from("user_roles")
+    .delete()
+    .eq("user_id", parsed.data.userId);
+
+  if (roleIds.length > 0) {
+    deleteQuery = deleteQuery.not("role_id", "in", `(${roleIds.join(",")})`);
+  }
+
+  const { error: deleteErr } = await deleteQuery;
+  if (deleteErr) return { error: deleteErr.message };
 
   invalidatePermissionsCache(parsed.data.userId);
   revalidatePath("/settings/users");

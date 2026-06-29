@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 import Link from "next/link";
 import { editConsignmentAction } from "@/server/actions/edit-consignment";
+import { CARGO_TYPES, cargoLabel } from "@/lib/cargo";
 
 type Client = { id: string; name: string; display_name: string | null };
 type ICD = { id: string; name: string; location: string | null };
@@ -20,8 +21,9 @@ type Consignment = {
   tansad_no: string | null;
   vessel_name: string | null;
   arrival_date: string | null;
-  container_count: number | null;
-  container_type: string | null;
+  cargo_count: number | null;
+  cargo_type: string | null;
+  efd_receipt_no: string | null;
   goods_description: string | null;
   icd_id: string | null;
   amount: number | null;
@@ -38,8 +40,6 @@ type Props = {
   vessels: string[];
   writableCols: readonly string[];
 };
-
-const CONTAINER_TYPES = ["40FT", "20FT", "CAR", "COIL"] as const;
 
 const inputCls =
   "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 disabled:cursor-not-allowed";
@@ -254,32 +254,44 @@ export default function EditConsignmentForm({ consignment, clients, icds, vessel
               )}
             </Field>
 
-            <Field label="Container count" col="container_count" writableCols={writableCols}>
+            <Field label="Cargo count" col="cargo_count" writableCols={writableCols}>
               {(disabled) => (
                 <input
-                  name="container_count"
+                  name="cargo_count"
                   type="number"
                   min={1}
-                  defaultValue={consignment.container_count ?? ""}
+                  defaultValue={consignment.cargo_count ?? ""}
                   disabled={disabled}
                   className={inputCls}
                 />
               )}
             </Field>
 
-            <Field label="Container type" col="container_type" writableCols={writableCols}>
+            <Field label="Cargo type" col="cargo_type" writableCols={writableCols}>
               {(disabled) => (
                 <select
-                  name="container_type"
-                  defaultValue={consignment.container_type ?? ""}
+                  name="cargo_type"
+                  defaultValue={consignment.cargo_type ?? ""}
                   disabled={disabled}
                   className={inputCls}
                 >
                   <option value="">Select type…</option>
-                  {CONTAINER_TYPES.map((t) => (
-                    <option key={t} value={t}>{t}</option>
+                  {CARGO_TYPES.map((t) => (
+                    <option key={t} value={t}>{cargoLabel(t)}</option>
                   ))}
                 </select>
+              )}
+            </Field>
+
+            <Field label="EFD receipt number" col="efd_receipt_no" writableCols={writableCols}>
+              {(disabled) => (
+                <input
+                  name="efd_receipt_no"
+                  type="text"
+                  defaultValue={consignment.efd_receipt_no ?? ""}
+                  disabled={disabled}
+                  className={inputCls}
+                />
               )}
             </Field>
           </div>

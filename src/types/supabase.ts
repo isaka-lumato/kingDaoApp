@@ -20,6 +20,7 @@ export type Database = {
           created_at: string
           deleted_at: string | null
           file_name: string
+          folder_id: string | null
           id: string
           mime_type: string
           size_bytes: number
@@ -32,6 +33,7 @@ export type Database = {
           created_at?: string
           deleted_at?: string | null
           file_name: string
+          folder_id?: string | null
           id?: string
           mime_type: string
           size_bytes: number
@@ -44,6 +46,7 @@ export type Database = {
           created_at?: string
           deleted_at?: string | null
           file_name?: string
+          folder_id?: string | null
           id?: string
           mime_type?: string
           size_bytes?: number
@@ -72,6 +75,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_stuck_stages"
             referencedColumns: ["consignment_id"]
+          },
+          {
+            foreignKeyName: "attachments_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "consignment_folders"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -153,19 +163,82 @@ export type Database = {
         }
         Relationships: []
       }
+      consignment_folders: {
+        Row: {
+          consignment_id: string
+          created_at: string
+          deleted_at: string | null
+          id: string
+          name: string
+          parent_folder_id: string | null
+          updated_at: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          consignment_id: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name: string
+          parent_folder_id?: string | null
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          consignment_id?: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name?: string
+          parent_folder_id?: string | null
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "consignment_folders_consignment_id_fkey"
+            columns: ["consignment_id"]
+            isOneToOne: false
+            referencedRelation: "consignments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "consignment_folders_consignment_id_fkey"
+            columns: ["consignment_id"]
+            isOneToOne: false
+            referencedRelation: "v_pending_refunds"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "consignment_folders_consignment_id_fkey"
+            columns: ["consignment_id"]
+            isOneToOne: false
+            referencedRelation: "v_stuck_stages"
+            referencedColumns: ["consignment_id"]
+          },
+          {
+            foreignKeyName: "consignment_folders_parent_folder_id_fkey"
+            columns: ["parent_folder_id"]
+            isOneToOne: false
+            referencedRelation: "consignment_folders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       consignments: {
         Row: {
           amount: number | null
           arrival_date: string | null
           assessment_status: Database["public"]["Enums"]["assessment_status"]
           bl_number: string | null
+          cargo_count: number
+          cargo_type: Database["public"]["Enums"]["cargo_type"]
           client_id: string
-          container_count: number
-          container_type: Database["public"]["Enums"]["container_type"]
           created_at: string
           current_status: string | null
           deleted_at: string | null
           duty_status: Database["public"]["Enums"]["duty_status"]
+          efd_receipt_no: string | null
           goods_description: string | null
           guta_pair_id: string | null
           icd_id: string | null
@@ -199,13 +272,14 @@ export type Database = {
           arrival_date?: string | null
           assessment_status?: Database["public"]["Enums"]["assessment_status"]
           bl_number?: string | null
+          cargo_count?: number
+          cargo_type: Database["public"]["Enums"]["cargo_type"]
           client_id: string
-          container_count?: number
-          container_type: Database["public"]["Enums"]["container_type"]
           created_at?: string
           current_status?: string | null
           deleted_at?: string | null
           duty_status?: Database["public"]["Enums"]["duty_status"]
+          efd_receipt_no?: string | null
           goods_description?: string | null
           guta_pair_id?: string | null
           icd_id?: string | null
@@ -239,13 +313,14 @@ export type Database = {
           arrival_date?: string | null
           assessment_status?: Database["public"]["Enums"]["assessment_status"]
           bl_number?: string | null
+          cargo_count?: number
+          cargo_type?: Database["public"]["Enums"]["cargo_type"]
           client_id?: string
-          container_count?: number
-          container_type?: Database["public"]["Enums"]["container_type"]
           created_at?: string
           current_status?: string | null
           deleted_at?: string | null
           duty_status?: Database["public"]["Enums"]["duty_status"]
+          efd_receipt_no?: string | null
           goods_description?: string | null
           guta_pair_id?: string | null
           icd_id?: string | null
@@ -979,13 +1054,14 @@ export type Database = {
           arrival_date: string | null
           assessment_status: Database["public"]["Enums"]["assessment_status"]
           bl_number: string | null
+          cargo_count: number
+          cargo_type: Database["public"]["Enums"]["cargo_type"]
           client_id: string
-          container_count: number
-          container_type: Database["public"]["Enums"]["container_type"]
           created_at: string
           current_status: string | null
           deleted_at: string | null
           duty_status: Database["public"]["Enums"]["duty_status"]
+          efd_receipt_no: string | null
           goods_description: string | null
           guta_pair_id: string | null
           icd_id: string | null
@@ -1055,13 +1131,14 @@ export type Database = {
           arrival_date: string | null
           assessment_status: Database["public"]["Enums"]["assessment_status"]
           bl_number: string | null
+          cargo_count: number
+          cargo_type: Database["public"]["Enums"]["cargo_type"]
           client_id: string
-          container_count: number
-          container_type: Database["public"]["Enums"]["container_type"]
           created_at: string
           current_status: string | null
           deleted_at: string | null
           duty_status: Database["public"]["Enums"]["duty_status"]
+          efd_receipt_no: string | null
           goods_description: string | null
           guta_pair_id: string | null
           icd_id: string | null
@@ -1104,7 +1181,14 @@ export type Database = {
     }
     Enums: {
       assessment_status: "Waiting" | "Action" | "Closed"
-      container_type: "40FT" | "20FT" | "CAR" | "COIL"
+      cargo_type:
+        | "40FT"
+        | "20FT"
+        | "CAR"
+        | "COIL"
+        | "MACHINERY_VEHICLE"
+        | "LOOSE"
+        | "BULK"
       duty_status: "Waiting" | "Action" | "Paid"
       inspection_file_status: "Waiting" | "Action" | "Done" | "SHARED"
       manifest_comp_status: "Waiting" | "Action" | "Done"
@@ -1259,7 +1343,15 @@ export const Constants = {
   public: {
     Enums: {
       assessment_status: ["Waiting", "Action", "Closed"],
-      container_type: ["40FT", "20FT", "CAR", "COIL"],
+      cargo_type: [
+        "40FT",
+        "20FT",
+        "CAR",
+        "COIL",
+        "MACHINERY_VEHICLE",
+        "LOOSE",
+        "BULK",
+      ],
       duty_status: ["Waiting", "Action", "Paid"],
       inspection_file_status: ["Waiting", "Action", "Done", "SHARED"],
       manifest_comp_status: ["Waiting", "Action", "Done"],

@@ -7,6 +7,7 @@
 //   - warnings[]: row WAS included but has a soft issue worth surfacing.
 
 import type { Database } from "@/types/supabase";
+import { isCargoType, type CargoType } from "@/lib/cargo";
 
 // ──────────────────────────────────────────────────────────────────────────
 // Public types
@@ -14,7 +15,7 @@ import type { Database } from "@/types/supabase";
 
 export type CellValue = string | number | boolean | Date | null | undefined;
 
-type ContainerType = Database["public"]["Enums"]["container_type"];
+type ContainerType = CargoType;
 type ManifestStatus = Database["public"]["Enums"]["manifest_status"];
 type ShippingBatchStatus = Database["public"]["Enums"]["shipping_batch_status"];
 type TaneswsStatus = Database["public"]["Enums"]["tanesws_status"];
@@ -34,8 +35,8 @@ export type ParsedConsignment = {
   serial_no: number | null;
   client_name: string | null;
   bl_number: string | null;
-  container_count: number | null;
-  container_type: ContainerType | null;
+  cargo_count: number | null;
+  cargo_type: ContainerType | null;
   goods_description: string | null;
   vessel_name: string | null;
   arrival_date: string | null; // ISO yyyy-mm-dd
@@ -99,8 +100,8 @@ type LogicalField =
   | "serial_no"
   | "client_name"
   | "bl_number"
-  | "container_count"
-  | "container_type"
+  | "cargo_count"
+  | "cargo_type"
   | "goods_description"
   | "vessel_name"
   | "arrival_date"
@@ -134,10 +135,12 @@ const HEADER_ALIASES: Record<string, LogicalField> = {
   client: "client_name",
   "b/l no": "bl_number",
   "bl no": "bl_number",
-  "no of conts": "container_count",
-  "no of cont(s)": "container_count",
-  "no of containers": "container_count",
-  "container type": "container_type",
+  "no of conts": "cargo_count",
+  "no of cont(s)": "cargo_count",
+  "no of containers": "cargo_count",
+  "container type": "cargo_type",
+  "cargo type": "cargo_type",
+  "cargo count": "cargo_count",
   "items/goods": "goods_description",
   items: "goods_description",
   goods: "goods_description",
@@ -172,7 +175,7 @@ const HEADER_ALIASES: Record<string, LogicalField> = {
   "efd time": "efd_time",
 };
 
-const REQUIRED_HEADERS: LogicalField[] = ["ref_no", "container_type"];
+const REQUIRED_HEADERS: LogicalField[] = ["ref_no", "cargo_type"];
 
 // ──────────────────────────────────────────────────────────────────────────
 // Public entry point
@@ -279,21 +282,21 @@ export function parseTracker(rows: CellValue[][]): ParseResult {
       });
     }
 
-    // Container type — required, must be in enum.
-    const ctRaw = stringOf(cell("container_type")).toUpperCase();
-    const container_type = isContainerType(ctRaw) ? ctRaw : null;
-    if (ctRaw && !container_type) {
+    // Cargo type — required, must be in enum.
+    const ctRaw = stringOf(cell("cargo_type")).toUpperCase();
+    const cargo_type = isCargoType(ctRaw) ? ctRaw : null;
+    if (ctRaw && !cargo_type) {
       errors.push({
         rowIndex: i,
         ref_no,
-        field: "container_type",
-        message: `Unknown container_type "${ctRaw}" (expected 40FT/20FT/CAR/COIL).`,
+        field: "cargo_type",
+        message: `Unknown cargo_type "${ctRaw}" (expected 40FT/20FT/CAR/COIL/MACHINERY_VEHICLE/LOOSE/BULK).`,
       });
       continue;
     }
 
     // Numeric fields
-    const container_count = parseNumber(cell("container_count"));
+    const cargo_count = parseNumber(cell("cargo_count"));
     const amount = parseNumber(cell("amount"));
     const serial_no = (() => {
       const n = parseNumber(cell("serial_no"));
@@ -412,8 +415,8 @@ export function parseTracker(rows: CellValue[][]): ParseResult {
       serial_no,
       client_name: nullableString(cell("client_name")),
       bl_number: nullableString(cell("bl_number")),
-      container_count,
-      container_type,
+      cargo_count,
+      cargo_type,
       goods_description: nullableString(cell("goods_description")),
       vessel_name: nullableString(cell("vessel_name")),
       arrival_date,

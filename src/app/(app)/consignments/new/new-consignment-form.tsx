@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 import Link from "next/link";
 import { createConsignmentAction } from "@/server/actions/create-consignment";
+import { CARGO_TYPES, cargoLabel } from "@/lib/cargo";
 
 type Props = {
   clients: { id: string; name: string; display_name: string | null }[];
@@ -14,19 +15,6 @@ type Props = {
 function clientLabel(c: { name: string; display_name: string | null }) {
   return c.display_name?.trim() || c.name;
 }
-
-const CONTAINER_TYPES = ["40FT", "20FT", "CAR", "COIL"] as const;
-const NOW = new Date();
-const CURRENT_YEAR = NOW.getFullYear();
-// Always offer previous + current year (late-arriving prior-year jobs are entered
-// well into the new year). Only surface next year from October onward, when
-// pre-registering an early-January arrival is realistic — otherwise it's just a
-// typo risk against the (ref_no, year) / (bl_number, year) uniqueness keys.
-// getMonth() is 0-indexed, so >= 9 means October–December.
-const YEAR_OPTIONS =
-  NOW.getMonth() >= 9
-    ? [CURRENT_YEAR - 1, CURRENT_YEAR, CURRENT_YEAR + 1]
-    : [CURRENT_YEAR - 1, CURRENT_YEAR];
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -109,26 +97,16 @@ export default function NewConsignmentForm({ clients, icds, vessels }: Props) {
             Core details
           </h2>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Client" required error={errs.client_id}>
-              <select name="client_id" required className={inputCls}>
-                <option value="">Select client…</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {clientLabel(c)}
-                  </option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label="Year" required error={errs.year}>
-              <select name="year" defaultValue={CURRENT_YEAR} required className={inputCls}>
-                {YEAR_OPTIONS.map((y) => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
-            </Field>
-          </div>
+          <Field label="Client" required error={errs.client_id}>
+            <select name="client_id" required className={inputCls}>
+              <option value="">Select client…</option>
+              {clients.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {clientLabel(c)}
+                </option>
+              ))}
+            </select>
+          </Field>
 
           <Field label="Goods description" error={errs.goods_description}>
             <textarea
@@ -190,9 +168,9 @@ export default function NewConsignmentForm({ clients, icds, vessels }: Props) {
               />
             </Field>
 
-            <Field label="Container count" hint="Defaults to 1 if left blank" error={errs.container_count}>
+            <Field label="Cargo count" hint="Defaults to 1 if left blank" error={errs.cargo_count}>
               <input
-                name="container_count"
+                name="cargo_count"
                 type="number"
                 min={1}
                 placeholder="e.g. 2"
@@ -200,13 +178,22 @@ export default function NewConsignmentForm({ clients, icds, vessels }: Props) {
               />
             </Field>
 
-            <Field label="Container type" required error={errs.container_type}>
-              <select name="container_type" required defaultValue="" className={inputCls}>
+            <Field label="Cargo type" required error={errs.cargo_type}>
+              <select name="cargo_type" required defaultValue="" className={inputCls}>
                 <option value="" disabled>Select type…</option>
-                {CONTAINER_TYPES.map((t) => (
-                  <option key={t} value={t}>{t}</option>
+                {CARGO_TYPES.map((t) => (
+                  <option key={t} value={t}>{cargoLabel(t)}</option>
                 ))}
               </select>
+            </Field>
+
+            <Field label="EFD receipt number" error={errs.efd_receipt_no}>
+              <input
+                name="efd_receipt_no"
+                type="text"
+                placeholder="e.g. 03429118"
+                className={inputCls}
+              />
             </Field>
 
             <Field label="ICD" error={errs.icd_id}>

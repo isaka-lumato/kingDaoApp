@@ -5,9 +5,9 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getServerPermissions } from "@/lib/permissions";
 import { friendlyConsignmentDbError } from "@/lib/db-errors";
 
-// container_count and container_type are NOT NULL in the DB — never allow a
+// cargo_count and cargo_type are NOT NULL in the DB — never allow a
 // blank edit to clear them (it would trigger a not-null constraint violation).
-const NON_NULLABLE_FIELDS = new Set(["container_count", "container_type"]);
+const NON_NULLABLE_FIELDS = new Set(["cargo_count", "cargo_type"]);
 
 export async function editConsignmentAction(
   _prevState: { error?: string; success?: boolean } | null,
@@ -22,7 +22,7 @@ export async function editConsignmentAction(
   // Build update payload — only include fields the user can write.
   const EDITABLE_FIELDS = [
     "client_id", "bl_number", "tansad_no", "vessel_name", "arrival_date",
-    "container_count", "container_type", "goods_description", "icd_id",
+    "cargo_count", "cargo_type", "efd_receipt_no", "goods_description", "icd_id",
     "amount", "remarks",
   ] as const;
 
@@ -41,7 +41,7 @@ export async function editConsignmentAction(
     // existing value is preserved instead of hitting a DB constraint.
     if (val === null && NON_NULLABLE_FIELDS.has(field)) continue;
 
-    if (field === "container_count" || field === "amount") {
+    if (field === "cargo_count" || field === "amount") {
       updates[field] = val === null ? null : Number(val);
     } else {
       updates[field] = val;
