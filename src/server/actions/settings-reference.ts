@@ -56,18 +56,22 @@ export async function createClientAction(formData: FormData) {
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
 
   const supabase = await getSupabaseServerClient();
-  const { error } = await supabase.from("clients").insert({
-    name: parsed.data.name,
-    company: parsed.data.company ?? null,
-    display_name: parsed.data.display_name ?? null,
-    contact_email: parsed.data.contact_email || null,
-    phone: parsed.data.phone ?? null,
-    notes: parsed.data.notes ?? null,
-  });
+  const { data, error } = await supabase
+    .from("clients")
+    .insert({
+      name: parsed.data.name,
+      company: parsed.data.company ?? null,
+      display_name: parsed.data.display_name ?? null,
+      contact_email: parsed.data.contact_email || null,
+      phone: parsed.data.phone ?? null,
+      notes: parsed.data.notes ?? null,
+    })
+    .select("id, name, display_name")
+    .single();
   if (error) return error.code === "23505" ? uniqueError("client") : { error: error.message };
 
   revalidatePath("/clients");
-  return { success: true };
+  return { success: true, data };
 }
 
 export async function updateClientAction(formData: FormData) {
@@ -161,13 +165,15 @@ export async function createIcdAction(formData: FormData) {
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
 
   const supabase = await getSupabaseServerClient();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("icds")
-    .insert({ name: parsed.data.name, location: parsed.data.location ?? null });
+    .insert({ name: parsed.data.name, location: parsed.data.location ?? null })
+    .select("id, name, location")
+    .single();
   if (error) return error.code === "23505" ? uniqueError("ICD") : { error: error.message };
 
   revalidatePath("/settings/icds");
-  return { success: true };
+  return { success: true, data };
 }
 
 export async function updateIcdAction(formData: FormData) {
@@ -214,11 +220,15 @@ export async function createVesselAction(formData: FormData) {
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
 
   const supabase = await getSupabaseServerClient();
-  const { error } = await supabase.from("vessels").insert({ name: parsed.data.name });
+  const { data, error } = await supabase
+    .from("vessels")
+    .insert({ name: parsed.data.name })
+    .select("id, name")
+    .single();
   if (error) return error.code === "23505" ? uniqueError("vessel") : { error: error.message };
 
   revalidatePath("/settings/vessels");
-  return { success: true };
+  return { success: true, data };
 }
 
 export async function updateVesselAction(formData: FormData) {

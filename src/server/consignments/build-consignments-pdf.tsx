@@ -113,7 +113,7 @@ const PDF_COLUMNS: PdfCol[] = [
   { header: "Ref No", flex: 1.3, value: (r) => r.ref_no ?? "" },
   { header: "Client", flex: 2.6, value: (r) => r.clients?.name ?? "" },
   { header: "B/L", flex: 1.8, value: (r) => r.bl_number ?? "" },
-  { header: "In Ref", flex: 1, value: (r) => r.in_ref ?? "" },
+
   { header: "Vessel", flex: 1.8, value: (r) => r.vessel_name ?? "" },
   { header: "Arrival", flex: 1.1, value: (r) => r.arrival_date ?? "" },
   { header: "Pipeline Stage", flex: 2.2, value: (r) => currentStageLabel(r) },

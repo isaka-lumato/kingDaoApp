@@ -35,7 +35,7 @@ export {
 type Sb = Awaited<ReturnType<typeof getSupabaseServerClient>>;
 
 /** The exact column set the list grid + exports read. */
-export const CONSIGNMENT_SELECT = `id, ref_no, year, serial_no, tansad_no, bl_number, in_ref, client_id,
+export const CONSIGNMENT_SELECT = `id, ref_no, year, serial_no, tansad_no, bl_number, client_id,
    cargo_count, cargo_type, efd_receipt_no, goods_description, vessel_name,
    arrival_date, amount, release_status, release_date,
    manifest_status, shipping_batch_status, tanesws_status,

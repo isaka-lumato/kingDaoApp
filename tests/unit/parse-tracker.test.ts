@@ -416,20 +416,7 @@ describe("parseTracker — §8.5 cross-field warnings", () => {
     expect(r.warnings.some((w) => w.field === "amount")).toBe(true);
   });
 
-  it("warns when CAR has an in_ref set", () => {
-    const rows: CellValue[][] = [
-      [2026],
-      HEADER,
-      validRow({
-        "Container Type": "CAR",
-        "No. of Cont(s)": 1,
-        AMOUNT: 60_000,
-        "IN REF": "TZ3",
-      }),
-    ];
-    const r = parseTracker(rows);
-    expect(r.warnings.some((w) => w.field === "in_ref")).toBe(true);
-  });
+
 
   it("warns when COIL ships to an ICD other than DP WORLD", () => {
     const rows: CellValue[][] = [

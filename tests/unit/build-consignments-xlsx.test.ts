@@ -40,7 +40,6 @@ function makeRow(over: Partial<ExportRow>): ExportRow {
     year: 2026,
     bl_number: null,
     tansad_no: null,
-    in_ref: null,
     vessel_name: null,
     arrival_date: null,
     cargo_count: null,

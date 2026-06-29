@@ -289,7 +289,7 @@ export async function commitImportAction(formData: FormData): Promise<CommitStat
           vessel_name: c.vessel_name,
           arrival_date: c.arrival_date,
           icd_id,
-          in_ref: c.in_ref,
+
           amount: c.amount,
           remarks: c.remarks,
           manifest_status: c.manifest_status,

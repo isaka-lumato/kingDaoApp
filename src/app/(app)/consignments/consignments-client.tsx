@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import Link from "next/link";
 import { formatTzs } from "@/lib/money";
-import BatchLink from "@/components/batch-link";
+
 import { currentStageLabel } from "@/lib/pipeline";
 import { type SortKey, type SortDir } from "@/lib/consignments-list";
 
@@ -16,7 +16,7 @@ type Row = {
   serial_no: number | null;
   tansad_no: string | null;
   bl_number: string | null;
-  in_ref: string | null;
+
   client_id: string;
   cargo_count: number | null;
   cargo_type: string | null;
@@ -368,7 +368,7 @@ export default function ConsignmentsClient({
                 <SortHeader column="ref_no" label="Ref No" className="text-left" activeSort={filters.sort} activeDir={filters.dir} onSort={onSort} />
                 <th className="text-left px-4 py-2.5 font-medium text-muted-foreground whitespace-nowrap">Client</th>
                 <SortHeader column="bl_number" label="B/L" className="text-left hidden md:table-cell" activeSort={filters.sort} activeDir={filters.dir} onSort={onSort} />
-                <SortHeader column="in_ref" label="In Ref" className="text-left hidden lg:table-cell" activeSort={filters.sort} activeDir={filters.dir} onSort={onSort} />
+
                 <SortHeader column="vessel_name" label="Vessel" className="text-left hidden lg:table-cell" activeSort={filters.sort} activeDir={filters.dir} onSort={onSort} />
                 <SortHeader column="arrival_date" label="Arrival" className="text-left hidden lg:table-cell" activeSort={filters.sort} activeDir={filters.dir} onSort={onSort} />
                 <th className="text-left px-4 py-2.5 font-medium text-muted-foreground whitespace-nowrap">Pipeline Stage</th>
@@ -412,21 +412,7 @@ export default function ConsignmentsClient({
                   <td className="px-4 py-3 text-muted-foreground text-xs hidden md:table-cell font-mono">
                     {row.bl_number ?? "—"}
                   </td>
-                  <td
-                    className="px-4 py-3 text-xs hidden lg:table-cell whitespace-nowrap"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {row.in_ref ? (
-                      <BatchLink
-                        inRef={row.in_ref}
-                        clientId={row.client_id}
-                        year={row.year}
-                      />
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground text-xs hidden lg:table-cell max-w-[120px] truncate">
+                  <td className="px-4 py-3 text-muted-foreground text-xs hidden lg:table-cell font-mono">
                     {row.vessel_name ?? "—"}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground text-xs hidden lg:table-cell whitespace-nowrap">

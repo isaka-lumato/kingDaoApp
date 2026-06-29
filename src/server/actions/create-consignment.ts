@@ -10,29 +10,30 @@ import { formatInTimeZone } from "date-fns-tz";
 import { z } from "zod";
 
 const newConsignmentSchema = z.object({
-  client_id: z.uuid("Please select a client."),
+  client_id: z.string().uuid("Please select a client."),
   bl_number: z
     .string()
-    .max(100, "B/L number is too long (max 100 characters).")
-    .optional()
-    .or(z.literal("")),
+    .trim()
+    .min(1, "Please enter the B/L number.")
+    .max(100, "B/L number is too long (max 100 characters)."),
   tansad_no: z
     .string()
-    .max(100, "TANSAD number is too long (max 100 characters).")
-    .optional()
-    .or(z.literal("")),
+    .trim()
+    .min(1, "Please enter the TANSAD number.")
+    .max(100, "TANSAD number is too long (max 100 characters)."),
   vessel_name: z
     .string({ error: "Please enter the vessel name." })
     .trim()
     .min(1, "Please enter the vessel name.")
     .max(200, "Vessel name is too long (max 200 characters)."),
-  arrival_date: z.string().optional().or(z.literal("")),
+  arrival_date: z
+    .string({ error: "Please enter the arrival date." })
+    .trim()
+    .min(1, "Please enter the arrival date."),
   cargo_count: z.coerce
     .number({ error: "Cargo count must be a number." })
     .int("Cargo count must be a whole number.")
-    .min(1, "Cargo count must be at least 1.")
-    .optional()
-    .or(z.literal("")),
+    .min(1, "Cargo count must be at least 1."),
   cargo_type: z.enum(CARGO_TYPES, {
     error: "Please select a cargo type.",
   }),
@@ -46,7 +47,7 @@ const newConsignmentSchema = z.object({
     .max(1000, "Goods description is too long (max 1000 characters).")
     .optional()
     .or(z.literal("")),
-  icd_id: z.uuid("Please choose a valid ICD.").optional().or(z.literal("")),
+  icd_id: z.string().uuid("Please select a valid ICD."),
   amount: z.coerce
     .number({ error: "Amount must be a number." })
     .int("Amount must be a whole number.")

@@ -1,23 +1,18 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
+
 import { notFound } from "next/navigation";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { perfTimer } from "@/lib/perf";
 import ConsignmentDetail from "./consignment-detail";
-import BatchPanel from "../_batch-panel/batch-panel";
-import BatchPanelContent from "../_batch-panel/batch-panel-content";
 
 export const metadata: Metadata = { title: "Consignment — KDL Tracker" };
 
 export default async function ConsignmentPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ batch?: string; bc?: string; by?: string }>;
 }) {
   const { id } = await params;
-  const sp = await searchParams;
 
   // Validate UUID format to avoid passing junk to the DB.
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -170,41 +165,16 @@ export default async function ConsignmentPage({
     }
   }
 
-  if (consignment.guta_pair_id) t.mark("guta-pair");
-
-  const batchInRef = sp.batch?.trim();
-  const batchClientId = sp.bc?.trim();
-  const batchYear = sp.by ? parseInt(sp.by, 10) : NaN;
-  const showBatch =
-    !!batchInRef && !!batchClientId && Number.isFinite(batchYear);
-
   t.end();
 
   return (
-    <>
-      <ConsignmentDetail
-        consignment={{ ...consignment, clients: clientData, icds: icdData }}
-        auditLog={auditLog ?? []}
-        linkedEfds={linkedEfds}
-        gutaPair={gutaPair}
-        attachments={attachments ?? []}
-        folders={folders ?? []}
-      />
-      {showBatch && (
-        <BatchPanel inRef={batchInRef!}>
-          <Suspense
-            fallback={
-              <div className="text-sm text-muted-foreground">Loading batch…</div>
-            }
-          >
-            <BatchPanelContent
-              inRef={batchInRef!}
-              clientId={batchClientId!}
-              year={batchYear}
-            />
-          </Suspense>
-        </BatchPanel>
-      )}
-    </>
+    <ConsignmentDetail
+      consignment={{ ...consignment, clients: clientData, icds: icdData }}
+      auditLog={auditLog ?? []}
+      linkedEfds={linkedEfds}
+      gutaPair={gutaPair}
+      attachments={attachments ?? []}
+      folders={folders ?? []}
+    />
   );
 }

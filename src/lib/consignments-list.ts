@@ -20,7 +20,7 @@ export const SORTABLE_COLUMNS = {
   amount: "amount",
   vessel_name: "vessel_name",
   bl_number: "bl_number",
-  in_ref: "in_ref",
+
 } as const;
 
 export type SortKey = keyof typeof SORTABLE_COLUMNS;
@@ -43,7 +43,7 @@ export const SEARCH_COLUMNS = [
   "ref_no",
   "tansad_no",
   "bl_number",
-  "in_ref",
+
   "vessel_name",
   "goods_description",
 ] as const;

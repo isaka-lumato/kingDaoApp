@@ -18,7 +18,7 @@ export type ExportRow = Record<StageField, string> & {
   year: number | null;
   bl_number: string | null;
   tansad_no: string | null;
-  in_ref: string | null;
+
   efd_receipt_no: string | null;
   vessel_name: string | null;
   arrival_date: string | null;
@@ -91,14 +91,7 @@ export const EXPORT_COLUMNS: ExportColumn[] = [
     raw: (r) => r.tansad_no ?? "",
     text: (r) => r.tansad_no ?? "",
   },
-  {
-    header: "In Ref",
-    kind: "text",
-    width: 12,
-    flex: 1.1,
-    raw: (r) => r.in_ref ?? "",
-    text: (r) => r.in_ref ?? "",
-  },
+
   {
     header: "Vessel",
     kind: "text",

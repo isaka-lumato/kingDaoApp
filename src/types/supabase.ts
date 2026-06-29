@@ -243,7 +243,7 @@ export type Database = {
           guta_pair_id: string | null
           icd_id: string | null
           id: string
-          in_ref: string | null
+
           inspection_file_status: Database["public"]["Enums"]["inspection_file_status"]
           is_failed: boolean
           is_refund_pending: boolean
@@ -284,7 +284,7 @@ export type Database = {
           guta_pair_id?: string | null
           icd_id?: string | null
           id?: string
-          in_ref?: string | null
+
           inspection_file_status?: Database["public"]["Enums"]["inspection_file_status"]
           is_failed?: boolean
           is_refund_pending?: boolean
@@ -325,7 +325,7 @@ export type Database = {
           guta_pair_id?: string | null
           icd_id?: string | null
           id?: string
-          in_ref?: string | null
+
           inspection_file_status?: Database["public"]["Enums"]["inspection_file_status"]
           is_failed?: boolean
           is_refund_pending?: boolean
@@ -922,44 +922,6 @@ export type Database = {
         }
         Relationships: []
       }
-      v_in_ref_batches: {
-        Row: {
-          all_released: boolean | null
-          client_id: string | null
-          client_name: string | null
-          consignment_count: number | null
-          earliest_arrival: string | null
-          efd_code: string | null
-          in_ref: string | null
-          latest_arrival: string | null
-          total_amount: number | null
-          total_containers: number | null
-          year: number | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "consignments_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "consignments_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "v_client_volume"
-            referencedColumns: ["client_id"]
-          },
-          {
-            foreignKeyName: "consignments_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "v_turnaround_by_client"
-            referencedColumns: ["client_id"]
-          },
-        ]
-      }
       v_pending_refunds: {
         Row: {
           amount: number | null
@@ -1066,7 +1028,7 @@ export type Database = {
           guta_pair_id: string | null
           icd_id: string | null
           id: string
-          in_ref: string | null
+
           inspection_file_status: Database["public"]["Enums"]["inspection_file_status"]
           is_failed: boolean
           is_refund_pending: boolean
@@ -1143,7 +1105,7 @@ export type Database = {
           guta_pair_id: string | null
           icd_id: string | null
           id: string
-          in_ref: string | null
+
           inspection_file_status: Database["public"]["Enums"]["inspection_file_status"]
           is_failed: boolean
           is_refund_pending: boolean

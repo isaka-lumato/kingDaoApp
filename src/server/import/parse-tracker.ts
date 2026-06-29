@@ -40,7 +40,7 @@ export type ParsedConsignment = {
   vessel_name: string | null;
   arrival_date: string | null; // ISO yyyy-mm-dd
   icd_name: string | null;
-  in_ref: string | null;
+
   amount: number | null;
   remarks: string | null;
 
@@ -105,7 +105,7 @@ type LogicalField =
   | "vessel_name"
   | "arrival_date"
   | "icd_name"
-  | "in_ref"
+
   | "amount"
   | "remarks"
   | "manifest_status"
@@ -147,7 +147,7 @@ const HEADER_ALIASES: Record<string, LogicalField> = {
   "arr date": "arrival_date",
   "arrival date": "arrival_date",
   icd: "icd_name",
-  "in ref": "in_ref",
+
   amount: "amount",
   remarks: "remarks",
   // Pipeline
@@ -420,7 +420,7 @@ export function parseTracker(rows: CellValue[][]): ParseResult {
       vessel_name: nullableString(cell("vessel_name")),
       arrival_date,
       icd_name,
-      in_ref: nullableString(cell("in_ref")),
+
       amount,
       remarks: nullableString(cell("remarks")),
       manifest_status,
@@ -461,15 +461,7 @@ export function parseTracker(rows: CellValue[][]): ParseResult {
           message: `cargo_type=COIL typically ships to DP WORLD; got "${icd_name}".`,
         });
       }
-      // §8.5: CAR + in_ref is contradictory.
-      if (cargo_type === "CAR" && parsed.in_ref) {
-        warnings.push({
-          rowIndex: i,
-          ref_no,
-          field: "in_ref",
-          message: `cargo_type=CAR should have no in_ref; got "${parsed.in_ref}".`,
-        });
-      }
+
     }
 
     // §8.19: tanesws=Done but tansad_no missing.

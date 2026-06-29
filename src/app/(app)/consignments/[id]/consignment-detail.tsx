@@ -6,7 +6,7 @@ import { PIPELINE_STAGES, isStageComplete, resolveActiveStage, type StageField }
 import { formatTzs } from "@/lib/money";
 import { cargoLabel } from "@/lib/cargo";
 import { usePermissions } from "@/hooks/use-permissions";
-import BatchLink from "@/components/batch-link";
+
 import StageActionShell from "@/components/stage-action-shell";
 import AttachmentsTab from "./_attachments/attachments-tab";
 import type { AttachmentRow } from "@/server/actions/attachment-actions";
@@ -26,7 +26,7 @@ type Consignment = {
   serial_no: number | null;
   tansad_no: string | null;
   bl_number: string | null;
-  in_ref: string | null;
+
   client_id: string | null;
   cargo_count: number | null;
   cargo_type: string | null;
@@ -351,18 +351,7 @@ export default function ConsignmentDetail({ consignment, auditLog, gutaPair, att
               <Field label="Serial No" value={consignment.serial_no} />
               <Field label="B/L Number" value={consignment.bl_number} />
               <Field label="TANSAD No" value={consignment.tansad_no} />
-              <Field
-                label="In Ref"
-                value={
-                  consignment.in_ref && consignment.client_id ? (
-                    <BatchLink
-                      inRef={consignment.in_ref}
-                      clientId={consignment.client_id}
-                      year={consignment.year}
-                    />
-                  ) : null
-                }
-              />
+
               <Field label="ICD" value={icd ? `${icd.name}${icd.location ? ` (${icd.location})` : ""}` : null} />
               <Field
                 label="Goods"

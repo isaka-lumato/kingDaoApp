@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
+
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { perfTimer } from "@/lib/perf";
 import {
@@ -8,8 +8,7 @@ import {
   buildListQuery,
 } from "@/server/consignments/list-query";
 import ConsignmentsClient from "./consignments-client";
-import BatchPanel from "./_batch-panel/batch-panel";
-import BatchPanelContent from "./_batch-panel/batch-panel-content";
+
 
 export const metadata: Metadata = { title: "Consignments — KDL Tracker" };
 
@@ -24,9 +23,6 @@ export default async function ConsignmentsPage({
     sort?: string;
     dir?: string;
     page?: string;
-    batch?: string;
-    bc?: string;
-    by?: string;
   }>;
 }) {
   const params = await searchParams;
@@ -78,48 +74,26 @@ export default async function ConsignmentsPage({
     clients: Array.isArray(row.clients) ? row.clients[0] ?? null : row.clients,
   }));
 
-  const batchInRef = params.batch?.trim();
-  const batchClientId = params.bc?.trim();
-  const batchYear = params.by ? parseInt(params.by, 10) : NaN;
-  const showBatch =
-    !!batchInRef && !!batchClientId && Number.isFinite(batchYear);
 
   t.end({ rows: (data ?? []).length, total: count ?? 0, stageFilter: listParams.stage ?? "none" });
 
   return (
-    <>
-      <ConsignmentsClient
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        rows={normalizedRows as any}
-        total={count ?? 0}
-        page={page}
-        pageSize={pageSize}
-        year={year}
-        clients={clients ?? []}
-        filters={{
-          client: listParams.client,
-          stage: listParams.stage,
-          q: listParams.q,
-          sort: listParams.sort,
-          dir: listParams.dir,
-        }}
-        fetchError={error?.message}
-      />
-      {showBatch && (
-        <BatchPanel inRef={batchInRef!}>
-          <Suspense
-            fallback={
-              <div className="text-sm text-muted-foreground">Loading batch…</div>
-            }
-          >
-            <BatchPanelContent
-              inRef={batchInRef!}
-              clientId={batchClientId!}
-              year={batchYear}
-            />
-          </Suspense>
-        </BatchPanel>
-      )}
-    </>
+    <ConsignmentsClient
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      rows={normalizedRows as any}
+      total={count ?? 0}
+      page={page}
+      pageSize={pageSize}
+      year={year}
+      clients={clients ?? []}
+      filters={{
+        client: listParams.client,
+        stage: listParams.stage,
+        q: listParams.q,
+        sort: listParams.sort,
+        dir: listParams.dir,
+      }}
+      fetchError={error?.message}
+    />
   );
 }
