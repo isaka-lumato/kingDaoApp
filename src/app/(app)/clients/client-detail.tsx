@@ -12,7 +12,7 @@ export type ClientConsignmentRow = {
   serial_no: number | null;
   vessel_name: string | null;
   arrival_date: string | null;
-  container_count: number | null;
+  cargo_count: number | null;
   amount: number | null;
   release_status: string;
   release_date: string | null;

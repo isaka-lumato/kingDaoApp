@@ -3,6 +3,7 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import Link from "next/link";
+import { cargoLabel } from "@/lib/cargo";
 import type { KanbanConsignment } from "@/lib/pipeline";
 
 type Props = {
@@ -51,8 +52,8 @@ export default function KanbanCard({ card, isDragging = false, canDrag = true, o
   // users who can actually move cards; the board + DB enforce the same.
   const canRelease =
     canDrag && !!onRelease && card.active_stage === "release_status";
-  const containerLabel = card.container_count
-    ? `${card.container_count} ${card.container_type ?? ""}`.trim()
+  const cargoMeta = card.cargo_count
+    ? `${card.cargo_count} ${cargoLabel(card.cargo_type)}`.trim()
     : null;
 
   return (
@@ -111,8 +112,8 @@ export default function KanbanCard({ card, isDragging = false, canDrag = true, o
               ⚓ {card.vessel_name}
             </span>
           )}
-          {containerLabel && (
-            <span>📦 {containerLabel}</span>
+          {cargoMeta && (
+            <span>{cargoMeta}</span>
           )}
         </div>
         {card.arrival_date && (

@@ -130,8 +130,8 @@ export default async function ConsignmentPage({
       id: string;
       ref_no: string;
       bl_number: string | null;
-      container_count: number | null;
-      container_type: string | null;
+      cargo_count: number | null;
+      cargo_type: string | null;
       amount: number | null;
       release_status: string;
       release_date: string | null;
@@ -154,7 +154,7 @@ export default async function ConsignmentPage({
       const { data: sibling } = await supabase
         .from("consignments")
         .select(
-          "id, ref_no, bl_number, container_count, container_type, amount, release_status, release_date, goods_description"
+          "id, ref_no, bl_number, cargo_count, cargo_type, amount, release_status, release_date, goods_description"
         )
         .eq("id", siblingId)
         .is("deleted_at", null)

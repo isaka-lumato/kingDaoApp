@@ -1126,3 +1126,38 @@ Final design — **single `/clients` route, selection driven by `?c=<id>`** (the
 5. **Backfill collapse rule.** If any existing user has multiple roles when the migration runs, keep the highest-precedence assignment: `admin`, then `operator`, then `viewer`, then the oldest custom assignment; delete the rest.
 
 **Trade-off.** This removes role-composition flexibility, but the permission matrix already supports custom roles for special cases. Single-role assignment makes audits, support, and admin mental models simpler.
+
+---
+
+## D-059 - Rename container fields to cargo fields
+
+**Date:** 2026-06-29
+**Status:** Active. User-requested, not a tracked task.
+
+**Context.** The tracker clears more than shipping containers: cars, machinery, loose cargo, bulk cargo, and coils all flow through the same consignment pipeline. The old `container_type` / `container_count` labels were too narrow and caused staff-facing wording to be misleading.
+
+**Decision.**
+1. Rename the database enum `container_type` to `cargo_type`.
+2. Rename `consignments.container_type` to `cargo_type`.
+3. Rename `consignments.container_count` to `cargo_count`.
+4. Update app code, import/export code, permissions UI, and generated types to use the cargo names.
+5. Keep report/view output names such as `total_containers` for now, because those are aggregate report labels and not the operational row field names.
+
+**Trade-off.** Historical migration files and older status text still mention container names, because migrations are append-only and the PRD is frozen. The live schema and app code use cargo names.
+
+---
+
+## D-060 - Cargo-type expansion and EFD receipt number
+
+**Date:** 2026-06-29
+**Status:** Active. User-requested, not a tracked task.
+
+**Context.** Alongside the cargo rename, staff need to classify non-container cargo and capture a lightweight TRA EFD receipt number directly on a consignment.
+
+**Decision.**
+1. Add cargo type enum values: `MACHINERY_VEHICLE`, `LOOSE`, and `BULK`.
+2. Keep the existing values `40FT`, `20FT`, `CAR`, and `COIL`.
+3. Add nullable `consignments.efd_receipt_no text`.
+4. Operators may write `efd_receipt_no`; viewers read it only. The migration updates `role_column_permissions` so the DB column-write guard keeps matching live column names.
+
+**Trade-off.** `efd_receipt_no` is a simple per-consignment free-text field and does not replace the richer `efd_records` many-to-many system.

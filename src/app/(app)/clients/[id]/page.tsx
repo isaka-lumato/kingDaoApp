@@ -74,7 +74,7 @@ async function fetchClientDetail(
       .from("consignments")
       .select(
         `id, ref_no, year, serial_no, vessel_name, arrival_date,
-         container_count, amount, release_status, release_date,
+         cargo_count, amount, release_status, release_date,
          manifest_status, shipping_batch_status, tanesws_status,
          assessment_status, tbs_loading_status, tbs_debit_status,
          manifest_comp_status, duty_status, inspection_file_status`,
@@ -104,7 +104,7 @@ async function fetchClientDetail(
   }
 
   const totalContainers = rows.reduce(
-    (sum, r) => sum + (r.container_count ?? 0),
+    (sum, r) => sum + (r.cargo_count ?? 0),
     0,
   );
 

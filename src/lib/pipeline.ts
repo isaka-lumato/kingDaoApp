@@ -26,8 +26,8 @@ export type KanbanConsignment = {
   goods_description: string | null;
   vessel_name: string | null;
   arrival_date: string | null;
-  container_count: number | null;
-  container_type: string | null;
+  cargo_count: number | null;
+  cargo_type: string | null;
   amount: number | null;
   client_name: string;
   manifest_status: string;

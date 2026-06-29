@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 // import { getServerPermissions } from "@/lib/permissions"; // EFD UI temporarily hidden
+import { cargoLabel } from "@/lib/cargo";
 import { formatTzs } from "@/lib/money";
 
 type Props = {
@@ -59,7 +60,7 @@ export default async function BatchPanelContent({ inRef, clientId, year }: Props
     supabase
       .from("consignments")
       .select(
-        `id, ref_no, year, bl_number, container_count, container_type,
+        `id, ref_no, year, bl_number, cargo_count, cargo_type,
          amount, release_status,
          manifest_status, shipping_batch_status, tanesws_status,
          assessment_status, tbs_loading_status, tbs_debit_status,
@@ -155,7 +156,7 @@ export default async function BatchPanelContent({ inRef, clientId, year }: Props
             >
               <span className="font-mono font-bold text-foreground">{c.ref_no}</span>
               <span className="text-muted-foreground">
-                {c.container_count ?? "?"}×{c.container_type ?? "?"}
+                {c.cargo_count ?? "?"}×{cargoLabel(c.cargo_type) || "?"}
               </span>
               <span className="ml-auto text-muted-foreground font-mono">
                 {c.amount != null ? formatTzs(c.amount) : "—"}

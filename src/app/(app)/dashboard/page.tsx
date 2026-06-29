@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { cargoLabel } from "@/lib/cargo";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { formatTzs, formatTzsCompact } from "@/lib/money";
 import { formatDate, formatRelative } from "@/lib/dates";
@@ -27,8 +28,8 @@ type ArrivalRow = {
   year: number;
   vessel_name: string | null;
   arrival_date: string;
-  container_count: number | null;
-  container_type: string | null;
+  cargo_count: number | null;
+  cargo_type: string | null;
   clients: { name: string } | { name: string }[] | null;
 };
 
@@ -160,7 +161,7 @@ export default async function DashboardPage() {
       supabase
         .from("consignments")
         .select(
-          "id, ref_no, year, vessel_name, arrival_date, container_count, container_type, clients(name)",
+          "id, ref_no, year, vessel_name, arrival_date, cargo_count, cargo_type, clients(name)",
         )
         .is("deleted_at", null)
         .gte("arrival_date", weekStartISO)
@@ -396,7 +397,7 @@ export default async function DashboardPage() {
                       </p>
                       <p className="truncate text-[11px] text-muted-foreground">
                         {a.vessel_name ?? "vessel TBC"} ·{" "}
-                        {a.container_count ?? "?"} × {a.container_type ?? "—"}
+                        {a.cargo_count ?? "?"} × {cargoLabel(a.cargo_type) || "—"}
                       </p>
                     </div>
                     <span className="shrink-0 font-mono text-xs text-muted-foreground">

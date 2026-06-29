@@ -15,7 +15,6 @@ import { isCargoType, type CargoType } from "@/lib/cargo";
 
 export type CellValue = string | number | boolean | Date | null | undefined;
 
-type ContainerType = CargoType;
 type ManifestStatus = Database["public"]["Enums"]["manifest_status"];
 type ShippingBatchStatus = Database["public"]["Enums"]["shipping_batch_status"];
 type TaneswsStatus = Database["public"]["Enums"]["tanesws_status"];
@@ -36,7 +35,7 @@ export type ParsedConsignment = {
   client_name: string | null;
   bl_number: string | null;
   cargo_count: number | null;
-  cargo_type: ContainerType | null;
+  cargo_type: CargoType | null;
   goods_description: string | null;
   vessel_name: string | null;
   arrival_date: string | null; // ISO yyyy-mm-dd
@@ -442,9 +441,9 @@ export function parseTracker(rows: CellValue[][]): ParseResult {
 
     // Cross-field soft validations (warnings only, row still imports).
 
-    // §8.5: amount range for container_type + count.
-    if (amount != null && container_type) {
-      const rangeMsg = checkAmountRange(container_type, container_count, amount);
+    // §8.5: amount range for cargo_type + count.
+    if (amount != null && cargo_type) {
+      const rangeMsg = checkAmountRange(cargo_type, cargo_count, amount);
       if (rangeMsg) {
         warnings.push({
           rowIndex: i,
@@ -454,21 +453,21 @@ export function parseTracker(rows: CellValue[][]): ParseResult {
         });
       }
       // §8.5: COIL must go to DP WORLD.
-      if (container_type === "COIL" && icd_name && !/dp\s*world/i.test(icd_name)) {
+      if (cargo_type === "COIL" && icd_name && !/dp\s*world/i.test(icd_name)) {
         warnings.push({
           rowIndex: i,
           ref_no,
           field: "icd_name",
-          message: `container_type=COIL typically ships to DP WORLD; got "${icd_name}".`,
+          message: `cargo_type=COIL typically ships to DP WORLD; got "${icd_name}".`,
         });
       }
       // §8.5: CAR + in_ref is contradictory.
-      if (container_type === "CAR" && parsed.in_ref) {
+      if (cargo_type === "CAR" && parsed.in_ref) {
         warnings.push({
           rowIndex: i,
           ref_no,
           field: "in_ref",
-          message: `container_type=CAR should have no in_ref; got "${parsed.in_ref}".`,
+          message: `cargo_type=CAR should have no in_ref; got "${parsed.in_ref}".`,
         });
       }
     }
@@ -556,14 +555,14 @@ function tryBuildHeaderMap(
       hits++;
     }
   }
-  // Strict container-type fallback (D-047): in the real tracker the container
+  // Strict cargo-type fallback (D-047): in the real tracker the cargo
   // type column has NO header — its header cell is merged into "No. of
-  // Cont(s)". So if container_type didn't map but container_count did, use the
+  // Cont(s)". So if cargo_type didn't map but cargo_count did, use the
   // column immediately to the right of the count column. If that column turns
   // out to hold non-enum values, those rows error individually via the
-  // per-row container-type guard — no silent mis-mapping.
-  if (map.container_type == null && map.container_count != null) {
-    map.container_type = map.container_count + 1;
+  // per-row cargo-type guard — no silent mis-mapping.
+  if (map.cargo_type == null && map.cargo_count != null) {
+    map.cargo_type = map.cargo_count + 1;
   }
   // Heuristic: a real header row should match at least the required fields
   // plus a handful more. Anything else is a noise row.
@@ -678,10 +677,6 @@ function parseEfdCodes(v: CellValue): string[] {
   return out;
 }
 
-function isContainerType(v: string): v is ContainerType {
-  return v === "40FT" || v === "20FT" || v === "CAR" || v === "COIL";
-}
-
 function coerceEnum<T extends string>(
   v: CellValue,
   allowed: readonly T[],
@@ -738,10 +733,10 @@ function normaliseRefNo(
   };
 }
 
-// §8.5 — soft validation of amount range per container_type + count.
+// §8.5 — soft validation of amount range per cargo_type + count.
 // Returns a warning message if outside the documented bands, else null.
 function checkAmountRange(
-  type: ContainerType,
+  type: CargoType,
   count: number | null,
   amount: number
 ): string | null {

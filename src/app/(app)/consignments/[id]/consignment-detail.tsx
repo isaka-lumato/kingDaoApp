@@ -4,6 +4,7 @@ import { useState, useTransition, useActionState } from "react";
 import Link from "next/link";
 import { PIPELINE_STAGES, isStageComplete, resolveActiveStage, type StageField } from "@/lib/pipeline";
 import { formatTzs } from "@/lib/money";
+import { cargoLabel } from "@/lib/cargo";
 import { usePermissions } from "@/hooks/use-permissions";
 import BatchLink from "@/components/batch-link";
 import StageActionShell from "@/components/stage-action-shell";
@@ -27,8 +28,9 @@ type Consignment = {
   bl_number: string | null;
   in_ref: string | null;
   client_id: string | null;
-  container_count: number | null;
-  container_type: string | null;
+  cargo_count: number | null;
+  cargo_type: string | null;
+  efd_receipt_no: string | null;
   goods_description: string | null;
   vessel_name: string | null;
   arrival_date: string | null;
@@ -113,8 +115,8 @@ type GutaPair = {
     id: string;
     ref_no: string;
     bl_number: string | null;
-    container_count: number | null;
-    container_type: string | null;
+    cargo_count: number | null;
+    cargo_type: string | null;
     amount: number | null;
     release_status: string;
     release_date: string | null;
@@ -397,13 +399,14 @@ export default function ConsignmentDetail({ consignment, auditLog, gutaPair, att
                 }
               />
               <Field
-                label="Container"
+                label="Cargo"
                 value={
-                  consignment.container_count
-                    ? `${consignment.container_count} × ${consignment.container_type ?? "?"}`
+                  consignment.cargo_count
+                    ? `${consignment.cargo_count} × ${cargoLabel(consignment.cargo_type) || "?"}`
                     : null
                 }
               />
+              <Field label="EFD receipt no" value={consignment.efd_receipt_no} />
               <Field
                 label="Release date"
                 value={
@@ -481,10 +484,10 @@ export default function ConsignmentDetail({ consignment, auditLog, gutaPair, att
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3">
                     <Field label="B/L" value={gutaPair.sibling.bl_number} />
                     <Field
-                      label="Container"
+                      label="Cargo"
                       value={
-                        gutaPair.sibling.container_count
-                          ? `${gutaPair.sibling.container_count} × ${gutaPair.sibling.container_type ?? "?"}`
+                        gutaPair.sibling.cargo_count
+                          ? `${gutaPair.sibling.cargo_count} × ${cargoLabel(gutaPair.sibling.cargo_type) || "?"}`
                           : null
                       }
                     />

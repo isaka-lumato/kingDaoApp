@@ -245,8 +245,8 @@ function PreviewPanel({
                     <td className="py-1.5 pr-3 font-mono">{c.ref_no}</td>
                     <td className="py-1.5 pr-3">{c.client_name ?? "—"}</td>
                     <td className="py-1.5 pr-3">{c.bl_number ?? "—"}</td>
-                    <td className="py-1.5 pr-3">{c.container_type ?? "—"}</td>
-                    <td className="py-1.5 pr-3">{c.container_count ?? "—"}</td>
+                    <td className="py-1.5 pr-3">{c.cargo_type ?? "—"}</td>
+                    <td className="py-1.5 pr-3">{c.cargo_count ?? "—"}</td>
                     <td className="py-1.5 pr-3">{c.amount?.toLocaleString() ?? "—"}</td>
                     <td className="py-1.5 pr-3">{c.icd_name ?? "—"}</td>
                     <td className="py-1.5 pr-3">{c.efd_codes.join(", ") || "—"}</td>

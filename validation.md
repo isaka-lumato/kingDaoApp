@@ -44,8 +44,8 @@ These are the PRD §8 invariants. The DB must reject violations, not just the UI
 - [ ] `duty_status != 'Paid'` → `inspection_file_status = 'Done'` rejected (allowed only if `'SHARED'`).
 - [ ] `inspection_file_status not in ('Done','SHARED')` → `release_status = 'Released'` rejected.
 - [ ] `release_status = 'Released'` with NULL `release_date` → function defaults `release_date = current_date`.
-- [ ] `container_type = 'CAR'` → `efd_code` auto-set to `'PRIVATE'`; `in_ref` prevented.
-- [ ] `container_type = 'COIL'` & `icd != 'DP WORLD'` → soft warning written to `import_warnings` (or surfaced in UI).
+- [ ] `cargo_type = 'CAR'` -> `efd_code` auto-set to `'PRIVATE'`; `in_ref` prevented.
+- [ ] `cargo_type = 'COIL'` & `icd != 'DP WORLD'` -> soft warning written to `import_warnings` (or surfaced in UI).
 - [ ] `tbs_debit_status = 'SHARED'` → `shared_primary_ref` required (foreign-keyed to a real consignment).
 - [ ] Setting `efd_code` on a consignment with `in_ref_batch_id` propagates to all batch siblings (via the batch table, not row duplication).
 - [ ] `tanesws_status = 'Done'` with NULL `tansad_no` → warning surfaced (not blocked).
@@ -247,7 +247,7 @@ Pure function, fully unit-tested. Re-run after any change to `src/server/import/
 
 - [ ] `pnpm test tests/unit/parse-tracker.test.ts` — all 28 cases green.
 - [ ] No SheetJS / `xlsx` import in `parse-tracker.ts` — `grep -n xlsx src/server/import/parse-tracker.ts` is empty (D-035: parser stays pure; SheetJS lives in T-061/T-062 adapters).
-- [ ] Header alias map covers every PRD §5 "Source Column" name; `REQUIRED_HEADERS` is the smallest set that must be present (currently `ref_no` + `container_type`).
+- [ ] Header alias map covers every PRD §5 "Source Column" name; `REQUIRED_HEADERS` is the smallest set that must be present (currently `ref_no` + `cargo_type`).
 - [ ] When the source tracker layout changes (new columns, renamed columns), update `HEADER_ALIASES`, add a Vitest case proving the new header maps to the right `LogicalField`, and only then ship.
 - [ ] `errors[]` represents rows excluded from import; `warnings[]` represents rows included with soft issues (D-036). Don't merge these into one bucket without bumping the decision.
 - [ ] Cross-field rules (§8.5, §8.19) are warnings only — never block import based on amount range or TANSAD-missing.

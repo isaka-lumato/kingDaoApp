@@ -1,3 +1,4 @@
+import { cargoLabel } from "@/lib/cargo";
 import { formatTzs } from "@/lib/money";
 import { currentStageLabel } from "@/lib/pipeline";
 import type { StageField } from "@/lib/pipeline";
@@ -18,10 +19,11 @@ export type ExportRow = Record<StageField, string> & {
   bl_number: string | null;
   tansad_no: string | null;
   in_ref: string | null;
+  efd_receipt_no: string | null;
   vessel_name: string | null;
   arrival_date: string | null;
-  container_count: number | null;
-  container_type: string | null;
+  cargo_count: number | null;
+  cargo_type: string | null;
   goods_description: string | null;
   amount: number | null;
   release_status: string;
@@ -114,16 +116,16 @@ export const EXPORT_COLUMNS: ExportColumn[] = [
     text: (r) => r.arrival_date ?? "",
   },
   {
-    header: "Cont.",
+    header: "Cargo",
     kind: "text",
     width: 12,
     flex: 1,
     raw: (r) =>
-      [r.container_count != null ? String(r.container_count) : "", r.container_type ?? ""]
+      [r.cargo_count != null ? String(r.cargo_count) : "", cargoLabel(r.cargo_type)]
         .filter(Boolean)
         .join(" × "),
     text: (r) =>
-      [r.container_count != null ? String(r.container_count) : "", r.container_type ?? ""]
+      [r.cargo_count != null ? String(r.cargo_count) : "", cargoLabel(r.cargo_type)]
         .filter(Boolean)
         .join(" × "),
   },

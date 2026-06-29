@@ -18,8 +18,9 @@ type Row = {
   bl_number: string | null;
   in_ref: string | null;
   client_id: string;
-  container_count: number | null;
-  container_type: string | null;
+  cargo_count: number | null;
+  cargo_type: string | null;
+  efd_receipt_no: string | null;
   goods_description: string | null;
   vessel_name: string | null;
   arrival_date: string | null;
