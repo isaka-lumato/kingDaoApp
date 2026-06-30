@@ -68,7 +68,7 @@ describe("buildReportPdf · renders every report kind to a valid PDF", () => {
         {
           client_id: "c1",
           client_name: "Acme Co",
-          sub_label: null,
+          display_name: null,
           job_count: 4,
           total_containers: 12,
           total_revenue: 2_000_000,
@@ -88,7 +88,7 @@ describe("buildReportPdf · renders every report kind to a valid PDF", () => {
         {
           client_id: "c1",
           client_name: "Acme Co",
-          sub_label: "subsidiary",
+          display_name: "subsidiary",
           released_count: 5,
           avg_days: 12,
           min_days: 6,

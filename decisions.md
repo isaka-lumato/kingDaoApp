@@ -1025,3 +1025,157 @@ Final design — **single `/clients` route, selection driven by `?c=<id>`** (the
 4. **Errors render per-field, not as one banner.** The action returns `{ error, fieldErrors }`; the form shows each message under its input. Raw DB errors are translated via `friendlyConsignmentDbError()` (`src/lib/db-errors.ts`), shared by create + edit actions.
 
 **Trade-off.** Requiring vessel name means a consignment can't be logged before the vessel is known; accepted per user. The B/L pre-check is a non-atomic read-then-insert (a race could still let the unique index catch a duplicate), which is why the index remains the source of truth and its violation is translated too.
+
+---
+
+## D-055 — Folder-based file system per consignment (evolves the flat attachments feature)
+
+**Date:** 2026-06-22
+**Status:** Active. Builds on the original attachments feature (private bucket `consignment-attachments`, signed-URL downloads, RLS, soft-delete, audit triggers).
+
+**Context.** The original attachments feature stored a flat list of files per consignment (images + PDF only). Per user request, staff want a "well-organised file system" — folders and subfolders, free-form, into which they can drop PDFs, Word docs, images, text files, and (since the whole product replaces an Excel tracker) spreadsheets. None of this is in the PRD, so it is a decision. Note: the original attachments migration's header comment cites "T-089 / D-054", but D-054 is actually the new-consignment-fields decision and no T-089 existed in `tasks.md` — that feature shipped without a logged decision. This entry is the canonical record going forward, and the folder work is tracked as T-089.
+
+**Decision.**
+
+1. **Free-form folder tree, modeled as a table — not a Storage path string.** New table `consignment_folders (id, consignment_id, parent_folder_id self-ref nullable, name, uploaded_by, created_at, updated_at, deleted_at)`. `parent_folder_id IS NULL` = a top-level folder of that consignment. Arbitrary nesting allowed. Chosen over a `folder_path text` column because free-form nesting makes rename (one-row update vs. multi-row path rewrite) and empty-folder creation trivial, and the table gets RLS + audit + soft-delete like every other table (principles #2/#4/#5). Cost: one recursive/iterative query to build the tree — negligible at ~400 consignments/yr.
+
+2. **`attachments` gains a nullable `folder_id` → `consignment_folders(id)`.** `NULL` = the consignment's root. Existing rows stay valid with no backfill. The Storage object key stays flat (`consignments/<consignmentId>/<uuid>-<filename>`) — the tree lives entirely in the DB; Storage "folders" are just key prefixes and provide no audit/permission/realtime value.
+
+3. **Permissions mirror the existing attachments model (user's choice).** Folder + file create/upload = operator or admin; soft-delete + rename + move = admin only. Same RLS posture as the `attachments` table and `storage.objects` policies already in place. No new role machinery (principle #8).
+
+4. **Deleting a folder soft-deletes its entire subtree** (descendant folders + their attachments) in one server action, recursively. Soft-delete only (principle #5); bytes are best-effort removed from Storage after the rows are marked deleted, same as single-file delete.
+
+5. **Widened file types (user's choice).** Add to the bucket `allowed_mime_types`, the zod enum, and the `<input accept>`: `text/plain` (.txt), `application/msword` (.doc), `application/vnd.openxmlformats-officedocument.wordprocessingml.document` (.docx), `application/vnd.ms-excel` (.xls), `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` (.xlsx). 10 MB cap unchanged. Widening the bucket's `allowed_mime_types` is a schema change → done in a migration, never Studio (D-007/D-019).
+
+6. **UI replaces the flat tab in place (user's choice).** The existing Attachments tab becomes a folder browser: breadcrumb + folder grid on top, files below, upload targets the current folder, "New folder" for operator+admin, rename/delete/move for admin. Word and Excel files download via signed URL rather than preview inline — browsers can't render them in a tab; expected behaviour, not a bug.
+
+**Trade-offs.**
+- A unique constraint on `(consignment_id, parent_folder_id, name) WHERE deleted_at IS NULL` blocks duplicate sibling folder names; a soft-deleted folder's name is freed for reuse. Accepted.
+- `.doc/.docx/.xls/.xlsx` don't preview inline — they download. Accepted; previewing Office formats in-browser would require a converter we don't want.
+- MIME types are spoofable client-side, so the bucket's `allowed_mime_types` (checked by Storage against the real upload) remains the un-bypassable guard; the zod enum + server re-check are defense in depth, consistent with the original feature.
+
+---
+
+## D-056 — Consignments list: multi-field search, allowlisted column sort, all-rows XLSX/PDF export
+
+**Date:** 2026-06-23
+**Status:** Active. User-requested, not a tracked task.
+
+**Context.** The `/consignments` list — the screen staff live in — only let users search by `ref_no` (a single `ilike`), hard-sorted by `serial_no` asc with no way to reorder, and had no export, even though `/reports` already ships polished XLSX + PDF exports. Per user request: add Excel (and PDF) export of "the data displayed at that moment… sorted as it is", clickable column-header sorting, and "a proper search" across every uniquely-identifying field. None of this is in the PRD, so it is a decision.
+
+**Decision.**
+
+1. **Export scope = all matching rows, not the current page (user's choice).** The list is server-paginated at 50/page; the export re-runs the same filtered/searched/sorted query with **no `.range()`**, so the file contains every row matching the on-screen year + filters + search, in the on-screen sort order. "What's displayed" is interpreted as "the current filtered view", not "the literal 50 visible rows".
+
+2. **Shared query layer.** Filter/sort/search logic is extracted to one module so the page and the export apply byte-identical filtering — only pagination differs. Pure params (sort allowlist, `parseListParams`, search-column list, sanitizer) live in `src/lib/consignments-list.ts` (no `server-only` barrier, so the client grid imports the `SortKey`/`SortDir` types + allowlist); the Supabase-touching builders (`resolvePrereqs`, `buildListQuery`, `CONSIGNMENT_SELECT`) live in `src/server/consignments/list-query.ts`.
+
+3. **Sort = data columns only (user's choice).** An allowlist map (`SORTABLE_COLUMNS`: ref_no, year, serial_no, arrival_date, amount, vessel_name, bl_number, in_ref) gates the `sort` query param → real DB column, preventing arbitrary `.order()` injection. **Client (a joined table) and Pipeline Stage (a computed value) are intentionally not sortable** — sorting them server-side would need a name-join order / a computed stage-rank expression not worth the complexity. Headers click to sort asc; clicking the active column flips direction; a stable `.order("id")` tiebreaker keeps pagination deterministic.
+
+4. **Search = multi-field, including client name.** Free-text `q` builds a PostgREST `.or()` across `ref_no, tansad_no, bl_number, in_ref, vessel_name, goods_description`. Because client is a foreign table, client-name search is folded in via a **pre-query**: `resolvePrereqs` looks up `clients` whose `name ilike %q%` and adds `client_id.in.(…)` to the `.or()`. The pre-query runs inside the page's existing tier-1 `Promise.all` (D-042), so it adds no round-trip. `q` is sanitized (strip `,()*"\`) before interpolation into the filter string.
+
+5. **Exports reuse the reports builder pattern (T-071/T-072).** New `build-consignments-xlsx.ts` and `build-consignments-pdf.tsx` mirror `src/server/reports/build-{xlsx,pdf}` (title/meta banner, frozen bold header, money `numFmt`, real Date cells, TOTAL row, A4-landscape logo header). A single `export-columns.ts` is the shared column spec. New route `src/app/api/consignments/export/[format]/route.ts` mirrors the reports routes (`runtime=nodejs`, `getServerPermissions()` 401 gate — viewers+ may export, D-026 user-bound client, `attachment` download). `currentStageLabel` moved from the client component into `src/lib/pipeline.ts` so the "Pipeline Stage" column reads identically on screen and in exports.
+
+**Trade-offs.**
+- **PDF carries a trimmed column subset** (Ref No, Client, B/L, In Ref, Vessel, Arrival, Pipeline Stage, Amount). The list has 14 export columns; A4 landscape can't hold all legibly. XLSX carries the full set for anyone who needs everything. Accepted.
+- **Client-name search is a two-step (prequery → `in`)**, not a single SQL join. Cheap at this scale (~hundreds of clients) and keeps the main query a plain PostgREST builder. Accepted.
+- Export auth matches `/reports`: any signed-in role may export the rows their RLS already lets them read. Revenue/amount is part of the consignments grid the user already sees, so no extra admin gate was added.
+
+---
+
+## D-057 — Client model expansion: six-field CRUD (rename sub_label → display_name, add company + phone)
+
+**Date:** 2026-06-27
+**Status:** Active. User-requested, not a tracked task. **Supersedes the PRD §5.4 client field list** (`name`, `sub_label`, `contact_email`, `notes`).
+
+**Context.** The client CRUD captured only Name, a "Variant" (`sub_label`, e.g. `PAPA — SAAJT`), Email, and a free-text note. The user asked the client form to capture six fields: **Name, Company, Displayed Name, Email, Phone Number, Remark.** PRD §5.4 is frozen, so this is logged here.
+
+**Decision.** Field → column mapping:
+
+| UI label       | Column          | Change                            |
+|----------------|-----------------|-----------------------------------|
+| Name           | `name`          | unchanged, the **only** required field |
+| Company        | `company`       | **new** nullable text             |
+| Displayed Name | `display_name`  | **rename** of `sub_label` (data preserved) |
+| Email          | `contact_email` | unchanged, nullable               |
+| Phone Number   | `phone`         | **new** nullable text             |
+| Remark         | `notes`         | unchanged, nullable               |
+
+1. **Displayed Name replaces Variant entirely (user's choice).** `sub_label` is renamed to `display_name` rather than kept alongside a new field — there is one label concept, not two. It becomes "the name shown everywhere".
+2. **Label helper changes from `name — sub_label` to `display_name?.trim() || name`.** Where a Displayed Name is set it is shown verbatim (no `name — ` prefix); otherwise the row falls back to `name`. Applied in the clients list/panel, both consignment-form dropdowns, the dashboard top-clients widget, and the Client Volume + Turnaround reports. Existing seeded clients (no `display_name`) keep showing their `name`.
+3. **Only Name required (user's choice).** Company / Displayed Name / Email / Phone / Remark are all optional. Email keeps its `z.email()` validation when present.
+4. **Reporting views recreated.** `v_client_volume` and `v_turnaround_by_client` selected `cl.sub_label`; both are recreated to select `cl.display_name`. The view output column (and the report XLSX/PDF header) is renamed `sub_label` → `display_name` ("Displayed Name").
+
+**Trade-offs.**
+- The `clients_name_active_uq` unique index spans `(name, coalesce(display_name, ''))`; after the rename the constraint is identical in behaviour (two same-named clients need distinct Displayed Names). Accepted.
+- No RLS/policy changes — `clients` writes already go through admin RLS via the user-bound server client (D-026 allowlist unaffected; the D-046 column-write guard is on `consignments` only).
+
+---
+
+## D-058 - Users have exactly one role
+
+**Date:** 2026-06-28
+**Status:** Active. Supersedes the original `user_roles` many-to-many intent from D-004 / migration `20260518175820`.
+
+**Context.** The initial permission model allowed a user to hold multiple roles through the `user_roles` join table. That made the effective permission set permissive: if any role granted a column permission, the user received it. For a small internal operations team, that is harder for admins to reason about than a single current role per staff member.
+
+**Decision.**
+1. **Exactly one role per user.** A staff account has one active role at a time: admin, operator, viewer, or one custom role.
+2. **UI uses single selection.** Settings -> Users role editing uses one selected role, not checkboxes.
+3. **Server actions replace, not merge.** Editing an existing user's role deletes their old assignment and inserts the selected role. Creating a new user already selects one role.
+4. **Database enforces it.** `user_roles` keeps its existing table name and `(user_id, role_id)` primary key for compatibility, but gains a unique constraint on `user_id` so a second role assignment is rejected at the source of truth.
+5. **Backfill collapse rule.** If any existing user has multiple roles when the migration runs, keep the highest-precedence assignment: `admin`, then `operator`, then `viewer`, then the oldest custom assignment; delete the rest.
+
+**Trade-off.** This removes role-composition flexibility, but the permission matrix already supports custom roles for special cases. Single-role assignment makes audits, support, and admin mental models simpler.
+
+---
+
+## D-059 - Rename container fields to cargo fields
+
+**Date:** 2026-06-29
+**Status:** Active. User-requested, not a tracked task.
+
+**Context.** The tracker clears more than shipping containers: cars, machinery, loose cargo, bulk cargo, and coils all flow through the same consignment pipeline. The old `container_type` / `container_count` labels were too narrow and caused staff-facing wording to be misleading.
+
+**Decision.**
+1. Rename the database enum `container_type` to `cargo_type`.
+2. Rename `consignments.container_type` to `cargo_type`.
+3. Rename `consignments.container_count` to `cargo_count`.
+4. Update app code, import/export code, permissions UI, and generated types to use the cargo names.
+5. Keep report/view output names such as `total_containers` for now, because those are aggregate report labels and not the operational row field names.
+
+**Trade-off.** Historical migration files and older status text still mention container names, because migrations are append-only and the PRD is frozen. The live schema and app code use cargo names.
+
+---
+
+## D-060 - Cargo-type expansion and EFD receipt number
+
+**Date:** 2026-06-29
+**Status:** Active. User-requested, not a tracked task.
+
+**Context.** Alongside the cargo rename, staff need to classify non-container cargo and capture a lightweight TRA EFD receipt number directly on a consignment.
+
+**Decision.**
+1. Add cargo type enum values: `MACHINERY_VEHICLE`, `LOOSE`, and `BULK`.
+2. Keep the existing values `40FT`, `20FT`, `CAR`, and `COIL`.
+3. Add nullable `consignments.efd_receipt_no text`.
+4. Operators may write `efd_receipt_no`; viewers read it only. The migration updates `role_column_permissions` so the DB column-write guard keeps matching live column names.
+
+**Trade-off.** `efd_receipt_no` is a simple per-consignment free-text field and does not replace the richer `efd_records` many-to-many system.
+
+---
+
+## D-061 - ICD & Vessel CRUD promoted to `/icds` and `/vessels` left-panel surfaces; Settings entries removed
+
+**Date:** 2026-06-30
+**Status:** Active. User-requested, not a tracked task. Extends D-053 (which did the same for Clients).
+
+**Context.** ICDs and Vessels were managed only inside Settings (`/settings/icds`, `/settings/vessels`) via the generic `ReferenceManager` - a flat add/edit/activate table with no detail view. Clients used to live there too until D-053 promoted them to a first-class `/clients` left-panel master-detail surface. Per user request, ICDs and Vessels get the same treatment: their own left-nav entries, each a table of clickable names that open a per-record detail page.
+
+**Decision.**
+1. **Single home per entity = its own left-panel route.** New `/icds` and `/vessels` surfaces mirror `/clients`: a browsable, searchable, sortable table whose name cells link to a detail page (`/icds/[id]`, `/vessels/[id]`). The Settings -> ICDs and Settings -> Vessels subsections (routes + nav entries) are **removed**. `ReferenceManager` and the now-orphaned `settings/reference-manager.tsx` are deleted - nothing uses it after this change.
+2. **Nav visibility = everyone; writes = admin-only.** The `/icds` and `/vessels` nav items carry no `roles` gate, so all signed-in users see and browse them (matching `/clients`). Add/Edit/Delete controls render only for admins, and the server actions + RLS already enforce admin-only writes (`requireAdmin()` + `*_write_admin` policies). Read stays open to all authenticated users (existing `*_select_authenticated` policies).
+3. **Guarded soft-delete per entity.** New `deleteIcdAction` / `deleteVesselAction` mirror `deleteClientAction` (D-053): admin-only, set `deleted_at = now()`, but refuse when a non-deleted consignment still references the record. ICD reference = `consignments.icd_id`; vessel reference = `consignments.vessel_name = vessels.name` (vessel is matched by free-text name, not an FK - see D-050). The active-toggle controls are retained on these surfaces (unlike the Clients panel, which dropped them).
+4. **Detail page = usage view.** Each detail page shows the record's fields plus its consignments (linked to `/consignments/[id]`) and summary stat cards. ICD consignments are found by `icd_id`; vessel consignments by exact `vessel_name`.
+5. **No DB change.** The `icds` / `vessels` tables, RLS, audit triggers, soft-delete, and create/update/setActive actions already exist. Only `revalidatePath` targets move from `/settings/icds|vessels` to `/icds|vessels`. `createIcdAction` / `createVesselAction` stay intact - the new-consignment form's inline "Add ICD / Add vessel" modals keep using them.
+
+**Trade-off.** Like D-053, blocking delete on linked consignments means an admin must clear/reassign a record's consignments before deleting - accepted as safer than orphaning `icd_id` / `vessel_name` references. Vessel usage matching is by exact name string (free text), so a renamed-but-not-migrated vessel value on old consignments won't be counted; accepted, consistent with D-050's free-text model.

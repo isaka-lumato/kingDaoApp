@@ -34,8 +34,10 @@ function uniqueError(label: string) {
 
 const clientSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(120),
-  sub_label: z.string().trim().max(120).optional().nullable(),
+  company: z.string().trim().max(200).optional().nullable(),
+  display_name: z.string().trim().max(120).optional().nullable(),
   contact_email: z.union([z.email(), z.literal("")]).optional().nullable(),
+  phone: z.string().trim().max(40).optional().nullable(),
   notes: z.string().trim().max(2000).optional().nullable(),
 });
 
@@ -45,23 +47,31 @@ export async function createClientAction(formData: FormData) {
 
   const parsed = clientSchema.safeParse({
     name: formData.get("name") ?? "",
-    sub_label: trimmedOrNull(formData.get("sub_label")),
+    company: trimmedOrNull(formData.get("company")),
+    display_name: trimmedOrNull(formData.get("display_name")),
     contact_email: trimmedOrNull(formData.get("contact_email")),
+    phone: trimmedOrNull(formData.get("phone")),
     notes: trimmedOrNull(formData.get("notes")),
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
 
   const supabase = await getSupabaseServerClient();
-  const { error } = await supabase.from("clients").insert({
-    name: parsed.data.name,
-    sub_label: parsed.data.sub_label ?? null,
-    contact_email: parsed.data.contact_email || null,
-    notes: parsed.data.notes ?? null,
-  });
+  const { data, error } = await supabase
+    .from("clients")
+    .insert({
+      name: parsed.data.name,
+      company: parsed.data.company ?? null,
+      display_name: parsed.data.display_name ?? null,
+      contact_email: parsed.data.contact_email || null,
+      phone: parsed.data.phone ?? null,
+      notes: parsed.data.notes ?? null,
+    })
+    .select("id, name, display_name")
+    .single();
   if (error) return error.code === "23505" ? uniqueError("client") : { error: error.message };
 
   revalidatePath("/clients");
-  return { success: true };
+  return { success: true, data };
 }
 
 export async function updateClientAction(formData: FormData) {
@@ -73,8 +83,10 @@ export async function updateClientAction(formData: FormData) {
 
   const parsed = clientSchema.safeParse({
     name: formData.get("name") ?? "",
-    sub_label: trimmedOrNull(formData.get("sub_label")),
+    company: trimmedOrNull(formData.get("company")),
+    display_name: trimmedOrNull(formData.get("display_name")),
     contact_email: trimmedOrNull(formData.get("contact_email")),
+    phone: trimmedOrNull(formData.get("phone")),
     notes: trimmedOrNull(formData.get("notes")),
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
@@ -84,8 +96,10 @@ export async function updateClientAction(formData: FormData) {
     .from("clients")
     .update({
       name: parsed.data.name,
-      sub_label: parsed.data.sub_label ?? null,
+      company: parsed.data.company ?? null,
+      display_name: parsed.data.display_name ?? null,
       contact_email: parsed.data.contact_email || null,
+      phone: parsed.data.phone ?? null,
       notes: parsed.data.notes ?? null,
     })
     .eq("id", id.data);
@@ -130,7 +144,7 @@ export async function deleteClientAction(formData: FormData) {
 export async function setClientActiveAction(formData: FormData) {
   const denied = await requireAdmin();
   if (denied) return denied;
-  return setActive("clients", "/settings/clients", formData);
+  return setActive("clients", "/clients", formData);
 }
 
 // ── ICDs ─────────────────────────────────────────────────────────────────────
@@ -151,13 +165,15 @@ export async function createIcdAction(formData: FormData) {
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
 
   const supabase = await getSupabaseServerClient();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("icds")
-    .insert({ name: parsed.data.name, location: parsed.data.location ?? null });
+    .insert({ name: parsed.data.name, location: parsed.data.location ?? null })
+    .select("id, name, location")
+    .single();
   if (error) return error.code === "23505" ? uniqueError("ICD") : { error: error.message };
 
-  revalidatePath("/settings/icds");
-  return { success: true };
+  revalidatePath("/icds");
+  return { success: true, data };
 }
 
 export async function updateIcdAction(formData: FormData) {
@@ -180,14 +196,46 @@ export async function updateIcdAction(formData: FormData) {
     .eq("id", id.data);
   if (error) return error.code === "23505" ? uniqueError("ICD") : { error: error.message };
 
-  revalidatePath("/settings/icds");
+  revalidatePath("/icds");
+  return { success: true };
+}
+
+// Soft-delete an ICD (D-061 / D-015). Admin-only. Refused when any non-deleted
+// consignment still references it — mirrors deleteClientAction (D-053).
+export async function deleteIcdAction(formData: FormData) {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+
+  const id = z.uuid().safeParse(formData.get("id"));
+  if (!id.success) return { error: "Invalid ICD ID" };
+
+  const supabase = await getSupabaseServerClient();
+
+  const { count, error: countErr } = await supabase
+    .from("consignments")
+    .select("id", { count: "exact", head: true })
+    .eq("icd_id", id.data)
+    .is("deleted_at", null);
+  if (countErr) return { error: countErr.message };
+  if ((count ?? 0) > 0) {
+    return { error: `This ICD has ${count} consignment(s) and cannot be deleted.` };
+  }
+
+  const { error } = await supabase
+    .from("icds")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", id.data)
+    .is("deleted_at", null);
+  if (error) return { error: error.message };
+
+  revalidatePath("/icds");
   return { success: true };
 }
 
 export async function setIcdActiveAction(formData: FormData) {
   const denied = await requireAdmin();
   if (denied) return denied;
-  return setActive("icds", "/settings/icds", formData);
+  return setActive("icds", "/icds", formData);
 }
 
 // ── Vessels ──────────────────────────────────────────────────────────────────
@@ -204,11 +252,15 @@ export async function createVesselAction(formData: FormData) {
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
 
   const supabase = await getSupabaseServerClient();
-  const { error } = await supabase.from("vessels").insert({ name: parsed.data.name });
+  const { data, error } = await supabase
+    .from("vessels")
+    .insert({ name: parsed.data.name })
+    .select("id, name")
+    .single();
   if (error) return error.code === "23505" ? uniqueError("vessel") : { error: error.message };
 
-  revalidatePath("/settings/vessels");
-  return { success: true };
+  revalidatePath("/vessels");
+  return { success: true, data };
 }
 
 export async function updateVesselAction(formData: FormData) {
@@ -228,14 +280,55 @@ export async function updateVesselAction(formData: FormData) {
     .eq("id", id.data);
   if (error) return error.code === "23505" ? uniqueError("vessel") : { error: error.message };
 
-  revalidatePath("/settings/vessels");
+  revalidatePath("/vessels");
+  return { success: true };
+}
+
+// Soft-delete a vessel (D-061 / D-015). Admin-only. Consignments reference a
+// vessel by free-text `vessel_name` (not an FK, D-050), so the guard matches on
+// the vessel's name. Refused when any non-deleted consignment uses that name.
+export async function deleteVesselAction(formData: FormData) {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+
+  const id = z.uuid().safeParse(formData.get("id"));
+  if (!id.success) return { error: "Invalid vessel ID" };
+
+  const supabase = await getSupabaseServerClient();
+
+  const { data: vessel, error: fetchErr } = await supabase
+    .from("vessels")
+    .select("name")
+    .eq("id", id.data)
+    .is("deleted_at", null)
+    .single();
+  if (fetchErr || !vessel) return { error: "Vessel not found." };
+
+  const { count, error: countErr } = await supabase
+    .from("consignments")
+    .select("id", { count: "exact", head: true })
+    .eq("vessel_name", vessel.name)
+    .is("deleted_at", null);
+  if (countErr) return { error: countErr.message };
+  if ((count ?? 0) > 0) {
+    return { error: `This vessel has ${count} consignment(s) and cannot be deleted.` };
+  }
+
+  const { error } = await supabase
+    .from("vessels")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", id.data)
+    .is("deleted_at", null);
+  if (error) return { error: error.message };
+
+  revalidatePath("/vessels");
   return { success: true };
 }
 
 export async function setVesselActiveAction(formData: FormData) {
   const denied = await requireAdmin();
   if (denied) return denied;
-  return setActive("vessels", "/settings/vessels", formData);
+  return setActive("vessels", "/vessels", formData);
 }
 
 // ── Shared active-toggle ──────────────────────────────────────────────────────

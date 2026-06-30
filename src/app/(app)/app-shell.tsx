@@ -55,6 +55,24 @@ const NAV: NavItem[] = [
       </svg>
     ),
   },
+  {
+    label: "ICDs",
+    href: "/icds",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="w-5 h-5">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 21V9l9-6 9 6v12M3 21h18M9 21v-6h6v6M7 11h.01M12 11h.01M17 11h.01" />
+      </svg>
+    ),
+  },
+  {
+    label: "Vessels",
+    href: "/vessels",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="w-5 h-5">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 14l9-3 9 3M5 14v5a2 2 0 002 2h10a2 2 0 002-2v-5M12 3v8M9 6h6" />
+      </svg>
+    ),
+  },
   // Temporarily hidden from the UI (not deleted) — Inbox + EFD Records.
   // {
   //   label: "Inbox",

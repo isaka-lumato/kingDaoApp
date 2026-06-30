@@ -6,11 +6,7 @@ import NewEfdForm from "./new-efd-form";
 
 export const metadata: Metadata = { title: "New EFD Record — KDL Tracker" };
 
-export default async function NewEfdPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ from_batch?: string; client?: string; year?: string }>;
-}) {
+export default async function NewEfdPage() {
   const perms = await getServerPermissions();
   if (!perms) redirect("/login");
   if (!perms.isAdmin && !perms.roles.includes("operator")) {
@@ -19,7 +15,6 @@ export default async function NewEfdPage({
 
   const supabase = await getSupabaseServerClient();
   const currentYear = new Date().getFullYear();
-  const sp = await searchParams;
 
   // Fetch recent / unreleased consignments for the link picker. Limit to a
   // reasonable window so the page stays fast — operators searching for older
@@ -44,21 +39,5 @@ export default async function NewEfdPage({
       : (c.clients as { name: string } | null)?.name ?? null,
   }));
 
-  // Pre-select all siblings of a batch when deep-linked from the batch panel CTA.
-  let preselectedIds: string[] = [];
-  const fromBatch = sp.from_batch?.trim();
-  const clientId = sp.client?.trim();
-  const yearParam = sp.year ? parseInt(sp.year, 10) : NaN;
-  if (fromBatch && clientId && Number.isFinite(yearParam)) {
-    const { data: siblings } = await supabase
-      .from("consignments")
-      .select("id")
-      .eq("in_ref", fromBatch)
-      .eq("client_id", clientId)
-      .eq("year", yearParam)
-      .is("deleted_at", null);
-    preselectedIds = (siblings ?? []).map((s) => s.id);
-  }
-
-  return <NewEfdForm candidates={candidates} preselectedIds={preselectedIds} />;
+  return <NewEfdForm candidates={candidates} preselectedIds={[]} />;
 }

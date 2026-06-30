@@ -16,47 +16,14 @@ function canWriteEfd(roles: string[]): boolean {
   return roles.includes("admin") || roles.includes("operator");
 }
 
-// PRD §8.4 line 433: setting efd_code on one consignment must propagate to all
-// siblings sharing (in_ref, client_id, year). When the user picks any
-// consignment that belongs to an in_ref batch, pull in every sibling. The
-// efd_record_consignments PK + ignoreDuplicates upsert make this idempotent.
+// PRD §8.4 batch-sibling expansion was keyed on in_ref which has been removed.
+// The function is retained for call-site compatibility but now simply deduplicates.
 async function expandToBatchSiblings(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  supabase: SupabaseClient<any, "public", any>,
+  _supabase: SupabaseClient<any, "public", any>,
   consignmentIds: string[]
 ): Promise<string[]> {
-  if (consignmentIds.length === 0) return [];
-
-  const { data: anchors } = await supabase
-    .from("consignments")
-    .select("id, in_ref, client_id, year")
-    .in("id", consignmentIds);
-
-  const tuples = new Map<string, { in_ref: string; client_id: string; year: number }>();
-  for (const a of anchors ?? []) {
-    if (a.in_ref && a.client_id && a.year != null) {
-      tuples.set(`${a.in_ref}|${a.client_id}|${a.year}`, {
-        in_ref: a.in_ref,
-        client_id: a.client_id,
-        year: a.year,
-      });
-    }
-  }
-
-  if (tuples.size === 0) return Array.from(new Set(consignmentIds));
-
-  const expanded = new Set<string>(consignmentIds);
-  for (const t of tuples.values()) {
-    const { data: siblings } = await supabase
-      .from("consignments")
-      .select("id")
-      .eq("in_ref", t.in_ref)
-      .eq("client_id", t.client_id)
-      .eq("year", t.year)
-      .is("deleted_at", null);
-    for (const s of siblings ?? []) expanded.add(s.id);
-  }
-  return Array.from(expanded);
+  return Array.from(new Set(consignmentIds));
 }
 
 async function recomputeIsShared(efdId: string) {

@@ -69,7 +69,7 @@ async function fetchClientVolume(
   const { data, error } = await supabase
     .from("v_client_volume")
     .select(
-      "client_id, client_name, sub_label, job_count, total_containers, total_revenue, released_count, active_count",
+      "client_id, client_name, display_name, job_count, total_containers, total_revenue, released_count, active_count",
     )
     .eq("year", year)
     .order("total_containers", { ascending: false });
@@ -87,7 +87,7 @@ async function fetchTurnaroundClient(
   const { data, error } = await supabase
     .from("v_turnaround_by_client")
     .select(
-      "client_id, client_name, sub_label, released_count, avg_days, min_days, max_days",
+      "client_id, client_name, display_name, released_count, avg_days, min_days, max_days",
     )
     .eq("year", year)
     .order("avg_days", { ascending: true });

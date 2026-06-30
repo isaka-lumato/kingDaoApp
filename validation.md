@@ -44,8 +44,8 @@ These are the PRD §8 invariants. The DB must reject violations, not just the UI
 - [ ] `duty_status != 'Paid'` → `inspection_file_status = 'Done'` rejected (allowed only if `'SHARED'`).
 - [ ] `inspection_file_status not in ('Done','SHARED')` → `release_status = 'Released'` rejected.
 - [ ] `release_status = 'Released'` with NULL `release_date` → function defaults `release_date = current_date`.
-- [ ] `container_type = 'CAR'` → `efd_code` auto-set to `'PRIVATE'`; `in_ref` prevented.
-- [ ] `container_type = 'COIL'` & `icd != 'DP WORLD'` → soft warning written to `import_warnings` (or surfaced in UI).
+- [ ] `cargo_type = 'CAR'` -> `efd_code` auto-set to `'PRIVATE'`; `in_ref` prevented.
+- [ ] `cargo_type = 'COIL'` & `icd != 'DP WORLD'` -> soft warning written to `import_warnings` (or surfaced in UI).
 - [ ] `tbs_debit_status = 'SHARED'` → `shared_primary_ref` required (foreign-keyed to a real consignment).
 - [ ] Setting `efd_code` on a consignment with `in_ref_batch_id` propagates to all batch siblings (via the batch table, not row duplication).
 - [ ] `tanesws_status = 'Done'` with NULL `tansad_no` → warning surfaced (not blocked).
@@ -147,7 +147,7 @@ T-054 gates. Run when touching `src/app/(app)/dashboard/`, the navigation order 
 - [ ] "Revenue · <month>" sums `consignments.amount` where `release_status = 'Released' AND release_date >= first-of-current-month AND amount IS NOT NULL AND deleted_at IS NULL`. Footer shows the exact value via `formatTzs`; the tile shows the compact form via `formatTzsCompact`.
 - [ ] **Pipeline funnel** bars show all 10 Action stages from `v_pipeline_funnel` for the current year (Manifest, Shipping, TANESWS, Assessment, TBS Load, TBS Debit, Mfst Comp, Duty, Inspection, Ready). Bar widths are relative to the largest single stage; minimum width 2% so empty stages remain visible.
 - [ ] Funnel footer shows `released` and `total_active` from the view.
-- [ ] **Top clients** lists the 5 highest `total_containers` from `v_client_volume` for the current year only. Each row shows client name, sub_label (when set), container count, and job count.
+- [ ] **Top clients** lists the 5 highest `total_containers` from `v_client_volume` for the current year only. Each row shows the client's Displayed Name (falling back to name), container count, and job count.
 - [ ] **Arrivals this week** lists consignments with `arrival_date` in the current Mon→Sun window (calendar week, not rolling 7 days), ordered ascending, capped at 20. Each row links to `/consignments/[id]`.
 - [ ] Week boundaries are inclusive of Monday 00:00 and exclusive of next Monday 00:00 — a Sunday-arrival consignment shows up, a next-Monday-arrival does not.
 - [ ] **Overdue jobs** lists the top 10 rows from `v_stuck_stages` ordered by `hours_stuck DESC`. Each row shows REF No, year, client, stage label (mapped from DB enum via `stageLabelFor`), relative `stuck_since`, and the integer hours stuck. Each row links to its consignment detail.
@@ -247,7 +247,7 @@ Pure function, fully unit-tested. Re-run after any change to `src/server/import/
 
 - [ ] `pnpm test tests/unit/parse-tracker.test.ts` — all 28 cases green.
 - [ ] No SheetJS / `xlsx` import in `parse-tracker.ts` — `grep -n xlsx src/server/import/parse-tracker.ts` is empty (D-035: parser stays pure; SheetJS lives in T-061/T-062 adapters).
-- [ ] Header alias map covers every PRD §5 "Source Column" name; `REQUIRED_HEADERS` is the smallest set that must be present (currently `ref_no` + `container_type`).
+- [ ] Header alias map covers every PRD §5 "Source Column" name; `REQUIRED_HEADERS` is the smallest set that must be present (currently `ref_no` + `cargo_type`).
 - [ ] When the source tracker layout changes (new columns, renamed columns), update `HEADER_ALIASES`, add a Vitest case proving the new header maps to the right `LogicalField`, and only then ship.
 - [ ] `errors[]` represents rows excluded from import; `warnings[]` represents rows included with soft issues (D-036). Don't merge these into one bucket without bumping the decision.
 - [ ] Cross-field rules (§8.5, §8.19) are warnings only — never block import based on amount range or TANSAD-missing.
@@ -300,7 +300,7 @@ Run after any change to `src/app/(app)/reports/`, the T-024 views, or any of the
 - [ ] Year dropdown spans current year ± 3. Selecting a different year navigates without a full page reload (React `useTransition`).
 - [ ] **Date range applicability:** the From/To inputs are enabled only for Revenue Summary and Pending Refunds. On the other four reports the inputs are visibly disabled and an "italic" note reads "Date range not applicable — this report is aggregated by year."
 - [ ] **Revenue Summary** rows match `SELECT * FROM v_revenue_monthly WHERE year=$1 [AND month BETWEEN $from AND $to] ORDER BY month`. Totals row shows the sum of `consignment_count` and `formatTzs(sum(total_amount))`.
-- [ ] **Client Volume** rows match `SELECT * FROM v_client_volume WHERE year=$1 ORDER BY total_containers DESC`. Totals row shows summed jobs, containers, and revenue. Empty `sub_label` cells render no second line (no stray "—").
+- [ ] **Client Volume** rows match `SELECT * FROM v_client_volume WHERE year=$1 ORDER BY total_containers DESC`. Totals row shows summed jobs, containers, and revenue. Empty `display_name` cells render no second line (no stray "—").
 - [ ] **Turnaround · by Client** rows are ordered `avg_days ASC` (fastest first). Released = 0 clients are excluded by the view's `WHERE release_status = 'Released'` filter.
 - [ ] **Turnaround · by ICD** rows match `v_turnaround_by_icd` for the selected year. ICDs with zero released consignments do not appear.
 - [ ] **Pipeline Bottleneck** lists all 10 Action stages from `v_pipeline_funnel` for the selected year. Each row shows the count and that stage's percentage of `total_active`. The footer shows `released` and `total_active` for the year.
@@ -360,6 +360,40 @@ Run after any change to `src/app/api/reports/[kind]/pdf/route.ts`, `src/server/r
 
 ---
 
+## V-CONSIGNMENTS-LIST — list search, sort & export (D-056)
+
+Run after any change to `src/app/(app)/consignments/page.tsx`, `consignments-client.tsx`, `src/lib/consignments-list.ts`, `src/server/consignments/`, or the export route.
+
+**Search**
+- [ ] Searching a B/L fragment, TANSAD, In Ref, vessel name, or goods-description fragment returns the matching consignment(s) — not just ref-no matches.
+- [ ] Searching a **client name** fragment (e.g. "PAPA") returns that client's consignments (folded in via the `clients` pre-query → `client_id.in.(…)`).
+- [ ] A ref-no search still works (regression).
+- [ ] Search is case-insensitive and combines with the year/client/stage filters (AND across filters, OR across search fields).
+- [ ] A search term containing `,` `(` `)` `*` `"` does not break the query (sanitized before the `.or()` string).
+- [ ] Searching resets to page 1.
+
+**Sort**
+- [ ] Clicking Ref No, B/L, In Ref, Vessel, Arrival, or Amount headers reorders the grid; the URL gains `?sort=…&dir=…`; page resets to 1.
+- [ ] Clicking the active column flips asc↔desc; a ▲/▼ glyph marks the active column + direction.
+- [ ] Client and Pipeline Stage headers are NOT clickable (plain `<th>`s) — data-columns-only per D-056.
+- [ ] An unknown/absent `sort` param falls back to `serial_no` asc (the prior default).
+- [ ] Sort survives pagination (stable `id` tiebreaker — no duplicate/skipped rows across pages).
+
+**Export**
+- [ ] The list header shows **Excel** and **PDF** download buttons.
+- [ ] The download reflects the **current** year + filters + search + sort, and contains **all matching rows**, not just the 50 on the visible page. Row count matches the list's "N records" header (minus the banner/total rows).
+- [ ] XLSX: row 1 title `Consignments · <year>`, row 2 generated-at + filter summary (records the active search/filter/sort), row 4 bold frozen headers, data rows, then a TOTAL row summing Amount. Amount cells are numeric with `"TSh"#,##0`; Arrival/Released On are real Dates with `yyyy-mm-dd`.
+- [ ] PDF: A4 landscape, fixed Kingdao-logo header with title + filter summary, trimmed legible column subset (Ref No, Client, B/L, In Ref, Vessel, Arrival, Pipeline Stage, Amount), TOTAL row, page counter.
+- [ ] Empty result (filter matching zero rows) downloads a valid file with a "No consignments matched the filter." sentinel — not a 500.
+- [ ] **Auth gate.** `GET /api/consignments/export/xlsx?year=2026` unauthenticated returns `401`. An authenticated viewer can download.
+- [ ] **Bad format.** `/api/consignments/export/csv` returns `400` JSON `{"error":"Unknown export format: csv"}`.
+- [ ] **Node runtime.** The route exports `runtime = "nodejs"`.
+- [ ] **RLS sanity (D-026).** `grep -rn "getSupabaseAdminClient" src/app/api/consignments/ src/server/consignments/` is empty. Admin-client allowlist stays at 3 sites.
+- [ ] **Parity.** The on-screen "Pipeline Stage" column and the export's match (both use `currentStageLabel` from `@/lib/pipeline`).
+- [ ] **Tests.** `tests/unit/build-consignments-xlsx.test.ts` green (banner, money fmt, real Date, TOTAL, empty sentinel).
+
+---
+
 ## V-DEPLOY — Production deployment
 
 - [ ] Migrations applied via `supabase db push`, never via Studio.
@@ -378,10 +412,11 @@ Run after any change to `src/app/api/reports/[kind]/pdf/route.ts`, `src/server/r
 - [ ] Add / Edit / Activate-Deactivate work for ICDs & vessels; duplicate name returns a friendly "already exists" message (no raw `23505`).
 - [ ] For ICDs/vessels, "Deactivate" is a reversible toggle — nothing is deleted; inactive rows still appear in Settings.
 - [ ] **Clients (D-053):** the `/clients` left panel is the only client-management surface. As admin: search, `+ New`, per-row `⋯` → Edit (pre-filled, persists after refresh) and Delete all work. The `⋯` menu and `+ New` are hidden for non-admins.
+- [ ] **Client six-field CRUD (D-057):** the Add/Edit modal captures **Name (required), Company, Displayed Name, Email, Phone Number, Remark** in that order. Creating/editing with all six round-trips correctly; only Name is required; Email rejects a malformed address.
+- [ ] **Displayed Name as label (D-057):** where `display_name` is set, the client appears under that label in the `/clients` list, the New/Edit consignment dropdowns, the dashboard top-clients widget, and the Client Volume + Turnaround reports. A client with no `display_name` falls back to showing its `name`. Report XLSX/PDF column header reads **"Displayed Name"**.
 - [ ] **Client delete guard:** deleting a client with **no** consignments soft-deletes it (drops from the list; if it was selected, the detail clears). Deleting a client **with** consignments is refused with "This client has N consignment(s) and cannot be deleted." — the consignments are untouched.
 - [ ] Inactive clients/ICDs/vessels are **excluded** from the New / Edit consignment dropdowns + vessel datalist (`is_active = true` filter).
 - [ ] Vessel field on New + Edit forms suggests managed vessel names via `<datalist>` but still accepts a brand-new free-text value (saves fine).
-- [ ] Client dropdowns show `name — sub_label` so PAPA/JOYCE variants are distinguishable.
 - [ ] Direct REST write to `vessels` (INSERT/UPDATE) with a non-admin JWT is rejected by RLS (`vessels_write_admin`).
 - [ ] Editing a client/ICD/vessel writes an `audit_log` row (trigger `*_audit`).
 - [ ] `grep -rn "getSupabaseAdminClient" src/` still returns only the 3 D-026 sites — the new server actions use the user-bound client.

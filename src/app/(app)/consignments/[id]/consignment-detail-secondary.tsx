@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { cargoLabel } from "@/lib/cargo";
 import { formatTzs } from "@/lib/money";
 
 // EFD UI temporarily hidden — do not delete.
@@ -29,8 +30,8 @@ type GutaPair = {
     id: string;
     ref_no: string;
     bl_number: string | null;
-    container_count: number | null;
-    container_type: string | null;
+    cargo_count: number | null;
+    cargo_type: string | null;
     amount: number | null;
     release_status: string;
     release_date: string | null;
@@ -125,7 +126,7 @@ async function fetchGutaPair(
   const { data: sibling } = await supabase
     .from("consignments")
     .select(
-      "id, ref_no, bl_number, container_count, container_type, amount, release_status, release_date, goods_description"
+      "id, ref_no, bl_number, cargo_count, cargo_type, amount, release_status, release_date, goods_description"
     )
     .eq("id", siblingId)
     .is("deleted_at", null)
@@ -201,10 +202,10 @@ function GutaPairSection({
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3">
           <Field label="B/L" value={gutaPair.sibling.bl_number} />
           <Field
-            label="Container"
+            label="Cargo"
             value={
-              gutaPair.sibling.container_count
-                ? `${gutaPair.sibling.container_count} x ${gutaPair.sibling.container_type ?? "?"}`
+              gutaPair.sibling.cargo_count
+                ? `${gutaPair.sibling.cargo_count} x ${cargoLabel(gutaPair.sibling.cargo_type) || "?"}`
                 : null
             }
           />

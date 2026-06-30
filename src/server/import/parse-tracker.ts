@@ -7,6 +7,7 @@
 //   - warnings[]: row WAS included but has a soft issue worth surfacing.
 
 import type { Database } from "@/types/supabase";
+import { isCargoType, type CargoType } from "@/lib/cargo";
 
 // ──────────────────────────────────────────────────────────────────────────
 // Public types
@@ -14,7 +15,6 @@ import type { Database } from "@/types/supabase";
 
 export type CellValue = string | number | boolean | Date | null | undefined;
 
-type ContainerType = Database["public"]["Enums"]["container_type"];
 type ManifestStatus = Database["public"]["Enums"]["manifest_status"];
 type ShippingBatchStatus = Database["public"]["Enums"]["shipping_batch_status"];
 type TaneswsStatus = Database["public"]["Enums"]["tanesws_status"];
@@ -34,13 +34,13 @@ export type ParsedConsignment = {
   serial_no: number | null;
   client_name: string | null;
   bl_number: string | null;
-  container_count: number | null;
-  container_type: ContainerType | null;
+  cargo_count: number | null;
+  cargo_type: CargoType | null;
   goods_description: string | null;
   vessel_name: string | null;
   arrival_date: string | null; // ISO yyyy-mm-dd
   icd_name: string | null;
-  in_ref: string | null;
+
   amount: number | null;
   remarks: string | null;
 
@@ -99,13 +99,13 @@ type LogicalField =
   | "serial_no"
   | "client_name"
   | "bl_number"
-  | "container_count"
-  | "container_type"
+  | "cargo_count"
+  | "cargo_type"
   | "goods_description"
   | "vessel_name"
   | "arrival_date"
   | "icd_name"
-  | "in_ref"
+
   | "amount"
   | "remarks"
   | "manifest_status"
@@ -134,10 +134,12 @@ const HEADER_ALIASES: Record<string, LogicalField> = {
   client: "client_name",
   "b/l no": "bl_number",
   "bl no": "bl_number",
-  "no of conts": "container_count",
-  "no of cont(s)": "container_count",
-  "no of containers": "container_count",
-  "container type": "container_type",
+  "no of conts": "cargo_count",
+  "no of cont(s)": "cargo_count",
+  "no of containers": "cargo_count",
+  "container type": "cargo_type",
+  "cargo type": "cargo_type",
+  "cargo count": "cargo_count",
   "items/goods": "goods_description",
   items: "goods_description",
   goods: "goods_description",
@@ -145,7 +147,7 @@ const HEADER_ALIASES: Record<string, LogicalField> = {
   "arr date": "arrival_date",
   "arrival date": "arrival_date",
   icd: "icd_name",
-  "in ref": "in_ref",
+
   amount: "amount",
   remarks: "remarks",
   // Pipeline
@@ -172,7 +174,7 @@ const HEADER_ALIASES: Record<string, LogicalField> = {
   "efd time": "efd_time",
 };
 
-const REQUIRED_HEADERS: LogicalField[] = ["ref_no", "container_type"];
+const REQUIRED_HEADERS: LogicalField[] = ["ref_no", "cargo_type"];
 
 // ──────────────────────────────────────────────────────────────────────────
 // Public entry point
@@ -279,21 +281,21 @@ export function parseTracker(rows: CellValue[][]): ParseResult {
       });
     }
 
-    // Container type — required, must be in enum.
-    const ctRaw = stringOf(cell("container_type")).toUpperCase();
-    const container_type = isContainerType(ctRaw) ? ctRaw : null;
-    if (ctRaw && !container_type) {
+    // Cargo type — required, must be in enum.
+    const ctRaw = stringOf(cell("cargo_type")).toUpperCase();
+    const cargo_type = isCargoType(ctRaw) ? ctRaw : null;
+    if (ctRaw && !cargo_type) {
       errors.push({
         rowIndex: i,
         ref_no,
-        field: "container_type",
-        message: `Unknown container_type "${ctRaw}" (expected 40FT/20FT/CAR/COIL).`,
+        field: "cargo_type",
+        message: `Unknown cargo_type "${ctRaw}" (expected 40FT/20FT/CAR/COIL/MACHINERY_VEHICLE/LOOSE/BULK).`,
       });
       continue;
     }
 
     // Numeric fields
-    const container_count = parseNumber(cell("container_count"));
+    const cargo_count = parseNumber(cell("cargo_count"));
     const amount = parseNumber(cell("amount"));
     const serial_no = (() => {
       const n = parseNumber(cell("serial_no"));
@@ -412,13 +414,13 @@ export function parseTracker(rows: CellValue[][]): ParseResult {
       serial_no,
       client_name: nullableString(cell("client_name")),
       bl_number: nullableString(cell("bl_number")),
-      container_count,
-      container_type,
+      cargo_count,
+      cargo_type,
       goods_description: nullableString(cell("goods_description")),
       vessel_name: nullableString(cell("vessel_name")),
       arrival_date,
       icd_name,
-      in_ref: nullableString(cell("in_ref")),
+
       amount,
       remarks: nullableString(cell("remarks")),
       manifest_status,
@@ -439,9 +441,9 @@ export function parseTracker(rows: CellValue[][]): ParseResult {
 
     // Cross-field soft validations (warnings only, row still imports).
 
-    // §8.5: amount range for container_type + count.
-    if (amount != null && container_type) {
-      const rangeMsg = checkAmountRange(container_type, container_count, amount);
+    // §8.5: amount range for cargo_type + count.
+    if (amount != null && cargo_type) {
+      const rangeMsg = checkAmountRange(cargo_type, cargo_count, amount);
       if (rangeMsg) {
         warnings.push({
           rowIndex: i,
@@ -451,23 +453,15 @@ export function parseTracker(rows: CellValue[][]): ParseResult {
         });
       }
       // §8.5: COIL must go to DP WORLD.
-      if (container_type === "COIL" && icd_name && !/dp\s*world/i.test(icd_name)) {
+      if (cargo_type === "COIL" && icd_name && !/dp\s*world/i.test(icd_name)) {
         warnings.push({
           rowIndex: i,
           ref_no,
           field: "icd_name",
-          message: `container_type=COIL typically ships to DP WORLD; got "${icd_name}".`,
+          message: `cargo_type=COIL typically ships to DP WORLD; got "${icd_name}".`,
         });
       }
-      // §8.5: CAR + in_ref is contradictory.
-      if (container_type === "CAR" && parsed.in_ref) {
-        warnings.push({
-          rowIndex: i,
-          ref_no,
-          field: "in_ref",
-          message: `container_type=CAR should have no in_ref; got "${parsed.in_ref}".`,
-        });
-      }
+
     }
 
     // §8.19: tanesws=Done but tansad_no missing.
@@ -553,14 +547,14 @@ function tryBuildHeaderMap(
       hits++;
     }
   }
-  // Strict container-type fallback (D-047): in the real tracker the container
+  // Strict cargo-type fallback (D-047): in the real tracker the cargo
   // type column has NO header — its header cell is merged into "No. of
-  // Cont(s)". So if container_type didn't map but container_count did, use the
+  // Cont(s)". So if cargo_type didn't map but cargo_count did, use the
   // column immediately to the right of the count column. If that column turns
   // out to hold non-enum values, those rows error individually via the
-  // per-row container-type guard — no silent mis-mapping.
-  if (map.container_type == null && map.container_count != null) {
-    map.container_type = map.container_count + 1;
+  // per-row cargo-type guard — no silent mis-mapping.
+  if (map.cargo_type == null && map.cargo_count != null) {
+    map.cargo_type = map.cargo_count + 1;
   }
   // Heuristic: a real header row should match at least the required fields
   // plus a handful more. Anything else is a noise row.
@@ -675,10 +669,6 @@ function parseEfdCodes(v: CellValue): string[] {
   return out;
 }
 
-function isContainerType(v: string): v is ContainerType {
-  return v === "40FT" || v === "20FT" || v === "CAR" || v === "COIL";
-}
-
 function coerceEnum<T extends string>(
   v: CellValue,
   allowed: readonly T[],
@@ -735,10 +725,10 @@ function normaliseRefNo(
   };
 }
 
-// §8.5 — soft validation of amount range per container_type + count.
+// §8.5 — soft validation of amount range per cargo_type + count.
 // Returns a warning message if outside the documented bands, else null.
 function checkAmountRange(
-  type: ContainerType,
+  type: CargoType,
   count: number | null,
   amount: number
 ): string | null {

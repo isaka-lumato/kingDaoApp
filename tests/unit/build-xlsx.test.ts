@@ -118,7 +118,7 @@ describe("buildReportWorkbook · client_volume totals row", () => {
       {
         client_id: "c1",
         client_name: "Acme Co",
-        sub_label: null,
+        display_name: null,
         job_count: 4,
         total_containers: 12,
         total_revenue: 2_000_000,
@@ -128,7 +128,7 @@ describe("buildReportWorkbook · client_volume totals row", () => {
       {
         client_id: "c2",
         client_name: "Beta Co",
-        sub_label: "subsidiary",
+        display_name: "subsidiary",
         job_count: 2,
         total_containers: 5,
         total_revenue: 800_000,
@@ -159,7 +159,7 @@ describe("buildReportWorkbook · turnaround_client has no totals row", () => {
       {
         client_id: "c1",
         client_name: "Acme Co",
-        sub_label: null,
+        display_name: null,
         released_count: 5,
         avg_days: 12,
         min_days: 6,

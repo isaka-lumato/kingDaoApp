@@ -5,7 +5,6 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getServerPermissions } from "@/lib/permissions";
 import { perfTimer } from "@/lib/perf";
 import {
-  PIPELINE_STAGES,
   STAGE_FIELDS,
   resolveActiveStage,
   stageFieldToDbEnum,
@@ -48,7 +47,7 @@ export async function fetchKanbanData(year?: number): Promise<{
     .from("consignments")
     .select(
       `id, ref_no, year, goods_description, vessel_name, arrival_date,
-       container_count, container_type, amount, updated_at,
+       cargo_count, cargo_type, amount, updated_at,
        manifest_status, shipping_batch_status, tanesws_status,
        assessment_status, tbs_loading_status, tbs_debit_status,
        manifest_comp_status, duty_status, inspection_file_status, release_status,
@@ -92,8 +91,8 @@ export async function fetchKanbanData(year?: number): Promise<{
       goods_description: row.goods_description,
       vessel_name: row.vessel_name,
       arrival_date: row.arrival_date,
-      container_count: row.container_count ? Number(row.container_count) : null,
-      container_type: row.container_type,
+      cargo_count: row.cargo_count ? Number(row.cargo_count) : null,
+      cargo_type: row.cargo_type,
       amount: row.amount,
       client_name: client?.name ?? "—",
       manifest_status: row.manifest_status,

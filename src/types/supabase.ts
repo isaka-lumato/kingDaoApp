@@ -20,6 +20,7 @@ export type Database = {
           created_at: string
           deleted_at: string | null
           file_name: string
+          folder_id: string | null
           id: string
           mime_type: string
           size_bytes: number
@@ -32,6 +33,7 @@ export type Database = {
           created_at?: string
           deleted_at?: string | null
           file_name: string
+          folder_id?: string | null
           id?: string
           mime_type: string
           size_bytes: number
@@ -44,6 +46,7 @@ export type Database = {
           created_at?: string
           deleted_at?: string | null
           file_name?: string
+          folder_id?: string | null
           id?: string
           mime_type?: string
           size_bytes?: number
@@ -72,6 +75,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_stuck_stages"
             referencedColumns: ["consignment_id"]
+          },
+          {
+            foreignKeyName: "attachments_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "consignment_folders"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -113,39 +123,107 @@ export type Database = {
       }
       clients: {
         Row: {
+          company: string | null
           contact_email: string | null
           created_at: string
           deleted_at: string | null
+          display_name: string | null
           id: string
           is_active: boolean
           name: string
           notes: string | null
-          sub_label: string | null
+          phone: string | null
           updated_at: string
         }
         Insert: {
+          company?: string | null
           contact_email?: string | null
           created_at?: string
           deleted_at?: string | null
+          display_name?: string | null
           id?: string
           is_active?: boolean
           name: string
           notes?: string | null
-          sub_label?: string | null
+          phone?: string | null
           updated_at?: string
         }
         Update: {
+          company?: string | null
           contact_email?: string | null
           created_at?: string
           deleted_at?: string | null
+          display_name?: string | null
           id?: string
           is_active?: boolean
           name?: string
           notes?: string | null
-          sub_label?: string | null
+          phone?: string | null
           updated_at?: string
         }
         Relationships: []
+      }
+      consignment_folders: {
+        Row: {
+          consignment_id: string
+          created_at: string
+          deleted_at: string | null
+          id: string
+          name: string
+          parent_folder_id: string | null
+          updated_at: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          consignment_id: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name: string
+          parent_folder_id?: string | null
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          consignment_id?: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name?: string
+          parent_folder_id?: string | null
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "consignment_folders_consignment_id_fkey"
+            columns: ["consignment_id"]
+            isOneToOne: false
+            referencedRelation: "consignments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "consignment_folders_consignment_id_fkey"
+            columns: ["consignment_id"]
+            isOneToOne: false
+            referencedRelation: "v_pending_refunds"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "consignment_folders_consignment_id_fkey"
+            columns: ["consignment_id"]
+            isOneToOne: false
+            referencedRelation: "v_stuck_stages"
+            referencedColumns: ["consignment_id"]
+          },
+          {
+            foreignKeyName: "consignment_folders_parent_folder_id_fkey"
+            columns: ["parent_folder_id"]
+            isOneToOne: false
+            referencedRelation: "consignment_folders"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       consignments: {
         Row: {
@@ -153,18 +231,19 @@ export type Database = {
           arrival_date: string | null
           assessment_status: Database["public"]["Enums"]["assessment_status"]
           bl_number: string | null
+          cargo_count: number
+          cargo_type: Database["public"]["Enums"]["cargo_type"]
           client_id: string
-          container_count: number
-          container_type: Database["public"]["Enums"]["container_type"]
           created_at: string
           current_status: string | null
           deleted_at: string | null
           duty_status: Database["public"]["Enums"]["duty_status"]
+          efd_receipt_no: string | null
           goods_description: string | null
           guta_pair_id: string | null
           icd_id: string | null
           id: string
-          in_ref: string | null
+
           inspection_file_status: Database["public"]["Enums"]["inspection_file_status"]
           is_failed: boolean
           is_refund_pending: boolean
@@ -193,18 +272,19 @@ export type Database = {
           arrival_date?: string | null
           assessment_status?: Database["public"]["Enums"]["assessment_status"]
           bl_number?: string | null
+          cargo_count?: number
+          cargo_type: Database["public"]["Enums"]["cargo_type"]
           client_id: string
-          container_count?: number
-          container_type: Database["public"]["Enums"]["container_type"]
           created_at?: string
           current_status?: string | null
           deleted_at?: string | null
           duty_status?: Database["public"]["Enums"]["duty_status"]
+          efd_receipt_no?: string | null
           goods_description?: string | null
           guta_pair_id?: string | null
           icd_id?: string | null
           id?: string
-          in_ref?: string | null
+
           inspection_file_status?: Database["public"]["Enums"]["inspection_file_status"]
           is_failed?: boolean
           is_refund_pending?: boolean
@@ -233,18 +313,19 @@ export type Database = {
           arrival_date?: string | null
           assessment_status?: Database["public"]["Enums"]["assessment_status"]
           bl_number?: string | null
+          cargo_count?: number
+          cargo_type?: Database["public"]["Enums"]["cargo_type"]
           client_id?: string
-          container_count?: number
-          container_type?: Database["public"]["Enums"]["container_type"]
           created_at?: string
           current_status?: string | null
           deleted_at?: string | null
           duty_status?: Database["public"]["Enums"]["duty_status"]
+          efd_receipt_no?: string | null
           goods_description?: string | null
           guta_pair_id?: string | null
           icd_id?: string | null
           id?: string
-          in_ref?: string | null
+
           inspection_file_status?: Database["public"]["Enums"]["inspection_file_status"]
           is_failed?: boolean
           is_refund_pending?: boolean
@@ -832,52 +913,14 @@ export type Database = {
           active_count: number | null
           client_id: string | null
           client_name: string | null
+          display_name: string | null
           job_count: number | null
           released_count: number | null
-          sub_label: string | null
           total_containers: number | null
           total_revenue: number | null
           year: number | null
         }
         Relationships: []
-      }
-      v_in_ref_batches: {
-        Row: {
-          all_released: boolean | null
-          client_id: string | null
-          client_name: string | null
-          consignment_count: number | null
-          earliest_arrival: string | null
-          efd_code: string | null
-          in_ref: string | null
-          latest_arrival: string | null
-          total_amount: number | null
-          total_containers: number | null
-          year: number | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "consignments_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "consignments_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "v_client_volume"
-            referencedColumns: ["client_id"]
-          },
-          {
-            foreignKeyName: "consignments_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "v_turnaround_by_client"
-            referencedColumns: ["client_id"]
-          },
-        ]
       }
       v_pending_refunds: {
         Row: {
@@ -941,10 +984,10 @@ export type Database = {
           avg_days: number | null
           client_id: string | null
           client_name: string | null
+          display_name: string | null
           max_days: number | null
           min_days: number | null
           released_count: number | null
-          sub_label: string | null
           year: number | null
         }
         Relationships: []
@@ -973,18 +1016,19 @@ export type Database = {
           arrival_date: string | null
           assessment_status: Database["public"]["Enums"]["assessment_status"]
           bl_number: string | null
+          cargo_count: number
+          cargo_type: Database["public"]["Enums"]["cargo_type"]
           client_id: string
-          container_count: number
-          container_type: Database["public"]["Enums"]["container_type"]
           created_at: string
           current_status: string | null
           deleted_at: string | null
           duty_status: Database["public"]["Enums"]["duty_status"]
+          efd_receipt_no: string | null
           goods_description: string | null
           guta_pair_id: string | null
           icd_id: string | null
           id: string
-          in_ref: string | null
+
           inspection_file_status: Database["public"]["Enums"]["inspection_file_status"]
           is_failed: boolean
           is_refund_pending: boolean
@@ -1049,18 +1093,19 @@ export type Database = {
           arrival_date: string | null
           assessment_status: Database["public"]["Enums"]["assessment_status"]
           bl_number: string | null
+          cargo_count: number
+          cargo_type: Database["public"]["Enums"]["cargo_type"]
           client_id: string
-          container_count: number
-          container_type: Database["public"]["Enums"]["container_type"]
           created_at: string
           current_status: string | null
           deleted_at: string | null
           duty_status: Database["public"]["Enums"]["duty_status"]
+          efd_receipt_no: string | null
           goods_description: string | null
           guta_pair_id: string | null
           icd_id: string | null
           id: string
-          in_ref: string | null
+
           inspection_file_status: Database["public"]["Enums"]["inspection_file_status"]
           is_failed: boolean
           is_refund_pending: boolean
@@ -1098,7 +1143,14 @@ export type Database = {
     }
     Enums: {
       assessment_status: "Waiting" | "Action" | "Closed"
-      container_type: "40FT" | "20FT" | "CAR" | "COIL"
+      cargo_type:
+        | "40FT"
+        | "20FT"
+        | "CAR"
+        | "COIL"
+        | "MACHINERY_VEHICLE"
+        | "LOOSE"
+        | "BULK"
       duty_status: "Waiting" | "Action" | "Paid"
       inspection_file_status: "Waiting" | "Action" | "Done" | "SHARED"
       manifest_comp_status: "Waiting" | "Action" | "Done"
@@ -1253,7 +1305,15 @@ export const Constants = {
   public: {
     Enums: {
       assessment_status: ["Waiting", "Action", "Closed"],
-      container_type: ["40FT", "20FT", "CAR", "COIL"],
+      cargo_type: [
+        "40FT",
+        "20FT",
+        "CAR",
+        "COIL",
+        "MACHINERY_VEHICLE",
+        "LOOSE",
+        "BULK",
+      ],
       duty_status: ["Waiting", "Action", "Paid"],
       inspection_file_status: ["Waiting", "Action", "Done", "SHARED"],
       manifest_comp_status: ["Waiting", "Action", "Done"],

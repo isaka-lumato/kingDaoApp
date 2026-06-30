@@ -26,8 +26,8 @@ export type KanbanConsignment = {
   goods_description: string | null;
   vessel_name: string | null;
   arrival_date: string | null;
-  container_count: number | null;
-  container_type: string | null;
+  cargo_count: number | null;
+  cargo_type: string | null;
   amount: number | null;
   client_name: string;
   manifest_status: string;
@@ -156,6 +156,36 @@ export function resolveActiveStage(row: Record<string, string>): StageField {
 /** Returns true if a stage value counts as "complete". */
 export function isStageComplete(field: StageField, value: string): boolean {
   return value === STAGE_DONE_VALUE[field];
+}
+
+/**
+ * Human-readable label for a consignment's currently-active pipeline stage,
+ * e.g. "Duty — Action", or "Released" when fully released. Pure over the row's
+ * 10 stage-status fields. Shared by the consignments list grid and the XLSX/PDF
+ * exports so the "Pipeline Stage" column reads identically everywhere.
+ */
+export function currentStageLabel(row: Record<StageField, string>): string {
+  const stageValues: Record<StageField, string> = {
+    manifest_status: row.manifest_status,
+    shipping_batch_status: row.shipping_batch_status,
+    tanesws_status: row.tanesws_status,
+    assessment_status: row.assessment_status,
+    tbs_loading_status: row.tbs_loading_status,
+    tbs_debit_status: row.tbs_debit_status,
+    manifest_comp_status: row.manifest_comp_status,
+    duty_status: row.duty_status,
+    inspection_file_status: row.inspection_file_status,
+    release_status: row.release_status,
+  };
+  const activeField = resolveActiveStage(stageValues);
+  const active = PIPELINE_STAGES.find((s) => s.field === activeField);
+  if (!active) return "—";
+
+  const status = stageValues[activeField];
+  if (activeField === "release_status" && status === active.doneValue) {
+    return "Released";
+  }
+  return `${active.label} — ${status}`;
 }
 
 /**

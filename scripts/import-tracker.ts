@@ -314,11 +314,11 @@ async function commitRows(
         continue;
       }
       const icd_id = c.icd_name ? await resolveIcdId(c.icd_name) : null;
-      if (!c.container_type) {
+      if (!c.cargo_type) {
         failures.push({
           rowIndex: c.rowIndex,
           ref_no: c.ref_no,
-          error: "container_type is required.",
+          error: "cargo_type is required.",
         });
         continue;
       }
@@ -332,13 +332,12 @@ async function commitRows(
           tansad_no: c.tansad_no,
           client_id,
           bl_number: c.bl_number,
-          container_count: c.container_count ?? 1,
-          container_type: c.container_type,
+          cargo_count: c.cargo_count ?? 1,
+          cargo_type: c.cargo_type,
           goods_description: c.goods_description,
           vessel_name: c.vessel_name,
           arrival_date: c.arrival_date,
           icd_id,
-          in_ref: c.in_ref,
           amount: c.amount,
           remarks: c.remarks,
           manifest_status: c.manifest_status,

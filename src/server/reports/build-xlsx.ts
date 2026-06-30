@@ -210,7 +210,7 @@ function buildClientVolumeSheet(
   const sheet = wb.addWorksheet(sheetNameFor(title));
   const columns: ColumnSpec<(typeof payload.rows)[number]>[] = [
     { header: "Client", width: 32, value: (r) => r.client_name ?? "" },
-    { header: "Sub-label", width: 26, value: (r) => r.sub_label ?? "" },
+    { header: "Displayed Name", width: 26, value: (r) => r.display_name ?? "" },
     { header: "Jobs", width: 10, value: (r) => num(r.job_count) },
     { header: "Containers", width: 12, value: (r) => num(r.total_containers) },
     { header: "Released", width: 12, value: (r) => num(r.released_count) },
@@ -258,7 +258,7 @@ function buildTurnaroundClientSheet(
   const sheet = wb.addWorksheet(sheetNameFor(title));
   const columns: ColumnSpec<(typeof payload.rows)[number]>[] = [
     { header: "Client", width: 32, value: (r) => r.client_name ?? "" },
-    { header: "Sub-label", width: 26, value: (r) => r.sub_label ?? "" },
+    { header: "Displayed Name", width: 26, value: (r) => r.display_name ?? "" },
     { header: "Released", width: 12, value: (r) => num(r.released_count) },
     { header: "Avg days", width: 12, value: (r) => num(r.avg_days) },
     { header: "Min days", width: 12, value: (r) => num(r.min_days) },

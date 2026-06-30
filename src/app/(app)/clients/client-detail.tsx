@@ -12,7 +12,7 @@ export type ClientConsignmentRow = {
   serial_no: number | null;
   vessel_name: string | null;
   arrival_date: string | null;
-  container_count: number | null;
+  cargo_count: number | null;
   amount: number | null;
   release_status: string;
   release_date: string | null;
@@ -23,8 +23,10 @@ export type ClientConsignmentRow = {
 export type SelectedClient = {
   id: string;
   name: string;
-  subLabel: string | null;
+  company: string | null;
+  displayName: string | null;
   contactEmail: string | null;
+  phone: string | null;
   notes: string | null;
   year: number;
   isAdmin: boolean;
@@ -64,18 +66,21 @@ export default function ClientDetail({ client }: { client: SelectedClient }) {
   const router = useRouter();
 
   function changeYear(year: number) {
-    router.push(`/clients?c=${client.id}&year=${year}`, { scroll: false });
+    router.push(`/clients/${client.id}?year=${year}`, { scroll: false });
   }
 
-  const title = client.subLabel ? `${client.name} — ${client.subLabel}` : client.name;
+  const title = client.displayName?.trim() || client.name;
+  const contactLine = [client.company, client.contactEmail, client.phone]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <div className="space-y-5">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h3 className="text-xl font-bold text-foreground">{title}</h3>
-          {client.contactEmail && (
-            <p className="text-sm text-muted-foreground mt-0.5">{client.contactEmail}</p>
+          {contactLine && (
+            <p className="text-sm text-muted-foreground mt-0.5">{contactLine}</p>
           )}
         </div>
         <label className="flex items-center gap-2 text-sm text-muted-foreground">

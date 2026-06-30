@@ -11,7 +11,7 @@ export const metadata: Metadata = { title: "Edit Consignment — KDL Tracker" };
 const EDITABLE_COLS = [
   "ref_no", "year", "serial_no", "client_id", "icd_id",
   "bl_number", "tansad_no", "vessel_name", "arrival_date",
-  "container_count", "container_type", "goods_description",
+  "cargo_count", "cargo_type", "efd_receipt_no", "goods_description",
   "amount", "remarks",
   ...STAGE_FIELDS,
 ] as const;
@@ -45,7 +45,7 @@ export default async function EditConsignmentPage({
     : { data: null };
 
   const [{ data: clients }, { data: icds }, { data: vessels }] = await Promise.all([
-    supabase.from("clients").select("id, name, sub_label").is("deleted_at", null).eq("is_active", true).order("name"),
+    supabase.from("clients").select("id, name, display_name").is("deleted_at", null).eq("is_active", true).order("name"),
     supabase.from("icds").select("id, name, location").is("deleted_at", null).eq("is_active", true).order("name"),
     supabase.from("vessels").select("name").is("deleted_at", null).eq("is_active", true).order("name"),
   ]);

@@ -279,7 +279,7 @@ function RevenueTable({ rows }: { rows: RevenueRow[] }) {
 function ClientVolumeTable({ rows }: { rows: ClientVolumeRow[] }) {
   const columns: Col<ClientVolumeRow>[] = [
     { header: "Client", flex: 3, value: (r) => r.client_name ?? "" },
-    { header: "Sub-label", flex: 2, value: (r) => r.sub_label ?? "" },
+    { header: "Displayed Name", flex: 2, value: (r) => r.display_name ?? "" },
     {
       header: "Jobs",
       flex: 1,
@@ -345,7 +345,7 @@ function ClientVolumeTable({ rows }: { rows: ClientVolumeRow[] }) {
 function TurnaroundClientTable({ rows }: { rows: TurnaroundClientRow[] }) {
   const columns: Col<TurnaroundClientRow>[] = [
     { header: "Client", flex: 3, value: (r) => r.client_name ?? "" },
-    { header: "Sub-label", flex: 2, value: (r) => r.sub_label ?? "" },
+    { header: "Displayed Name", flex: 2, value: (r) => r.display_name ?? "" },
     {
       header: "Released",
       flex: 1.2,

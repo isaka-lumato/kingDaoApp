@@ -1,23 +1,18 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
+
 import { notFound } from "next/navigation";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { perfTimer } from "@/lib/perf";
 import ConsignmentDetail from "./consignment-detail";
-import BatchPanel from "../_batch-panel/batch-panel";
-import BatchPanelContent from "../_batch-panel/batch-panel-content";
 
 export const metadata: Metadata = { title: "Consignment — KDL Tracker" };
 
 export default async function ConsignmentPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ batch?: string; bc?: string; by?: string }>;
 }) {
   const { id } = await params;
-  const sp = await searchParams;
 
   // Validate UUID format to avoid passing junk to the DB.
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -53,6 +48,7 @@ export default async function ConsignmentPage({
     { data: auditLog },
     { data: efdLinks },
     { data: attachments },
+    { data: folders },
   ] = await Promise.all([
     consignment.client_id
       ? supabase
@@ -85,11 +81,19 @@ export default async function ConsignmentPage({
     supabase
       .from("attachments")
       .select(
-        "id, consignment_id, storage_path, file_name, mime_type, size_bytes, uploaded_by, created_at"
+        "id, consignment_id, folder_id, storage_path, file_name, mime_type, size_bytes, uploaded_by, created_at"
       )
       .eq("consignment_id", id)
       .is("deleted_at", null)
       .order("created_at", { ascending: false }),
+    supabase
+      .from("consignment_folders")
+      .select(
+        "id, consignment_id, parent_folder_id, name, uploaded_by, created_at"
+      )
+      .eq("consignment_id", id)
+      .is("deleted_at", null)
+      .order("name", { ascending: true }),
   ]);
   t.mark("fanout");
 
@@ -121,8 +125,8 @@ export default async function ConsignmentPage({
       id: string;
       ref_no: string;
       bl_number: string | null;
-      container_count: number | null;
-      container_type: string | null;
+      cargo_count: number | null;
+      cargo_type: string | null;
       amount: number | null;
       release_status: string;
       release_date: string | null;
@@ -145,7 +149,7 @@ export default async function ConsignmentPage({
       const { data: sibling } = await supabase
         .from("consignments")
         .select(
-          "id, ref_no, bl_number, container_count, container_type, amount, release_status, release_date, goods_description"
+          "id, ref_no, bl_number, cargo_count, cargo_type, amount, release_status, release_date, goods_description"
         )
         .eq("id", siblingId)
         .is("deleted_at", null)
@@ -161,40 +165,16 @@ export default async function ConsignmentPage({
     }
   }
 
-  if (consignment.guta_pair_id) t.mark("guta-pair");
-
-  const batchInRef = sp.batch?.trim();
-  const batchClientId = sp.bc?.trim();
-  const batchYear = sp.by ? parseInt(sp.by, 10) : NaN;
-  const showBatch =
-    !!batchInRef && !!batchClientId && Number.isFinite(batchYear);
-
   t.end();
 
   return (
-    <>
-      <ConsignmentDetail
-        consignment={{ ...consignment, clients: clientData, icds: icdData }}
-        auditLog={auditLog ?? []}
-        linkedEfds={linkedEfds}
-        gutaPair={gutaPair}
-        attachments={attachments ?? []}
-      />
-      {showBatch && (
-        <BatchPanel inRef={batchInRef!}>
-          <Suspense
-            fallback={
-              <div className="text-sm text-muted-foreground">Loading batch…</div>
-            }
-          >
-            <BatchPanelContent
-              inRef={batchInRef!}
-              clientId={batchClientId!}
-              year={batchYear}
-            />
-          </Suspense>
-        </BatchPanel>
-      )}
-    </>
+    <ConsignmentDetail
+      consignment={{ ...consignment, clients: clientData, icds: icdData }}
+      auditLog={auditLog ?? []}
+      linkedEfds={linkedEfds}
+      gutaPair={gutaPair}
+      attachments={attachments ?? []}
+      folders={folders ?? []}
+    />
   );
 }

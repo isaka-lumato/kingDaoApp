@@ -4,13 +4,23 @@ import { z } from "zod";
 // both the upload UI (pre-flight validation) and the server action
 // (re-validation) can import it — per D-027.
 
-/** MIME types accepted for consignment attachments: images + PDF (D-054). */
+/**
+ * MIME types accepted for consignment attachments: images, PDF, Word, plain
+ * text, and Excel (D-055; widened from the original images + PDF set in D-054).
+ * Must stay in sync with the bucket's allowed_mime_types (the un-bypassable
+ * Storage-side guard) set in the 20260622220000_consignment_folders migration.
+ */
 export const ALLOWED_ATTACHMENT_MIME = [
   "image/jpeg",
   "image/png",
   "image/webp",
   "image/heic",
   "application/pdf",
+  "text/plain",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 ] as const;
 
 export type AttachmentMime = (typeof ALLOWED_ATTACHMENT_MIME)[number];
@@ -18,8 +28,25 @@ export type AttachmentMime = (typeof ALLOWED_ATTACHMENT_MIME)[number];
 /** 10 MiB hard cap. Mirrors the Storage bucket file_size_limit + table CHECK. */
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
-/** `accept` attribute value for the file <input>. */
-export const ATTACHMENT_ACCEPT = ALLOWED_ATTACHMENT_MIME.join(",");
+/**
+ * `accept` attribute value for the file <input>. Includes both the MIME types
+ * and file extensions — some OSes report an empty `file.type` for Office
+ * formats, so the extension hints keep them selectable in the picker.
+ */
+export const ATTACHMENT_ACCEPT = [
+  ...ALLOWED_ATTACHMENT_MIME,
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".webp",
+  ".heic",
+  ".pdf",
+  ".txt",
+  ".doc",
+  ".docx",
+  ".xls",
+  ".xlsx",
+].join(",");
 
 /** Storage path prefix all attachment objects live under (storage RLS scopes to it). */
 export const ATTACHMENT_PATH_PREFIX = "consignments";
@@ -29,6 +56,8 @@ export const ATTACHMENT_BUCKET = "consignment-attachments";
 
 export const recordAttachmentSchema = z.object({
   consignmentId: z.uuid(),
+  // null = consignment root; a uuid = a consignment_folders row (D-055).
+  folderId: z.uuid().nullable().default(null),
   storagePath: z.string().min(1).max(1024),
   fileName: z.string().min(1).max(255),
   mimeType: z.enum(ALLOWED_ATTACHMENT_MIME),

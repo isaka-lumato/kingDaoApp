@@ -204,7 +204,7 @@ describe("parseTracker — real file structure (D-047)", () => {
     const rows: CellValue[][] = [HEADER_NO_CT, yearBanner(2025), dataRow];
     const r = parseTracker(rows);
     expect(r.consignments).toHaveLength(1);
-    expect(r.consignments[0]!.container_type).toBe("40FT");
+    expect(r.consignments[0]!.cargo_type).toBe("40FT");
   });
 
   it("maps real-file header typos (CURENT/Loadging/B-L No;)", () => {
@@ -381,8 +381,8 @@ describe("parseTracker — REF No padding (§8.20)", () => {
   });
 });
 
-describe("parseTracker — container_type validation", () => {
-  it("rejects unknown container_type", () => {
+describe("parseTracker — cargo_type validation", () => {
+  it("rejects unknown cargo_type", () => {
     const rows: CellValue[][] = [
       [2026],
       HEADER,
@@ -390,7 +390,7 @@ describe("parseTracker — container_type validation", () => {
     ];
     const r = parseTracker(rows);
     expect(r.consignments).toHaveLength(0);
-    expect(r.errors.some((e) => e.field === "container_type")).toBe(true);
+    expect(r.errors.some((e) => e.field === "cargo_type")).toBe(true);
   });
 
   it("accepts lowercased '40ft' and normalises", () => {
@@ -400,7 +400,7 @@ describe("parseTracker — container_type validation", () => {
       validRow({ "Container Type": "40ft" }),
     ];
     const r = parseTracker(rows);
-    expect(r.consignments[0]!.container_type).toBe("40FT");
+    expect(r.consignments[0]!.cargo_type).toBe("40FT");
   });
 });
 
@@ -416,20 +416,7 @@ describe("parseTracker — §8.5 cross-field warnings", () => {
     expect(r.warnings.some((w) => w.field === "amount")).toBe(true);
   });
 
-  it("warns when CAR has an in_ref set", () => {
-    const rows: CellValue[][] = [
-      [2026],
-      HEADER,
-      validRow({
-        "Container Type": "CAR",
-        "No. of Cont(s)": 1,
-        AMOUNT: 60_000,
-        "IN REF": "TZ3",
-      }),
-    ];
-    const r = parseTracker(rows);
-    expect(r.warnings.some((w) => w.field === "in_ref")).toBe(true);
-  });
+
 
   it("warns when COIL ships to an ICD other than DP WORLD", () => {
     const rows: CellValue[][] = [

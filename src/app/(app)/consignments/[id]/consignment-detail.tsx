@@ -4,11 +4,13 @@ import { useState, useTransition, useActionState } from "react";
 import Link from "next/link";
 import { PIPELINE_STAGES, isStageComplete, resolveActiveStage, type StageField } from "@/lib/pipeline";
 import { formatTzs } from "@/lib/money";
+import { cargoLabel } from "@/lib/cargo";
 import { usePermissions } from "@/hooks/use-permissions";
-import BatchLink from "@/components/batch-link";
+
 import StageActionShell from "@/components/stage-action-shell";
 import AttachmentsTab from "./_attachments/attachments-tab";
 import type { AttachmentRow } from "@/server/actions/attachment-actions";
+import type { FolderRow } from "@/server/actions/folder-actions";
 import {
   duplicateConsignmentAction,
   softDeleteConsignmentAction,
@@ -24,10 +26,11 @@ type Consignment = {
   serial_no: number | null;
   tansad_no: string | null;
   bl_number: string | null;
-  in_ref: string | null;
+
   client_id: string | null;
-  container_count: number | null;
-  container_type: string | null;
+  cargo_count: number | null;
+  cargo_type: string | null;
+  efd_receipt_no: string | null;
   goods_description: string | null;
   vessel_name: string | null;
   arrival_date: string | null;
@@ -112,8 +115,8 @@ type GutaPair = {
     id: string;
     ref_no: string;
     bl_number: string | null;
-    container_count: number | null;
-    container_type: string | null;
+    cargo_count: number | null;
+    cargo_type: string | null;
     amount: number | null;
     release_status: string;
     release_date: string | null;
@@ -127,6 +130,7 @@ type Props = {
   linkedEfds: LinkedEfd[];
   gutaPair: GutaPair | null;
   attachments: AttachmentRow[];
+  folders: FolderRow[];
 };
 
 const STATUS_STYLES: Record<string, string> = {
@@ -162,7 +166,7 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
 // `linkedEfds` (still on Props, still passed by the page) is intentionally not
 // destructured while the EFD UI is temporarily hidden — see the commented
 // "Linked EFDs" section below. Restore the destructure when re-enabling EFD.
-export default function ConsignmentDetail({ consignment, auditLog, gutaPair, attachments }: Props) {
+export default function ConsignmentDetail({ consignment, auditLog, gutaPair, attachments, folders }: Props) {
   const [tab, setTab] = useState<"overview" | "pipeline" | "files" | "audit">("overview");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteReason, setDeleteReason] = useState("");
@@ -347,18 +351,7 @@ export default function ConsignmentDetail({ consignment, auditLog, gutaPair, att
               <Field label="Serial No" value={consignment.serial_no} />
               <Field label="B/L Number" value={consignment.bl_number} />
               <Field label="TANSAD No" value={consignment.tansad_no} />
-              <Field
-                label="In Ref"
-                value={
-                  consignment.in_ref && consignment.client_id ? (
-                    <BatchLink
-                      inRef={consignment.in_ref}
-                      clientId={consignment.client_id}
-                      year={consignment.year}
-                    />
-                  ) : null
-                }
-              />
+
               <Field label="ICD" value={icd ? `${icd.name}${icd.location ? ` (${icd.location})` : ""}` : null} />
               <Field
                 label="Goods"
@@ -395,13 +388,14 @@ export default function ConsignmentDetail({ consignment, auditLog, gutaPair, att
                 }
               />
               <Field
-                label="Container"
+                label="Cargo"
                 value={
-                  consignment.container_count
-                    ? `${consignment.container_count} × ${consignment.container_type ?? "?"}`
+                  consignment.cargo_count
+                    ? `${consignment.cargo_count} × ${cargoLabel(consignment.cargo_type) || "?"}`
                     : null
                 }
               />
+              <Field label="EFD receipt no" value={consignment.efd_receipt_no} />
               <Field
                 label="Release date"
                 value={
@@ -479,10 +473,10 @@ export default function ConsignmentDetail({ consignment, auditLog, gutaPair, att
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3">
                     <Field label="B/L" value={gutaPair.sibling.bl_number} />
                     <Field
-                      label="Container"
+                      label="Cargo"
                       value={
-                        gutaPair.sibling.container_count
-                          ? `${gutaPair.sibling.container_count} × ${gutaPair.sibling.container_type ?? "?"}`
+                        gutaPair.sibling.cargo_count
+                          ? `${gutaPair.sibling.cargo_count} × ${cargoLabel(gutaPair.sibling.cargo_type) || "?"}`
                           : null
                       }
                     />
@@ -687,7 +681,11 @@ export default function ConsignmentDetail({ consignment, auditLog, gutaPair, att
 
       {/* ── Files tab ── */}
       {tab === "files" && (
-        <AttachmentsTab consignmentId={consignment.id} initial={attachments} />
+        <AttachmentsTab
+          consignmentId={consignment.id}
+          initialFiles={attachments}
+          initialFolders={folders}
+        />
       )}
 
       {/* ── Audit tab ── */}
