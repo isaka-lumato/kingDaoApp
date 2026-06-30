@@ -172,7 +172,7 @@ export async function createIcdAction(formData: FormData) {
     .single();
   if (error) return error.code === "23505" ? uniqueError("ICD") : { error: error.message };
 
-  revalidatePath("/settings/icds");
+  revalidatePath("/icds");
   return { success: true, data };
 }
 
@@ -196,14 +196,46 @@ export async function updateIcdAction(formData: FormData) {
     .eq("id", id.data);
   if (error) return error.code === "23505" ? uniqueError("ICD") : { error: error.message };
 
-  revalidatePath("/settings/icds");
+  revalidatePath("/icds");
+  return { success: true };
+}
+
+// Soft-delete an ICD (D-061 / D-015). Admin-only. Refused when any non-deleted
+// consignment still references it — mirrors deleteClientAction (D-053).
+export async function deleteIcdAction(formData: FormData) {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+
+  const id = z.uuid().safeParse(formData.get("id"));
+  if (!id.success) return { error: "Invalid ICD ID" };
+
+  const supabase = await getSupabaseServerClient();
+
+  const { count, error: countErr } = await supabase
+    .from("consignments")
+    .select("id", { count: "exact", head: true })
+    .eq("icd_id", id.data)
+    .is("deleted_at", null);
+  if (countErr) return { error: countErr.message };
+  if ((count ?? 0) > 0) {
+    return { error: `This ICD has ${count} consignment(s) and cannot be deleted.` };
+  }
+
+  const { error } = await supabase
+    .from("icds")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", id.data)
+    .is("deleted_at", null);
+  if (error) return { error: error.message };
+
+  revalidatePath("/icds");
   return { success: true };
 }
 
 export async function setIcdActiveAction(formData: FormData) {
   const denied = await requireAdmin();
   if (denied) return denied;
-  return setActive("icds", "/settings/icds", formData);
+  return setActive("icds", "/icds", formData);
 }
 
 // ── Vessels ──────────────────────────────────────────────────────────────────
@@ -227,7 +259,7 @@ export async function createVesselAction(formData: FormData) {
     .single();
   if (error) return error.code === "23505" ? uniqueError("vessel") : { error: error.message };
 
-  revalidatePath("/settings/vessels");
+  revalidatePath("/vessels");
   return { success: true, data };
 }
 
@@ -248,14 +280,55 @@ export async function updateVesselAction(formData: FormData) {
     .eq("id", id.data);
   if (error) return error.code === "23505" ? uniqueError("vessel") : { error: error.message };
 
-  revalidatePath("/settings/vessels");
+  revalidatePath("/vessels");
+  return { success: true };
+}
+
+// Soft-delete a vessel (D-061 / D-015). Admin-only. Consignments reference a
+// vessel by free-text `vessel_name` (not an FK, D-050), so the guard matches on
+// the vessel's name. Refused when any non-deleted consignment uses that name.
+export async function deleteVesselAction(formData: FormData) {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+
+  const id = z.uuid().safeParse(formData.get("id"));
+  if (!id.success) return { error: "Invalid vessel ID" };
+
+  const supabase = await getSupabaseServerClient();
+
+  const { data: vessel, error: fetchErr } = await supabase
+    .from("vessels")
+    .select("name")
+    .eq("id", id.data)
+    .is("deleted_at", null)
+    .single();
+  if (fetchErr || !vessel) return { error: "Vessel not found." };
+
+  const { count, error: countErr } = await supabase
+    .from("consignments")
+    .select("id", { count: "exact", head: true })
+    .eq("vessel_name", vessel.name)
+    .is("deleted_at", null);
+  if (countErr) return { error: countErr.message };
+  if ((count ?? 0) > 0) {
+    return { error: `This vessel has ${count} consignment(s) and cannot be deleted.` };
+  }
+
+  const { error } = await supabase
+    .from("vessels")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", id.data)
+    .is("deleted_at", null);
+  if (error) return { error: error.message };
+
+  revalidatePath("/vessels");
   return { success: true };
 }
 
 export async function setVesselActiveAction(formData: FormData) {
   const denied = await requireAdmin();
   if (denied) return denied;
-  return setActive("vessels", "/settings/vessels", formData);
+  return setActive("vessels", "/vessels", formData);
 }
 
 // ── Shared active-toggle ──────────────────────────────────────────────────────

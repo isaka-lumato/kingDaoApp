@@ -1,19 +1,11 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import {
-  ShieldCheck,
-  Ship,
-  UsersRound,
-  Warehouse,
-  type LucideIcon,
-} from "lucide-react";
+import { ShieldCheck, UsersRound, type LucideIcon } from "lucide-react";
 import { getServerPermissions } from "@/lib/permissions";
 
 const SETTINGS_NAV: { href: string; label: string; Icon: LucideIcon }[] = [
   { href: "/settings/users", label: "Users", Icon: UsersRound },
   { href: "/settings/roles", label: "Roles & Permissions", Icon: ShieldCheck },
-  { href: "/settings/icds", label: "ICDs", Icon: Warehouse },
-  { href: "/settings/vessels", label: "Vessels", Icon: Ship },
 ];
 
 export default async function SettingsLayout({

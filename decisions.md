@@ -1161,3 +1161,21 @@ Final design — **single `/clients` route, selection driven by `?c=<id>`** (the
 4. Operators may write `efd_receipt_no`; viewers read it only. The migration updates `role_column_permissions` so the DB column-write guard keeps matching live column names.
 
 **Trade-off.** `efd_receipt_no` is a simple per-consignment free-text field and does not replace the richer `efd_records` many-to-many system.
+
+---
+
+## D-061 - ICD & Vessel CRUD promoted to `/icds` and `/vessels` left-panel surfaces; Settings entries removed
+
+**Date:** 2026-06-30
+**Status:** Active. User-requested, not a tracked task. Extends D-053 (which did the same for Clients).
+
+**Context.** ICDs and Vessels were managed only inside Settings (`/settings/icds`, `/settings/vessels`) via the generic `ReferenceManager` - a flat add/edit/activate table with no detail view. Clients used to live there too until D-053 promoted them to a first-class `/clients` left-panel master-detail surface. Per user request, ICDs and Vessels get the same treatment: their own left-nav entries, each a table of clickable names that open a per-record detail page.
+
+**Decision.**
+1. **Single home per entity = its own left-panel route.** New `/icds` and `/vessels` surfaces mirror `/clients`: a browsable, searchable, sortable table whose name cells link to a detail page (`/icds/[id]`, `/vessels/[id]`). The Settings -> ICDs and Settings -> Vessels subsections (routes + nav entries) are **removed**. `ReferenceManager` and the now-orphaned `settings/reference-manager.tsx` are deleted - nothing uses it after this change.
+2. **Nav visibility = everyone; writes = admin-only.** The `/icds` and `/vessels` nav items carry no `roles` gate, so all signed-in users see and browse them (matching `/clients`). Add/Edit/Delete controls render only for admins, and the server actions + RLS already enforce admin-only writes (`requireAdmin()` + `*_write_admin` policies). Read stays open to all authenticated users (existing `*_select_authenticated` policies).
+3. **Guarded soft-delete per entity.** New `deleteIcdAction` / `deleteVesselAction` mirror `deleteClientAction` (D-053): admin-only, set `deleted_at = now()`, but refuse when a non-deleted consignment still references the record. ICD reference = `consignments.icd_id`; vessel reference = `consignments.vessel_name = vessels.name` (vessel is matched by free-text name, not an FK - see D-050). The active-toggle controls are retained on these surfaces (unlike the Clients panel, which dropped them).
+4. **Detail page = usage view.** Each detail page shows the record's fields plus its consignments (linked to `/consignments/[id]`) and summary stat cards. ICD consignments are found by `icd_id`; vessel consignments by exact `vessel_name`.
+5. **No DB change.** The `icds` / `vessels` tables, RLS, audit triggers, soft-delete, and create/update/setActive actions already exist. Only `revalidatePath` targets move from `/settings/icds|vessels` to `/icds|vessels`. `createIcdAction` / `createVesselAction` stay intact - the new-consignment form's inline "Add ICD / Add vessel" modals keep using them.
+
+**Trade-off.** Like D-053, blocking delete on linked consignments means an admin must clear/reassign a record's consignments before deleting - accepted as safer than orphaning `icd_id` / `vessel_name` references. Vessel usage matching is by exact name string (free text), so a renamed-but-not-migrated vessel value on old consignments won't be counted; accepted, consistent with D-050's free-text model.
