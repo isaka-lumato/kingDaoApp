@@ -340,9 +340,18 @@ export function parseTracker(rows: CellValue[][]): ParseResult {
       "tanesws_status",
       warnings
     );
+    // D-062: the terminal value was renamed Closed → Accepted. Historical source
+    // files still carry "Closed"/"closed"; map it to "Accepted" so those rows
+    // import at their true stage instead of defaulting to "Waiting".
+    const rawAssessment = cell("assessment_status");
+    const assessmentCell: CellValue =
+      typeof rawAssessment === "string" &&
+      rawAssessment.trim().toLowerCase() === "closed"
+        ? "Accepted"
+        : rawAssessment;
     const assessment_status = coerceEnum<AssessmentStatus>(
-      cell("assessment_status"),
-      ["Waiting", "Action", "Closed"],
+      assessmentCell,
+      ["Waiting", "Action", "Accepted"],
       "Waiting",
       i,
       ref_no,

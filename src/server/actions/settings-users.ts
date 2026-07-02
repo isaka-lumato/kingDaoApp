@@ -24,14 +24,10 @@ const createUserSchema = z.object({
   roleId: z.uuid("Role ID required"),
 });
 
-const assignRoleSchema = z.object({
+// D-058: exactly one role per user. Editing replaces the single current role.
+const updateUserRoleSchema = z.object({
   userId: z.uuid(),
-  roleId: z.uuid(),
-});
-
-const updateUserRolesSchema = z.object({
-  userId: z.uuid(),
-  roleIds: z.array(z.uuid()),
+  roleId: z.uuid("Select a role"),
 });
 
 // ── Actions ────────────────────────────────────────────────────────────────
@@ -89,17 +85,21 @@ export async function inviteUserAction(formData: FormData) {
     userId = created.user.id;
   }
 
-  // Assign the selected role (ignore if already assigned).
+  // Set the selected role as the user's single role (D-058). For an existing
+  // user this replaces whatever role they had; the unique constraint keeps it
+  // to exactly one row per user.
+  const { error: deleteErr } = await admin
+    .from("user_roles")
+    .delete()
+    .eq("user_id", userId);
+  if (deleteErr) {
+    return { error: `User created but clearing prior role failed: ${deleteErr.message}` };
+  }
+
   const { error: roleErr } = await admin
     .from("user_roles")
     .insert({ user_id: userId, role_id: parsed.data.roleId });
-
   if (roleErr) {
-    if (roleErr.code === "23505") {
-      // Role already assigned — not an error.
-      revalidatePath("/settings/users");
-      return { success: true, email: parsed.data.email, note: "Role was already assigned." };
-    }
     return { error: `User created but role assignment failed: ${roleErr.message}` };
   }
 
@@ -159,122 +159,51 @@ export async function listUsersAction(): Promise<{
 }
 
 /**
- * Assign an additional role to an existing user.
- */
-export async function assignRoleAction(formData: FormData) {
-  await requireAdmin();
-  const parsed = assignRoleSchema.safeParse({
-    userId: formData.get("userId"),
-    roleId: formData.get("roleId"),
-  });
-  if (!parsed.success) return { error: "Invalid input" };
-
-  const admin = getSupabaseAdminClient();
-  const { error } = await admin
-    .from("user_roles")
-    .insert({ user_id: parsed.data.userId, role_id: parsed.data.roleId });
-
-  if (error) {
-    if (error.code === "23505") return { error: "Role already assigned." };
-    return { error: error.message };
-  }
-
-  invalidatePermissionsCache(parsed.data.userId);
-  revalidatePath("/settings/users");
-  return { success: true };
-}
-
-/**
- * Replace the complete role set for an existing user.
+ * Set the single role for an existing user (D-058). Deletes any existing
+ * assignment and inserts the selected one, so the user ends up with exactly
+ * one role.
  */
 export async function updateUserRolesAction(formData: FormData) {
   const perms = await requireAdmin();
-  const parsed = updateUserRolesSchema.safeParse({
+  const parsed = updateUserRoleSchema.safeParse({
     userId: formData.get("userId"),
-    roleIds: formData.getAll("roleIds"),
+    roleId: formData.get("roleId"),
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
 
-  const roleIds = Array.from(new Set(parsed.data.roleIds));
+  const { userId, roleId } = parsed.data;
   const admin = getSupabaseAdminClient();
 
-  if (roleIds.length > 0) {
-    const { data: roles, error: rolesErr } = await admin
-      .from("roles")
-      .select("id")
-      .in("id", roleIds);
+  const { data: role, error: roleErr } = await admin
+    .from("roles")
+    .select("id, name")
+    .eq("id", roleId)
+    .single();
 
-    if (rolesErr) return { error: rolesErr.message };
-    if ((roles ?? []).length !== roleIds.length) {
-      return { error: "One or more selected roles no longer exists." };
-    }
+  if (roleErr || !role) return { error: "The selected role no longer exists." };
+
+  // An admin cannot demote themselves out of admin — it would lock everyone
+  // out of user management if they were the last admin.
+  if (perms.userId === userId && role.name !== "admin") {
+    return { error: "You cannot change your own role away from admin." };
   }
 
-  if (perms.userId === parsed.data.userId) {
-    const { data: adminRole, error: adminRoleErr } = await admin
-      .from("roles")
-      .select("id")
-      .eq("name", "admin")
-      .single();
-
-    if (adminRoleErr) return { error: adminRoleErr.message };
-    if (adminRole && !roleIds.includes(adminRole.id)) {
-      return { error: "You cannot remove your own admin role." };
-    }
-  }
-
-  if (roleIds.length > 0) {
-    const { error: upsertErr } = await admin.from("user_roles").upsert(
-      roleIds.map((roleId) => ({
-        user_id: parsed.data.userId,
-        role_id: roleId,
-      })),
-      { onConflict: "user_id,role_id" },
-    );
-
-    if (upsertErr) return { error: upsertErr.message };
-  }
-
-  let deleteQuery = admin
+  // Replace: drop the current role, then assign the chosen one. The unique
+  // constraint (user_roles_one_per_user) guarantees at most one row per user.
+  const { error: deleteErr } = await admin
     .from("user_roles")
     .delete()
-    .eq("user_id", parsed.data.userId);
-
-  if (roleIds.length > 0) {
-    deleteQuery = deleteQuery.not("role_id", "in", `(${roleIds.join(",")})`);
-  }
-
-  const { error: deleteErr } = await deleteQuery;
+    .eq("user_id", userId);
   if (deleteErr) return { error: deleteErr.message };
 
-  invalidatePermissionsCache(parsed.data.userId);
-  revalidatePath("/settings/users");
-  return { success: true };
-}
-
-/**
- * Remove a role from a user.
- */
-export async function removeRoleAction(formData: FormData) {
-  await requireAdmin();
-  const parsed = assignRoleSchema.safeParse({
-    userId: formData.get("userId"),
-    roleId: formData.get("roleId"),
-  });
-  if (!parsed.success) return { error: "Invalid input" };
-
-  const admin = getSupabaseAdminClient();
-  const { error } = await admin
+  const { error: insertErr } = await admin
     .from("user_roles")
-    .delete()
-    .eq("user_id", parsed.data.userId)
-    .eq("role_id", parsed.data.roleId);
+    .insert({ user_id: userId, role_id: roleId });
+  if (insertErr) return { error: insertErr.message };
 
-  if (error) return { error: error.message };
-
-  invalidatePermissionsCache(parsed.data.userId);
+  invalidatePermissionsCache(userId);
   revalidatePath("/settings/users");
   return { success: true };
 }

@@ -62,7 +62,7 @@ Here is the exact journey of a shipment:
        ↓
 3. TANESWS Loading Done
        ↓
-4. Assessment Closed (Taxes Calculated by TRA)
+4. Assessment Accepted (Taxes Calculated by TRA)
        ↓
 5. TBS Loading Done
        ↓
@@ -83,7 +83,7 @@ Here is the exact journey of a shipment:
 1. **Manifest Uploaded (`manifest_status`)**: The cargo ship sends a list of everything on board (the manifest) to Tanzania Customs. We cannot start until this list is officially uploaded.
 2. **Shipping Batch (`shipping_batch_status`)**: The containers are offloaded from the ship and moved to their designated storage yard (the ICD). When they have arrived and settled at the yard, it is marked as `CARRY IN END` (Done).
 3. **TANESWS Loading (`tanesws_status`)**: We log into the Tanzania Electronic Single Window System (TANESWS) and upload all the cargo documents to begin the clearance process.
-4. **Assessment Closed (`assessment_status`)**: The Tanzania Revenue Authority (TRA) reviews our documents and calculates exactly how much customs tax (duty) KDL's client needs to pay. Once this tax amount is locked in, the assessment is "Closed".
+4. **Assessment Accepted (`assessment_status`)**: The Tanzania Revenue Authority (TRA) reviews our documents and calculates exactly how much customs tax (duty) KDL's client needs to pay. Once this tax amount is locked in, the assessment is "Accepted".
 5. **TBS Loading (`tbs_loading_status`)**: We load the shipment information into the Tanzania Bureau of Standards (TBS) system to ensure the imports comply with safety standards.
 6. **TBS Debit Paid (`tbs_debit_status`)**: We pay the standard TBS verification fees.
 7. **Manifest Complete (`manifest_comp_status`)**: We finalize the customs documentation, matching the physical containers to the manifest entries.

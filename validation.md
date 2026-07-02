@@ -38,7 +38,7 @@ These are the PRD §8 invariants. The DB must reject violations, not just the UI
 
 - [ ] `arrival_date` NULL → every pipeline stage stays `Waiting`. Test: `advance_stage(...)` errors when arrival_date is null.
 - [ ] `manifest_status != 'Uploaded'` → `tanesws_status = 'Done'` rejected.
-- [ ] `assessment_status != 'Closed'` → `tbs_loading_status = 'Done'` rejected.
+- [ ] `assessment_status != 'Accepted'` → `tbs_loading_status = 'Done'` rejected.
 - [ ] `tbs_loading_status != 'Done'` → `tbs_debit_status = 'Paid'` rejected.
 - [ ] `tbs_debit_status = 'Paid'` → `duty_status` auto-set to `'Paid'` by the function.
 - [ ] `duty_status != 'Paid'` → `inspection_file_status = 'Done'` rejected (allowed only if `'SHARED'`).

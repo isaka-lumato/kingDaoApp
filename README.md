@@ -101,7 +101,7 @@ Every consignment moves through **ten pipeline stages**, in order — like a boa
 
 - **Waiting** (grey) — not started yet.
 - **Action** (amber) — someone is actively working on it *right now*.
-- A **done value** (green) — the stage is complete. The exact word differs per stage (e.g. *Uploaded*, *Closed*, *Paid*, *Released*).
+- A **done value** (green) — the stage is complete. The exact word differs per stage (e.g. *Uploaded*, *Accepted*, *Paid*, *Released*).
 
 > **EFD is not a pipeline stage.** The official fiscal receipt (EFD) is handled *separately*, after release, in the **EFD Records** section. It is not a column on the Kanban board. (Some older docs describe an “11th stage” — that was just a simplification; in the app, EFD lives on its own.)
 
@@ -125,7 +125,7 @@ flowchart TD
 | 1 | **Manifest** | The ship files its official cargo list with customs. Nothing can start until this list is uploaded. | **Uploaded** |
 | 2 | **Shipping Batch** | The container is moved from the crowded port to an inland depot (ICD) and settled there (the “carry-in”). | **Done** (may pass through *PREPARED*, *W/CARRY IN*, *CARRY IN END*) |
 | 3 | **TANESWS** | KDL logs into the government single-window portal and files the cargo documents to begin clearance. | **Done** |
-| 4 | **Assessment** | TRA reviews the documents and calculates the duty owed. Once the figure is locked, it is *Closed*. | **Closed** |
+| 4 | **Assessment** | TRA reviews the documents and calculates the duty owed. Once the figure is locked, it is *Accepted*. | **Accepted** |
 | 5 | **TBS Loading** | The shipment’s data is entered into the standards-bureau system. | **Done** |
 | 6 | **TBS Debit** | The TBS standards fee is paid. | **Paid** (may be *SHARED* across a batch) |
 | 7 | **Manifest Comp** | The customs paperwork is finalised and matched to the physical cargo. | **Done** |
