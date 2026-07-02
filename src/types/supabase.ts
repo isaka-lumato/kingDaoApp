@@ -1142,7 +1142,7 @@ export type Database = {
       seed_viewer_consignment_perms: { Args: never; Returns: undefined }
     }
     Enums: {
-      assessment_status: "Waiting" | "Action" | "Closed"
+      assessment_status: "Waiting" | "Action" | "Accepted"
       cargo_type:
         | "40FT"
         | "20FT"
@@ -1304,7 +1304,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      assessment_status: ["Waiting", "Action", "Closed"],
+      assessment_status: ["Waiting", "Action", "Accepted"],
       cargo_type: [
         "40FT",
         "20FT",

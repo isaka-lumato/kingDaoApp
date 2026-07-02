@@ -73,7 +73,7 @@ function validRow(overrides: Partial<Record<string, CellValue>> = {}): CellValue
     Manifest: "Uploaded",
     "Shipping Batch": "Done",
     "TANESWS Loading": "Done",
-    ASSMENT: "Closed",
+    ASSMENT: "Accepted",
     "TBS Loading": "Done",
     "TBS Debit": "Paid",
     "Manifest Comp": "Done",

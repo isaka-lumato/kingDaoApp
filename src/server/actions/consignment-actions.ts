@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getServerPermissions } from "@/lib/permissions";
+import { makeRefNo } from "@/schemas/common";
 import { z } from "zod";
 
 // ── T-046: Duplicate consignment ──────────────────────────────────────────
@@ -40,8 +41,7 @@ export async function duplicateConsignmentAction(formData: FormData) {
     .single();
 
   const nextSerial = (lastSerial?.serial_no ?? 0) + 1;
-  const yearSuffix = String(src.year).slice(2);
-  const ref_no = `${yearSuffix}${String(nextSerial).padStart(4, "0")}`;
+  const ref_no = makeRefNo(nextSerial);
 
   // Insert duplicate — clear ref_no, tansad_no, dates, reset all stages.
   const { data: newRow, error: insertErr } = await supabase

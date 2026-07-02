@@ -12,9 +12,9 @@ export const metadata: Metadata = { title: "Dashboard — KDL Tracker" };
 const FUNNEL_FIELDS = [
   { key: "manifest_action", label: "Manifest" },
   { key: "shipping_action", label: "Shipping" },
-  { key: "tanesws_action", label: "TANESWS" },
+  { key: "tanesws_action", label: "Duty App" },
   { key: "assessment_action", label: "Assessment" },
-  { key: "tbs_loading_action", label: "TBS Load" },
+  { key: "tbs_loading_action", label: "TBS Apps" },
   { key: "tbs_debit_action", label: "TBS Debit" },
   { key: "manifest_comp_action", label: "Mfst Comp" },
   { key: "duty_action", label: "Duty" },

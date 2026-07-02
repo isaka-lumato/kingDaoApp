@@ -37,13 +37,13 @@ type StuckRow = {
 };
 
 const STAGE_LABELS: Record<string, string> = {
-  manifest: "Manifest",
+  manifest: "Manifest Uploaded",
   shipping_batch: "Shipping Batch",
-  tanesws: "TANESWS",
+  tanesws: "Duty Application",
   assessment: "Assessment",
-  tbs_loading: "TBS Loading",
+  tbs_loading: "TBS Applications",
   tbs_debit: "TBS Debit",
-  manifest_comp: "Manifest Comp",
+  manifest_comp: "Manifest Comparison",
   duty: "Duty",
   inspection_file: "Inspection File",
   release: "Release",

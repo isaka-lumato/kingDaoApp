@@ -1114,7 +1114,9 @@ Final design — **single `/clients` route, selection driven by `?c=<id>`** (the
 ## D-058 - Users have exactly one role
 
 **Date:** 2026-06-28
-**Status:** Active. Supersedes the original `user_roles` many-to-many intent from D-004 / migration `20260518175820`.
+**Status:** Active, implemented 2026-07-02 (migration `20260702195406_user_roles_single_role.sql`). Supersedes the original `user_roles` many-to-many intent from D-004 / migration `20260518175820`.
+
+**Implementation note (2026-07-02).** The decision was logged 2026-06-28 but the code still allowed multiple roles until now. Shipped in this pass: (a) DB `unique (user_id)` constraint `user_roles_one_per_user` with backfill-collapse (no dev user had >1 role, so it was a no-op); (b) `updateUserRolesAction` rewritten to single-role replace (delete-then-insert), self-admin can only stay admin; (c) `inviteUserAction`'s existing-user path now replaces the role instead of treating a duplicate as already-assigned; (d) removed `assignRoleAction` (unused, additive) and `removeRoleAction` (would leave a user role-less); (e) Users UI edit modal switched from checkboxes to a required radio, badges are read-only.
 
 **Context.** The initial permission model allowed a user to hold multiple roles through the `user_roles` join table. That made the effective permission set permissive: if any role granted a column permission, the user received it. For a small internal operations team, that is harder for admins to reason about than a single current role per staff member.
 
@@ -1179,3 +1181,44 @@ Final design — **single `/clients` route, selection driven by `?c=<id>`** (the
 5. **No DB change.** The `icds` / `vessels` tables, RLS, audit triggers, soft-delete, and create/update/setActive actions already exist. Only `revalidatePath` targets move from `/settings/icds|vessels` to `/icds|vessels`. `createIcdAction` / `createVesselAction` stay intact - the new-consignment form's inline "Add ICD / Add vessel" modals keep using them.
 
 **Trade-off.** Like D-053, blocking delete on linked consignments means an admin must clear/reassign a record's consignments before deleting - accepted as safer than orphaning `icd_id` / `vessel_name` references. Vessel usage matching is by exact name string (free text), so a renamed-but-not-migrated vessel value on old consignments won't be counted; accepted, consistent with D-050's free-text model.
+
+---
+
+## D-062 - Assessment terminal value renamed Closed → Accepted
+
+**Date:** 2026-07-02
+**Status:** Active. User-requested, not a tracked task. Supersedes the `Closed` label from PRD §5 / D-045.
+
+**Context.** The user reviewed the six operator-facing stage statuses against the live enums and found one mismatch: the Assessment stage's "done" value was `Closed`, but staff refer to it as `Accepted` (TRA accepts the assessment). All other stages already matched the desired start/done values; the intermediate `Action` value (and `SHARED` on TBS Debit / Inspection) was explicitly kept. Only this one label changes.
+
+**Decision.**
+1. **`ALTER TYPE public.assessment_status RENAME VALUE 'Closed' TO 'Accepted'`** (migration `20260702180410_assessment_accepted.sql`, applied to dev 2026-07-02; guarded idempotent so a replay / fresh rebuild is safe). Rename keeps every existing row valid under the new label — no data migration, no row rewrite.
+2. **`advance_stage()` re-emitted** with `Accepted` in the two places it hard-codes the literal: the §8.8 `tbs_loading` prerequisite guard (`assessment_status <> 'Accepted'`) and the §8.1 terminal-state list. It is the only DB object that references the string literal — `force_set_stage()`, the D-046 column-write guard, and the reports view all compare the column dynamically (via `::text` = the stored value) and need no change.
+3. **App code updated:** `lib/pipeline.ts` (`STAGE_DONE_VALUE`, `PIPELINE_STAGES` validValues + doneValue), generated `types/supabase.ts` (Enums union + Constants array).
+4. **Importer maps legacy `"Closed"` → `"Accepted"` (data-loss guard).** The historical `TRACKER -- KDL.xlsx` source (D-045/D-047) carries `"Closed"`/`"closed"` cells. `parseTracker` now normalises a `"closed"` (case-insensitive) assessment cell to `"Accepted"` before `coerceEnum`, so those rows import at their true stage instead of silently defaulting to `"Waiting"`. Without this, re-importing history after the rename would misclassify every closed assessment.
+
+**Why rename, not add-new-value-and-migrate.** `RENAME VALUE` is atomic, preserves stored data, and needs no `UPDATE ... SET status = 'Accepted' WHERE status = 'Closed'` pass. The only cost is that functions comparing the string literal must be re-emitted — one function (`advance_stage`).
+
+**Trade-off.** The PRD (frozen) and append-only historical migrations still say `Closed`; the live schema, app code, README, doc.md, and validation.md say `Accepted`. The importer alias is the bridge for any historical re-import.
+
+---
+
+## D-063 — TANSAD No fixed format `TZDL-YY-#######`; Ref No auto-generated but editable
+
+**Date:** 2026-07-02
+**Status:** Active. User-requested, not a tracked task. Supersedes PRD §8.19's numeric TANSAD model for input/validation; extends D-028.
+
+**Context.** The user asked that the new-consignment form *enforce* two identifier formats: TANSAD No as `TZDL-26-0000000` (literal `TZDL-`, 2-digit year, dash, 7 digits) and Ref No in the `9900001` shape (7 digits). Two findings surfaced while scoping this:
+
+1. **Ref No was generated wrong.** Per D-028 / PRD §8.20 a UI-created `ref_no` should be 7 digits, `99`-prefixed (e.g. `9900001`). The code in `create-consignment.ts` and the duplicate-consignment path in `consignment-actions.ts` instead produced `YY` + 4-digit serial (e.g. `260001`) — a bug against both the PRD and D-028.
+2. **TANSAD was free text.** The form validated it only as `max 100 chars`; PRD §8.19 models `tansad_no` as a *numeric* TRA customs number from which a year can be inferred.
+
+**Decision.**
+1. **TANSAD No format is strict `TZDL-YY-#######`.** Regex `^TZDL-\d{2}-\d{7}$` enforced in shared zod (`tansadNoSchema`), on the new-consignment server action, and on the edit action. The input is trimmed and upper-cased before validation. This is a deliberate departure from §8.19: the value is now an internal KDL-assigned string, **not** the TRA numeric declaration number, so the §8.19 "infer year from tansad_no" cross-check no longer applies to UI-entered values. The `year` column remains the authoritative year source (already true per D-060). TANSAD stays **optional** at the DB layer (nullable until TANESWS done, per §8.19 lifecycle) — but *if provided via the form, it must match the format*.
+2. **Ref No stays auto-generated (D-028) but is now editable.** The form pre-fills the next assigned `ref_no` (7-digit, `99`-prefixed) in a visible, editable input. If the user leaves it as-is, the server still recomputes the authoritative next value at insert time (guards against a stale pre-fill / race). If the user overrides it, the override must match `^\d{7}$` and is subject to the existing `(ref_no, year)` unique index — a collision returns a field-level error. This keeps D-028's race-safe allocation as the default while honoring the user's request for an override option.
+3. **Ref No generation bug fixed** in both `create-consignment.ts` and `consignment-actions.ts` (duplicate path): `ref_no = '99' + serial.padStart(5,'0')` → `9900001` for serial 1. The prior `${yearSuffix}${serial.padStart(4,'0')}` is removed.
+4. **Shared format constants live in `src/schemas/common.ts`** (`refNoSchema`, `tansadNoSchema`, plus a `TANSAD_PATTERN` / `makeRefNo` helper) so the client input `pattern`/`title` hints and the server zod checks never drift.
+
+**Why enforce client-side too.** UI `pattern` + `title` give immediate feedback and block obvious typos, but the server zod is the real gate (UI guards alone are insufficient — CLAUDE.md §3). Both reference the same regex constant.
+
+**Trade-off.** The PRD (frozen) still describes TANSAD as the TRA numeric number and uses it to infer year. The live app now treats the UI TANSAD field as a formatted internal string. Any historical importer logic that reads a numeric TANSAD is untouched — this decision governs **UI create/edit only**, mirroring how D-028 scoped ref_no generation to UI inserts and left the importer alone. Existing rows with non-conforming TANSAD values are not rewritten; they only fail validation if edited and re-saved through the form.

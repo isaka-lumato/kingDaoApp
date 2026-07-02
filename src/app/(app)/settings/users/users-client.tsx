@@ -6,7 +6,6 @@ import {
   inviteUserAction,
   deactivateUserAction,
   reactivateUserAction,
-  removeRoleAction,
   updateUserRolesAction,
 } from "@/server/actions/settings-users";
 
@@ -71,7 +70,7 @@ export default function UsersClient({ users, roles, fetchError }: Props) {
         setRoleEditError(res.error ?? null);
       } else if (res?.success) {
         const email = editingRolesFor?.email ?? "User";
-        setRoleEditSuccess(`${email} roles updated`);
+        setRoleEditSuccess(`${email} role updated`);
         setEditingRolesFor(null);
         router.refresh();
       }
@@ -155,15 +154,6 @@ export default function UsersClient({ users, roles, fetchError }: Props) {
                   fd.set("userId", id);
                   startTransition(async () => {
                     await reactivateUserAction(fd);
-                    router.refresh();
-                  });
-                }}
-                onRemoveRole={(userId, roleId) => {
-                  const fd = new FormData();
-                  fd.set("userId", userId);
-                  fd.set("roleId", roleId);
-                  startTransition(async () => {
-                    await removeRoleAction(fd);
                     router.refresh();
                   });
                 }}
@@ -274,7 +264,7 @@ export default function UsersClient({ users, roles, fetchError }: Props) {
             onClick={() => setEditingRolesFor(null)}
           />
           <div className="relative z-10 w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl">
-            <h3 className="text-lg font-semibold text-foreground mb-1">Edit roles</h3>
+            <h3 className="text-lg font-semibold text-foreground mb-1">Edit role</h3>
             <p className="text-muted-foreground text-sm mb-5">
               {editingRolesFor.email}
             </p>
@@ -296,13 +286,14 @@ export default function UsersClient({ users, roles, fetchError }: Props) {
                 {roles.map((role) => (
                   <label
                     key={role.id}
-                    className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                    className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background px-3 py-2 text-sm cursor-pointer"
                   >
                     <span className="font-medium text-foreground">{role.name}</span>
                     <input
-                      type="checkbox"
-                      name="roleIds"
+                      type="radio"
+                      name="roleId"
                       value={role.id}
+                      required
                       defaultChecked={editingRolesFor.roles.some((r) => r.id === role.id)}
                       className="h-4 w-4 accent-primary"
                     />
@@ -338,13 +329,11 @@ function UserRow({
   user,
   onDeactivate,
   onReactivate,
-  onRemoveRole,
   onEditRoles,
 }: {
   user: UserRow;
   onDeactivate: (id: string) => void;
   onReactivate: (id: string) => void;
-  onRemoveRole: (userId: string, roleId: string) => void;
   onEditRoles: (user: UserRow) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -358,23 +347,16 @@ function UserRow({
         )}
       </td>
       <td className="px-4 py-3">
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap items-center gap-1">
           {user.roles.length === 0 && (
             <span className="text-muted-foreground text-xs italic">No role</span>
           )}
           {user.roles.map((role) => (
             <span
               key={role.id}
-              className="inline-flex items-center gap-1 rounded-full bg-brand/10 border border-brand/20 px-2 py-0.5 text-xs font-medium text-brand"
+              className="inline-flex items-center rounded-full bg-brand/10 border border-brand/20 px-2 py-0.5 text-xs font-medium text-brand"
             >
               {role.name}
-              <button
-                onClick={() => onRemoveRole(user.id, role.id)}
-                className="hover:text-destructive transition-colors"
-                title={`Remove ${role.name} role`}
-              >
-                ×
-              </button>
             </span>
           ))}
           <button
