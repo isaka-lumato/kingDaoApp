@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useCallback, useRef, useState, useSyncExternalStore } from "react";
+import { useRouter } from "next/navigation";
 import type { StageField, KanbanConsignment } from "@/lib/pipeline";
+import { useConsignmentsRealtime } from "@/hooks/use-consignments-realtime";
 import KanbanBoardClient from "./kanban-board-client";
 import TriageView from "./triage-view";
 
@@ -37,6 +39,18 @@ export default function HomeShell(props: Props) {
   const [override, setOverride] = useState<Tab | null>(null);
   const tab: Tab = override ?? (isDesktop ? "kanban" : "triage");
   const setTab = (t: Tab) => setOverride(t);
+  const router = useRouter();
+
+  // Live updates (D-057). The kanban/triage views are RSC-props + useOptimistic,
+  // not query-backed, so we refresh the server tree on another user's change.
+  // Debounced so a burst of events (e.g. a multi-stage advance) triggers one
+  // refresh; the actor's own drag is already reflected optimistically.
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onRemoteChange = useCallback(() => {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    refreshTimer.current = setTimeout(() => router.refresh(), 400);
+  }, [router]);
+  useConsignmentsRealtime(onRemoteChange);
 
   return (
     <div className="flex flex-col gap-3 h-full">

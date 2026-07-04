@@ -315,6 +315,84 @@ supabase db remote query "select data_type from information_schema.columns where
 
 ---
 
+## H-012 — Push the Realtime publication migration to dev
+
+**Why:** Claude wrote `supabase/migrations/20260611120000_realtime_publication.sql` (D-057) to add `consignments` + `efd_records` to the `supabase_realtime` publication and set `replica identity full`, so the app's live multi-user updates work. Migrations go through the CLI, never Studio (CLAUDE.md §7).
+**Status:** [ ]
+**Depends on:** H-007 (CLI linked to dev).
+
+Run in PowerShell from the repo root:
+
+```powershell
+supabase db push
+```
+
+Then confirm both tables are in the publication:
+
+```powershell
+supabase db remote query "select tablename from pg_publication_tables where pubname='supabase_realtime' and tablename in ('consignments','efd_records');"
+```
+
+**Tell Claude when done:** "H-012 done" — Claude will verify live updates with a two-session check.
+
+---
+
+## H-013 — Provide a dev test user for the Playwright perf/e2e harness
+
+**Why:** Claude built an authenticated Playwright harness (D-056 perf work: `tests/e2e/auth.setup.ts` + `perf.spec.ts`) to capture before/after `[perf]` baselines, but it can't log in without a real **dev** Supabase user. No seeded dev user is documented.
+**Status:** [ ]
+**Depends on:** a working dev Supabase project with at least one confirmed user.
+
+1. Pick (or create, in the Supabase dashboard → Authentication) a user in the **dev** project — never a prod user.
+2. Add the credentials to `.env.local` (already gitignored):
+
+```
+E2E_EMAIL=that-user@example.com
+E2E_PASSWORD=their-password
+```
+
+3. Install the browser once if you haven't: `pnpm exec playwright install chromium`.
+4. Run the harness — the dev server starts automatically with `PERF_LOG=1`:
+
+```powershell
+pnpm exec playwright test --project=setup --project=chromium
+```
+
+The `[perf] …` lines print on the dev-server output captured by Playwright (and in the HTML report's trace).
+
+**Tell Claude when done:** "H-013 done" — paste a few `[perf]` lines and Claude will record the baseline in `status.md` and compare against the cached paths.
+
+---
+
+## H-014 — Write & push a migration for the cargo/enum schema drift (BLOCKS prod)
+
+**Why:** The live **dev** DB was changed directly in Studio (client requirement) and the app code + `src/types/supabase.ts` were hand-aligned to match (D-059) so re-import works **on dev today**. But **no SQL migration reproduces those changes**, so `supabase/migrations/` is now behind the live dev schema. A fresh `supabase db reset`, a new environment, or the **prod** project would rebuild the OLD `container_*` / `Closed` schema and the app would break there exactly as dev did. This is the same "never edit schema via Studio" rule (CLAUDE.md §7 / D-007) biting — we're paying it down, not ignoring it.
+**Status:** [ ] — **must be done before T-083 (prod deploy).**
+**Depends on:** H-007 (CLI linked to dev).
+
+The migration must reproduce, in SQL, every change listed in D-059:
+1. `alter table public.consignments rename column container_count to cargo_count;`
+2. `alter table public.consignments rename column container_type to cargo_type;` and rename the enum **type** `container_type` → `cargo_type` (`alter type public.container_type rename to cargo_type;`).
+3. Add the 3 new enum values: `alter type public.cargo_type add value if not exists 'MACHINERY_VEHICLE';` (and `'LOOSE'`, `'BULK'`). Note: `add value` cannot run inside a transaction block with other DDL on some PG versions — may need its own migration file or `COMMIT` handling.
+4. Change `assessment_status` terminal value `Closed` → `Accepted` (`alter type … rename value 'Closed' to 'Accepted';` on PG10+; otherwise the add-new-value + data-update + drop-old dance).
+5. Add the `efd_receipt_no` column properly (confirm its intended type/nullability with the client first — see the D-060 note; it may be receipt-file-related).
+
+Because these were made live on dev **out-of-band**, pushing a migration that "renames" a column that's *already* renamed on dev will **fail** (the old name no longer exists there). Two clean options:
+- **(A) Author the migration to match the change, then repair migration history** so the CLI treats it as already-applied on dev (`supabase migration repair --status applied <version>`), and let it apply for real only on prod / fresh resets. **Verify the SQL against a throwaway branch/reset first.**
+- **(B)** Recreate the drift from scratch on a fresh reset to prove the migration reproduces the exact live schema, then repair dev's history to match.
+
+```powershell
+# After writing supabase/migrations/<ts>_cargo_rename_and_enums.sql:
+supabase db push            # applies to dev (or use `migration repair` if dev already has the change)
+pnpm gen:types:dev          # regenerate types from the now-migrated schema; should MATCH the hand-patched file
+```
+
+After regen, `git diff src/types/supabase.ts` should be **empty** (the hand-patch already matches the live schema). If it isn't, the migration didn't exactly reproduce the live drift — reconcile before prod.
+
+**Tell Claude when done:** "H-014 done" — Claude will diff the regenerated types against the hand-patched version to confirm they match, and mark the D-059 migration debt cleared.
+
+---
+
 ## Notes / blockers
 
 > Use this section to write down anything that didn't go to plan, errors you hit, decisions you want to revisit, etc. Claude will read this before suggesting fixes.

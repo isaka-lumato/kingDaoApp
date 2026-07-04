@@ -67,19 +67,24 @@ export default function RolesClient({ roles, fetchError }: Props) {
     setPermLoading(false);
   }
 
-  function getPerm(col: string) {
+  function getPerm(col: string, table = "consignments") {
     return permissions.find(
-      (p) => p.table_name === "consignments" && p.column_name === col
+      (p) => p.table_name === table && p.column_name === col
     );
   }
 
-  function togglePerm(col: string, field: "can_read" | "can_write", current: boolean) {
+  function togglePerm(
+    col: string,
+    field: "can_read" | "can_write",
+    current: boolean,
+    table = "consignments"
+  ) {
     if (!selectedRole || selectedRole.is_system) return;
     const fd = new FormData();
     fd.set("roleId", selectedRole.id);
-    fd.set("tableName", "consignments");
+    fd.set("tableName", table);
     fd.set("columnName", col);
-    const perm = getPerm(col);
+    const perm = getPerm(col, table);
     fd.set("canRead", field === "can_read" ? String(!current) : String(perm?.can_read ?? false));
     fd.set("canWrite", field === "can_write" ? String(!current) : String(perm?.can_write ?? false));
     startTransition(async () => {
@@ -87,9 +92,9 @@ export default function RolesClient({ roles, fetchError }: Props) {
       // Optimistically update local state.
       setPermissions((prev) => {
         const idx = prev.findIndex(
-          (p) => p.table_name === "consignments" && p.column_name === col
+          (p) => p.table_name === table && p.column_name === col
         );
-        const updated = { table_name: "consignments", column_name: col, can_read: perm?.can_read ?? false, can_write: perm?.can_write ?? false, [field]: !current };
+        const updated = { table_name: table, column_name: col, can_read: perm?.can_read ?? false, can_write: perm?.can_write ?? false, [field]: !current };
         if (idx >= 0) {
           const next = [...prev];
           next[idx] = updated;
@@ -229,6 +234,34 @@ export default function RolesClient({ roles, fetchError }: Props) {
                     These permissions are fixed for system roles. Clone this role to create a customisable variant.
                   </p>
                 )}
+
+                {/* Activity & audit log access (D-055). A single read toggle on
+                    the synthetic ('audit_log','read') permission unlocks the
+                    top-level Activity page for this role. */}
+                {(() => {
+                  const auditPerm = getPerm("read", "audit_log");
+                  const auditRead = auditPerm?.can_read ?? false;
+                  return (
+                    <div className="flex items-center justify-between gap-4 px-4 py-3 border-b border-border bg-muted/10">
+                      <div>
+                        <p className="text-sm font-medium text-foreground">Activity &amp; audit log</p>
+                        <p className="text-xs text-muted-foreground">
+                          Lets this role open the Activity page (all changes + usage).
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">Read</span>
+                        <Toggle
+                          checked={auditRead}
+                          onChange={() => togglePerm("read", "can_read", auditRead, "audit_log")}
+                          disabled={isPending || selectedRole.is_system}
+                          id="read-audit_log"
+                        />
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
                     <tr>

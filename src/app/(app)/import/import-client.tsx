@@ -4,21 +4,31 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import {
   previewImportAction,
-  commitImportAction,
+  commitChunkAction,
   type PreviewState,
   type CommitState,
+  type CommitFailure,
 } from "@/server/import/import-actions";
+
+// Rows committed per server round-trip. Small enough to stay well under the
+// server-action body limit and short enough to never approach a timeout;
+// large enough that a 5,000-row import is ~17 fast calls.
+const CHUNK_SIZE = 300;
+
+type Progress = { committed: number; total: number };
 
 export default function ImportClient() {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const [committed, setCommitted] = useState<CommitState | null>(null);
+  const [progress, setProgress] = useState<Progress | null>(null);
   const [isPending, startTransition] = useTransition();
 
   function reset() {
     setFile(null);
     setPreview(null);
     setCommitted(null);
+    setProgress(null);
   }
 
   function onUpload(e: React.FormEvent<HTMLFormElement>) {
@@ -33,16 +43,48 @@ export default function ImportClient() {
     });
   }
 
-  function onConfirm() {
-    if (!preview || !preview.ok || !file) return;
-    const fd = new FormData();
-    fd.set("jobId", preview.jobId);
-    fd.set("file", file);
-    startTransition(async () => {
-      const res = await commitImportAction(fd);
-      setCommitted(res);
-    });
+  // Chunked commit: slice the already-parsed rows and stream them back one
+  // chunk at a time, advancing the progress bar after each. A thrown/failed
+  // chunk stops the loop and surfaces a resume affordance — re-running is safe
+  // because the (ref_no, year) unique index rejects duplicates.
+  async function onConfirm() {
+    if (!preview || !preview.ok) return;
+    const rows = preview.result.consignments;
+    const total = rows.length;
+    const jobId = preview.jobId;
+
+    setCommitted(null);
+    setProgress({ committed: 0, total });
+
+    let inserted = 0;
+    const details: CommitFailure[] = [];
+
+    for (let start = 0; start < total; start += CHUNK_SIZE) {
+      const chunk = rows.slice(start, start + CHUNK_SIZE);
+      const isLast = start + CHUNK_SIZE >= total;
+      const res = await commitChunkAction({
+        jobId,
+        chunk,
+        isFirst: start === 0,
+        isLast,
+      });
+
+      if (!res.ok) {
+        setProgress(null);
+        setCommitted({ ok: false, error: `${res.error} (stopped after ${inserted} rows — re-run to resume)` });
+        return;
+      }
+
+      inserted += res.inserted;
+      details.push(...res.details);
+      setProgress({ committed: Math.min(start + chunk.length, total), total });
+    }
+
+    setProgress(null);
+    setCommitted({ ok: true, jobId, inserted, failed: details.length, details });
   }
+
+  const isCommitting = progress != null;
 
   return (
     <div className="flex flex-col gap-6 max-w-5xl">
@@ -93,7 +135,7 @@ export default function ImportClient() {
         </div>
       )}
 
-      {preview?.ok && !committed && (
+      {preview?.ok && !committed && !isCommitting && (
         <PreviewPanel
           preview={preview}
           onConfirm={onConfirm}
@@ -102,10 +144,37 @@ export default function ImportClient() {
         />
       )}
 
+      {/* Live progress while committing chunks */}
+      {isCommitting && progress && <CommitProgress progress={progress} />}
+
       {/* Commit outcome */}
       {committed && (
         <CommitOutcome state={committed} onReset={reset} />
       )}
+    </div>
+  );
+}
+
+function CommitProgress({ progress }: { progress: Progress }) {
+  const { committed, total } = progress;
+  const pct = total > 0 ? Math.round((committed / total) * 100) : 0;
+  return (
+    <div className="rounded-2xl border border-border bg-card px-6 py-5 flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium text-foreground">Importing…</p>
+        <p className="text-sm font-mono text-muted-foreground tabular-nums">
+          {committed.toLocaleString()} / {total.toLocaleString()} ({pct}%)
+        </p>
+      </div>
+      <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+        <div
+          className="h-full rounded-full bg-primary transition-[width] duration-300 ease-out"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Committing in batches of {CHUNK_SIZE.toLocaleString()}. Keep this tab open until it finishes.
+      </p>
     </div>
   );
 }

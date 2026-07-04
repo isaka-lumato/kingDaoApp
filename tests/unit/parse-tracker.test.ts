@@ -480,6 +480,30 @@ describe("parseTracker — pipeline enum coercion", () => {
     expect(r.consignments[0]!.tanesws_status).toBe("Waiting");
     expect(r.warnings).toHaveLength(0);
   });
+
+  // The Excel tracker still uses the legacy terminal label "Closed"; the DB
+  // enum renamed it to "Accepted". The parser translates on import so old
+  // sheets keep loading without edits, and does so without a warning.
+  it("translates legacy assessment 'Closed' to 'Accepted'", () => {
+    const rows: CellValue[][] = [
+      [2026],
+      HEADER,
+      validRow({ ASSMENT: "closed" }),
+    ];
+    const r = parseTracker(rows);
+    expect(r.consignments[0]!.assessment_status).toBe("Accepted");
+    expect(r.warnings.some((w) => w.field === "assessment_status")).toBe(false);
+  });
+
+  it("accepts the native assessment 'Accepted' value", () => {
+    const rows: CellValue[][] = [
+      [2026],
+      HEADER,
+      validRow({ ASSMENT: "Accepted" }),
+    ];
+    const r = parseTracker(rows);
+    expect(r.consignments[0]!.assessment_status).toBe("Accepted");
+  });
 });
 
 describe("parseTracker — header resolution (D-036)", () => {
