@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { cargoLabel } from "@/lib/cargo";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getServerPermissions } from "@/lib/permissions";
 import { formatTzs, formatTzsCompact } from "@/lib/money";
 import { formatDate, formatRelative } from "@/lib/dates";
 import { PIPELINE_STAGES } from "@/lib/pipeline";
@@ -81,6 +82,8 @@ export default async function DashboardPage() {
   const t = perfTimer("dashboard");
   const supabase = await getSupabaseServerClient();
   t.mark("supabase-client");
+  const perms = await getServerPermissions();
+  const canSeeAmount = perms?.canRead("consignments", "amount") ?? false;
   const today = new Date();
   const year = today.getFullYear();
 
@@ -271,12 +274,14 @@ export default async function DashboardPage() {
           tone={stuck.length > 0 ? "stuck" : "waiting"}
           href="/consignments?stage=stuck"
         />
-        <Kpi
-          label={`Revenue · ${monthLabel}`}
-          value={formatTzsCompact(revenueThisMonth)}
-          subValue={`${revenueCount} released`}
-          tone="brand"
-        />
+        {canSeeAmount && (
+          <Kpi
+            label={`Revenue · ${monthLabel}`}
+            value={formatTzsCompact(revenueThisMonth)}
+            subValue={`${revenueCount} released`}
+            tone="brand"
+          />
+        )}
       </section>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -466,12 +471,14 @@ export default async function DashboardPage() {
       </div>
 
       {/* Footer: revenue raw value (compact format used in KPI is approximate) */}
-      <p className="text-right text-[11px] text-muted-foreground">
-        Revenue this month:{" "}
-        <span className="font-mono text-foreground">
-          {formatTzs(revenueThisMonth)}
-        </span>
-      </p>
+      {canSeeAmount && (
+        <p className="text-right text-[11px] text-muted-foreground">
+          Revenue this month:{" "}
+          <span className="font-mono text-foreground">
+            {formatTzs(revenueThisMonth)}
+          </span>
+        </p>
+      )}
     </div>
   );
 }

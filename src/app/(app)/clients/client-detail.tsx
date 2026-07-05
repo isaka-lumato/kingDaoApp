@@ -29,12 +29,12 @@ export type SelectedClient = {
   phone: string | null;
   notes: string | null;
   year: number;
-  isAdmin: boolean;
+  canSeeAmount: boolean;
   totalContainers: number;
   activeCount: number;
   completedCount: number;
   avgClearanceDays: number | null;
-  /** Null for non-admins (never shipped to the client). */
+  /** Null for roles without "See financial amounts" (never shipped to the client). */
   totalRevenue: number | null;
   active: ClientConsignmentRow[];
   completed: ClientConsignmentRow[];
@@ -110,7 +110,7 @@ export default function ClientDetail({ client }: { client: SelectedClient }) {
           label="Jobs"
           value={`${client.activeCount} active · ${client.completedCount} done`}
         />
-        {client.isAdmin && client.totalRevenue != null && (
+        {client.canSeeAmount && client.totalRevenue != null && (
           <StatCard label="Revenue" value={formatTzs(client.totalRevenue)} />
         )}
       </div>
