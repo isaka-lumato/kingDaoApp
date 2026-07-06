@@ -79,7 +79,8 @@ export async function GET(
     );
   }
 
-  const workbook = buildReportWorkbook(payload, filters);
+  const canSeeAmount = perms.canRead("consignments", "amount");
+  const workbook = buildReportWorkbook(payload, filters, canSeeAmount);
   const arrayBuffer = await workbook.xlsx.writeBuffer();
   // exceljs returns an ArrayBuffer-like (sometimes the Node Buffer subclass).
   // Wrap in Uint8Array so the Response body is a stable BodyInit.

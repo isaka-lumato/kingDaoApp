@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: "New EFD Record — KDL Tracker" };
 export default async function NewEfdPage() {
   const perms = await getServerPermissions();
   if (!perms) redirect("/login");
-  if (!perms.isAdmin && !perms.roles.includes("operator")) {
+  if (!perms.canWrite("efd_records", "efd_code")) {
     redirect("/efd");
   }
 

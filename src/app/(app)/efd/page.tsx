@@ -21,7 +21,7 @@ export default async function EfdPage({
 
   const supabase = await getSupabaseServerClient();
   const perms = await getServerPermissions();
-  const canWrite = !!perms && (perms.isAdmin || perms.roles.includes("operator"));
+  const canWrite = perms?.canWrite("efd_records", "efd_code") ?? false;
 
   let query = supabase
     .from("efd_records")

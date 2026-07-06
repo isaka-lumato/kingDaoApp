@@ -77,6 +77,7 @@ export async function createConsignmentAction(
   if (!perms.canWrite("consignments", "ref_no")) {
     return { error: "You do not have permission to create consignments." };
   }
+  const canWriteAmount = perms.canWrite("consignments", "amount");
 
   const raw = Object.fromEntries(
     Array.from(formData.entries()).map(([k, v]) => [k, v === "" ? undefined : v])
@@ -155,7 +156,7 @@ export async function createConsignmentAction(
       efd_receipt_no: d.efd_receipt_no || null,
       goods_description: d.goods_description || null,
       icd_id: d.icd_id || null,
-      amount: d.amount ? Number(d.amount) : null,
+      amount: canWriteAmount && d.amount ? Number(d.amount) : null,
       remarks: d.remarks || null,
       // All stages start at Waiting
       manifest_status: "Waiting",

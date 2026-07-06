@@ -3,7 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import Link from "next/link";
-import { formatTzs } from "@/lib/money";
+import { maskedTzs } from "@/lib/money";
+import { useColumnPermission } from "@/hooks/use-permissions";
 
 import { currentStageLabel } from "@/lib/pipeline";
 import { type SortKey, type SortDir } from "@/lib/consignments-list";
@@ -113,6 +114,7 @@ export default function ConsignmentsClient({
   fetchError,
 }: Props) {
   const router = useRouter();
+  const { canRead: canSeeAmount } = useColumnPermission("consignments", "amount");
   // D-043: useTransition keeps the previously-rendered rows visible (with a
   // subtle opacity fade) while the new query runs server-side. Without this,
   // any filter change unmounts the table and shows the loading skeleton —
@@ -344,8 +346,10 @@ export default function ConsignmentsClient({
                       })}`
                     : ""}
                 </span>
-                {row.amount != null && (
-                  <span className="shrink-0 font-mono">{formatTzs(row.amount)}</span>
+                {(!canSeeAmount || row.amount != null) && (
+                  <span className="shrink-0 font-mono">
+                    {maskedTzs(row.amount, canSeeAmount)}
+                  </span>
                 )}
               </div>
             </Link>
@@ -428,7 +432,11 @@ export default function ConsignmentsClient({
                     <span className="text-xs text-foreground/70">{currentStageLabel(row)}</span>
                   </td>
                   <td className="px-4 py-3 text-right text-xs text-muted-foreground font-mono hidden xl:table-cell whitespace-nowrap">
-                    {row.amount != null ? formatTzs(row.amount) : "—"}
+                    {!canSeeAmount
+                      ? maskedTzs(row.amount, false)
+                      : row.amount != null
+                        ? maskedTzs(row.amount, true)
+                        : "—"}
                   </td>
                   <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                     <Link

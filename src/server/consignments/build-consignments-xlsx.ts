@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { MASKED_AMOUNT } from "@/lib/money";
 import {
   EXPORT_COLUMNS,
   AMOUNT_COLUMN_INDEX,
@@ -60,6 +61,7 @@ export function buildConsignmentsWorkbook(
   rows: ExportRow[],
   filters: ExportFilters,
   clientName?: string,
+  canSeeAmount = true,
 ): ExcelJS.Workbook {
   const wb = new ExcelJS.Workbook();
   wb.creator = "KDL Tracker";
@@ -80,6 +82,8 @@ export function buildConsignmentsWorkbook(
   } else {
     for (const row of rows) {
       const values = EXPORT_COLUMNS.map((c) => {
+        // Mask money cells for roles without "See financial amounts" (D-063).
+        if (c.kind === "money" && !canSeeAmount) return MASKED_AMOUNT;
         if (c.kind === "date") return asDate(c.raw(row) as string | null);
         return c.raw(row);
       });
@@ -87,18 +91,21 @@ export function buildConsignmentsWorkbook(
       r.eachCell((cell, colNumber) => {
         const spec = EXPORT_COLUMNS[colNumber - 1];
         if (!spec) return;
-        if (spec.kind === "money") cell.numFmt = MONEY_FMT;
+        // Skip the money numFmt when masked — the cell holds a string, not a number.
+        if (spec.kind === "money" && canSeeAmount) cell.numFmt = MONEY_FMT;
         if (spec.kind === "date") cell.numFmt = DATE_FMT;
       });
     }
 
-    // TOTAL row summing Amount.
+    // TOTAL row summing Amount (masked when the role can't see amounts).
     const totalAmount = rows.reduce((s, r) => s + num(r.amount), 0);
     const totalCells: (string | number)[] = EXPORT_COLUMNS.map(() => "");
     totalCells[0] = "TOTAL";
-    if (AMOUNT_COLUMN_INDEX >= 0) totalCells[AMOUNT_COLUMN_INDEX] = totalAmount;
-    const totalRow = sheet.addRow(totalCells);
     if (AMOUNT_COLUMN_INDEX >= 0) {
+      totalCells[AMOUNT_COLUMN_INDEX] = canSeeAmount ? totalAmount : MASKED_AMOUNT;
+    }
+    const totalRow = sheet.addRow(totalCells);
+    if (AMOUNT_COLUMN_INDEX >= 0 && canSeeAmount) {
       totalRow.getCell(AMOUNT_COLUMN_INDEX + 1).numFmt = MONEY_FMT;
     }
     applyTotalStyle(totalRow);

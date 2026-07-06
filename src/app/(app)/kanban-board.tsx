@@ -181,7 +181,23 @@ export default function KanbanBoard({ byStage, year, fetchError }: Props) {
   // Viewer-or-other roles cannot move cards. Admins + operators can.
   // Caller-role check is also enforced in the advance_stage() DB function
   // (D-029) — this UI gate is the UX layer.
-  const canDrag = perms.isAdmin || perms.roles.includes("operator");
+  const canWriteStage = (field: StageField) =>
+    perms.isAdmin ||
+    perms.columns.some(
+      (permission) =>
+        permission.tableName === "consignments" &&
+        permission.columnName === field &&
+        permission.canWrite,
+    );
+  const canDrag = STAGE_FIELDS.some((field) => canWriteStage(field));
+  const canCreateConsignments =
+    perms.isAdmin ||
+    perms.columns.some(
+      (permission) =>
+        permission.tableName === "consignments" &&
+        permission.columnName === "ref_no" &&
+        permission.canWrite,
+    );
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
@@ -234,8 +250,8 @@ export default function KanbanBoard({ byStage, year, fetchError }: Props) {
 
     // Belt-and-braces: even if a viewer bypasses the card-level `disabled`
     // flag, refuse here. The DB function rejects too (D-029).
-    if (!canDrag) {
-      setError("Your role cannot move pipeline cards.");
+    if (!canWriteStage(card.active_stage)) {
+      setError("Your role cannot update this pipeline stage.");
       return;
     }
 
@@ -335,7 +351,7 @@ export default function KanbanBoard({ byStage, year, fetchError }: Props) {
     setError(null);
     setInfo(null);
 
-    if (!canDrag) {
+    if (!canWriteStage("release_status")) {
       setError("Your role cannot release consignments.");
       return;
     }
@@ -404,15 +420,17 @@ export default function KanbanBoard({ byStage, year, fetchError }: Props) {
               </Link>
             ))}
           </div>
-          <Link
-            href="/consignments/new"
-            className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 transition-opacity"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-            </svg>
-            New
-          </Link>
+          {canCreateConsignments && (
+            <Link
+              href="/consignments/new"
+              className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 transition-opacity"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+              New
+            </Link>
+          )}
         </div>
       </div>
 

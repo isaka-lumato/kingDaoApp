@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
-import { formatTzs } from "@/lib/money";
+import { getServerPermissions } from "@/lib/permissions";
+import { formatTzs, MASKED_AMOUNT } from "@/lib/money";
 import { formatDate } from "@/lib/dates";
 import {
   fetchReportRows,
@@ -73,6 +74,8 @@ export default async function ReportsPage({
 
   // RLS posture per D-026: user-bound server client.
   const supabase = await getSupabaseServerClient();
+  const permissions = await getServerPermissions();
+  const canSeeAmount = permissions?.canRead("consignments", "amount") ?? false;
   const filters: ReportFilters = { year, from, to };
   const payload = await fetchReportRows(report, filters, supabase);
 
@@ -97,10 +100,10 @@ export default async function ReportsPage({
 
       <div className="rounded-xl border border-border bg-card overflow-hidden">
         {payload.kind === "revenue" && (
-          <RevenueReport payload={payload} filters={filters} />
+          <RevenueReport payload={payload} filters={filters} canSeeAmount={canSeeAmount} />
         )}
         {payload.kind === "client_volume" && (
-          <ClientVolumeReport payload={payload} filters={filters} />
+          <ClientVolumeReport payload={payload} filters={filters} canSeeAmount={canSeeAmount} />
         )}
         {payload.kind === "turnaround_client" && (
           <TurnaroundClientReport payload={payload} filters={filters} />
@@ -112,7 +115,7 @@ export default async function ReportsPage({
           <PipelineFunnelReport payload={payload} filters={filters} />
         )}
         {payload.kind === "pending_refunds" && (
-          <PendingRefundsReport payload={payload} filters={filters} />
+          <PendingRefundsReport payload={payload} filters={filters} canSeeAmount={canSeeAmount} />
         )}
       </div>
     </div>
@@ -239,9 +242,11 @@ function TotalRow({
 function RevenueReport({
   payload,
   filters,
+  canSeeAmount,
 }: {
   payload: Extract<ReportPayload, { kind: "revenue" }>;
   filters: ReportFilters;
+  canSeeAmount: boolean;
 }) {
   const { rows, error } = payload;
   const { from, to } = filters;
@@ -290,7 +295,7 @@ function RevenueReport({
                   {r.consignment_count ?? 0}
                 </td>
                 <td className="px-3 py-2 text-right font-mono tabular-nums text-foreground">
-                  {formatTzs(r.total_amount)}
+                  {canSeeAmount ? formatTzs(r.total_amount) : MASKED_AMOUNT}
                 </td>
               </tr>
             ))}
@@ -299,7 +304,7 @@ function RevenueReport({
               cells={[
                 { value: "Total" },
                 { value: totalCount, align: "right", mono: true },
-                { value: formatTzs(totalAmount), align: "right", mono: true },
+                { value: canSeeAmount ? formatTzs(totalAmount) : MASKED_AMOUNT, align: "right", mono: true },
               ]}
             />
           )}
@@ -316,9 +321,11 @@ function RevenueReport({
 function ClientVolumeReport({
   payload,
   filters,
+  canSeeAmount,
 }: {
   payload: Extract<ReportPayload, { kind: "client_volume" }>;
   filters: ReportFilters;
+  canSeeAmount: boolean;
 }) {
   const { rows, error } = payload;
   const totalJobs = rows.reduce((s, r) => s + Number(r.job_count ?? 0), 0);
@@ -384,7 +391,7 @@ function ClientVolumeReport({
                   {r.active_count ?? 0}
                 </td>
                 <td className="px-3 py-2 text-right font-mono tabular-nums text-foreground">
-                  {formatTzs(r.total_revenue)}
+                  {canSeeAmount ? formatTzs(r.total_revenue) : MASKED_AMOUNT}
                 </td>
               </tr>
             ))}
@@ -396,7 +403,7 @@ function ClientVolumeReport({
                 { value: totalContainers, align: "right", mono: true },
                 { value: "", align: "right" },
                 { value: "", align: "right" },
-                { value: formatTzs(totalRevenue), align: "right", mono: true },
+                { value: canSeeAmount ? formatTzs(totalRevenue) : MASKED_AMOUNT, align: "right", mono: true },
               ]}
             />
           )}
@@ -624,9 +631,11 @@ function PipelineFunnelReport({
 function PendingRefundsReport({
   payload,
   filters,
+  canSeeAmount,
 }: {
   payload: Extract<ReportPayload, { kind: "pending_refunds" }>;
   filters: ReportFilters;
+  canSeeAmount: boolean;
 }) {
   const { rows, error } = payload;
   const { from, to } = filters;
@@ -673,7 +682,7 @@ function PendingRefundsReport({
                   {formatDate(r.release_date)}
                 </td>
                 <td className="px-3 py-2 text-right font-mono tabular-nums text-foreground">
-                  {formatTzs(r.amount)}
+                  {canSeeAmount ? formatTzs(r.amount) : MASKED_AMOUNT}
                 </td>
                 <td className="px-3 py-2 text-xs text-muted-foreground max-w-md truncate">
                   {r.remarks ?? "—"}
@@ -686,7 +695,7 @@ function PendingRefundsReport({
                 { value: "Total" },
                 { value: "" },
                 { value: "" },
-                { value: formatTzs(totalAmount), align: "right", mono: true },
+                { value: canSeeAmount ? formatTzs(totalAmount) : MASKED_AMOUNT, align: "right", mono: true },
                 { value: "" },
               ]}
             />

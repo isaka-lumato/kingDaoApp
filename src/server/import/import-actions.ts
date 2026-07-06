@@ -42,8 +42,8 @@ export type CommitChunkState =
   | { ok: true; inserted: number; failed: number; details: CommitFailure[] }
   | { ok: false; error: string };
 
-function canImport(roles: string[], isAdmin: boolean): boolean {
-  return isAdmin || roles.includes("operator");
+function canImport(perms: NonNullable<Awaited<ReturnType<typeof getServerPermissions>>>): boolean {
+  return perms.canWrite("consignments", "ref_no");
 }
 
 // SheetJS adapter — workbook bytes → CellValue[][] for the first sheet.
@@ -70,9 +70,10 @@ function workbookToRows(buf: ArrayBuffer): CellValue[][] {
 export async function previewImportAction(formData: FormData): Promise<PreviewState> {
   const perms = await getServerPermissions();
   if (!perms) return { ok: false, error: "Not authenticated." };
-  if (!canImport(perms.roles, perms.isAdmin)) {
+  if (!canImport(perms)) {
     return { ok: false, error: "Your role cannot import." };
   }
+  const canWriteAmount = perms.canWrite("consignments", "amount");
 
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) {
@@ -197,7 +198,7 @@ type CommitChunkInput = {
 export async function commitChunkAction(input: CommitChunkInput): Promise<CommitChunkState> {
   const perms = await getServerPermissions();
   if (!perms) return { ok: false, error: "Not authenticated." };
-  if (!canImport(perms.roles, perms.isAdmin)) {
+  if (!canImport(perms)) {
     return { ok: false, error: "Your role cannot import." };
   }
 
@@ -247,11 +248,11 @@ export async function commitChunkAction(input: CommitChunkInput): Promise<Commit
       //    safely retry this chunk row-by-row to attribute the failure.
       const { data: consRows, error: consErr } = await supabase
         .from("consignments")
-        .insert(prepared.map((p) => buildConsignmentRow(p)))
+        .insert(prepared.map((p) => buildConsignmentRow(p, canWriteAmount)))
         .select("id, ref_no, year");
 
       if (consErr || !consRows) {
-        const res = await insertRowByRow(supabase, prepared);
+        const res = await insertRowByRow(supabase, prepared, canWriteAmount);
         inserted += res.inserted;
         failures.push(...res.failures);
       } else {
@@ -294,7 +295,7 @@ function refYearKey(ref_no: string, year: number): string {
 }
 
 // Build the consignments insert object (shared by the bulk and fallback paths).
-function buildConsignmentRow(p: Prepared) {
+function buildConsignmentRow(p: Prepared, canWriteAmount: boolean) {
   const { c, client_id, icd_id } = p;
   return {
     ref_no: c.ref_no,
@@ -309,7 +310,7 @@ function buildConsignmentRow(p: Prepared) {
     vessel_name: c.vessel_name,
     arrival_date: c.arrival_date,
     icd_id,
-    amount: c.amount,
+    amount: canWriteAmount ? c.amount : null,
     remarks: c.remarks,
     manifest_status: c.manifest_status,
     shipping_batch_status: c.shipping_batch_status,
@@ -485,7 +486,8 @@ async function insertOneEfd(
 // single bad/duplicate row is attributed instead of failing the whole chunk.
 async function insertRowByRow(
   supabase: ServerClient,
-  prepared: Prepared[]
+  prepared: Prepared[],
+  canWriteAmount: boolean,
 ): Promise<{ inserted: number; failures: CommitFailure[] }> {
   const failures: CommitFailure[] = [];
   let inserted = 0;
@@ -494,7 +496,7 @@ async function insertRowByRow(
     try {
       const { data: consInserted, error: consErr } = await supabase
         .from("consignments")
-        .insert(buildConsignmentRow(p))
+        .insert(buildConsignmentRow(p, canWriteAmount))
         .select("id")
         .single();
       if (consErr || !consInserted) {

@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { MASKED_AMOUNT } from "@/lib/money";
 import {
   FUNNEL_STAGES,
   reportTitle,
@@ -165,6 +166,7 @@ function buildRevenueSheet(
   wb: ExcelJS.Workbook,
   payload: Extract<ReportPayload, { kind: "revenue" }>,
   filters: ReportFilters,
+  canSeeAmount: boolean,
 ) {
   const title = reportTitle("revenue", filters);
   const sheet = wb.addWorksheet(sheetNameFor(title));
@@ -178,8 +180,8 @@ function buildRevenueSheet(
     {
       header: "Total revenue",
       width: 22,
-      numFmt: MONEY_FMT,
-      value: (r) => num(r.total_amount),
+      numFmt: canSeeAmount ? MONEY_FMT : undefined,
+      value: (r) => (canSeeAmount ? num(r.total_amount) : MASKED_AMOUNT),
     },
   ];
   const totalCount = payload.rows.reduce(
@@ -195,7 +197,11 @@ function buildRevenueSheet(
     payload.rows,
     columns,
     payload.rows.length > 0
-      ? ["TOTAL", totalCount, { value: totalAmount, numFmt: MONEY_FMT }]
+      ? [
+          "TOTAL",
+          totalCount,
+          canSeeAmount ? { value: totalAmount, numFmt: MONEY_FMT } : MASKED_AMOUNT,
+        ]
       : null,
   );
   prependBanner(sheet, title, filters);
@@ -205,6 +211,7 @@ function buildClientVolumeSheet(
   wb: ExcelJS.Workbook,
   payload: Extract<ReportPayload, { kind: "client_volume" }>,
   filters: ReportFilters,
+  canSeeAmount: boolean,
 ) {
   const title = reportTitle("client_volume", filters);
   const sheet = wb.addWorksheet(sheetNameFor(title));
@@ -218,8 +225,8 @@ function buildClientVolumeSheet(
     {
       header: "Total revenue",
       width: 18,
-      numFmt: MONEY_FMT,
-      value: (r) => num(r.total_revenue),
+      numFmt: canSeeAmount ? MONEY_FMT : undefined,
+      value: (r) => (canSeeAmount ? num(r.total_revenue) : MASKED_AMOUNT),
     },
   ];
   const totals = payload.rows.reduce(
@@ -242,7 +249,7 @@ function buildClientVolumeSheet(
           totals.containers,
           "",
           "",
-          { value: totals.revenue, numFmt: MONEY_FMT },
+          canSeeAmount ? { value: totals.revenue, numFmt: MONEY_FMT } : MASKED_AMOUNT,
         ]
       : null,
   );
@@ -316,6 +323,7 @@ function buildPendingRefundsSheet(
   wb: ExcelJS.Workbook,
   payload: Extract<ReportPayload, { kind: "pending_refunds" }>,
   filters: ReportFilters,
+  canSeeAmount: boolean,
 ) {
   const title = reportTitle("pending_refunds", filters);
   const sheet = wb.addWorksheet(sheetNameFor(title));
@@ -332,8 +340,8 @@ function buildPendingRefundsSheet(
     {
       header: "Amount",
       width: 18,
-      numFmt: MONEY_FMT,
-      value: (r) => num(r.amount),
+      numFmt: canSeeAmount ? MONEY_FMT : undefined,
+      value: (r) => (canSeeAmount ? num(r.amount) : MASKED_AMOUNT),
     },
     { header: "Remarks", width: 40, value: (r) => r.remarks ?? "" },
   ];
@@ -343,7 +351,14 @@ function buildPendingRefundsSheet(
     payload.rows,
     columns,
     payload.rows.length > 0
-      ? ["TOTAL", "", "", "", { value: totalAmount, numFmt: MONEY_FMT }, ""]
+      ? [
+          "TOTAL",
+          "",
+          "",
+          "",
+          canSeeAmount ? { value: totalAmount, numFmt: MONEY_FMT } : MASKED_AMOUNT,
+          "",
+        ]
       : null,
   );
   prependBanner(sheet, title, filters);
@@ -354,6 +369,7 @@ function buildPendingRefundsSheet(
 export function buildReportWorkbook(
   payload: ReportPayload,
   filters: ReportFilters,
+  canSeeAmount = true,
 ): ExcelJS.Workbook {
   const wb = new ExcelJS.Workbook();
   wb.creator = "KDL Tracker";
@@ -361,10 +377,10 @@ export function buildReportWorkbook(
 
   switch (payload.kind) {
     case "revenue":
-      buildRevenueSheet(wb, payload, filters);
+      buildRevenueSheet(wb, payload, filters, canSeeAmount);
       break;
     case "client_volume":
-      buildClientVolumeSheet(wb, payload, filters);
+      buildClientVolumeSheet(wb, payload, filters, canSeeAmount);
       break;
     case "turnaround_client":
       buildTurnaroundClientSheet(wb, payload, filters);
@@ -376,7 +392,7 @@ export function buildReportWorkbook(
       buildPipelineFunnelSheet(wb, payload, filters);
       break;
     case "pending_refunds":
-      buildPendingRefundsSheet(wb, payload, filters);
+      buildPendingRefundsSheet(wb, payload, filters, canSeeAmount);
       break;
   }
   return wb;
