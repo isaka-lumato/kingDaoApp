@@ -29,6 +29,13 @@ export const queryKeys = {
     list: () => [...queryKeys.efd.all, "list"] as const,
     detail: (id: string) => [...queryKeys.efd.all, "detail", id] as const,
   },
+  activity: {
+    all: ["activity"] as const,
+    changes: (filters?: Record<string, unknown>) =>
+      [...queryKeys.activity.all, "changes", filters ?? {}] as const,
+    usage: () => [...queryKeys.activity.all, "usage"] as const,
+    actors: () => [...queryKeys.activity.all, "actors"] as const,
+  },
   permissions: {
     me: () => ["permissions", "me"] as const,
   },

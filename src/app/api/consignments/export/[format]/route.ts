@@ -47,6 +47,7 @@ export async function GET(
   if (!perms) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const canSeeAmount = perms.canRead("consignments", "amount");
 
   const url = new URL(request.url);
   const listParams = parseListParams({
@@ -104,7 +105,7 @@ export async function GET(
   const stem = exportFilenameStem(filters);
 
   if (format === "xlsx") {
-    const workbook = buildConsignmentsWorkbook(rows, filters, clientName);
+    const workbook = buildConsignmentsWorkbook(rows, filters, clientName, canSeeAmount);
     const arrayBuffer = await workbook.xlsx.writeBuffer();
     const body = new Uint8Array(arrayBuffer as ArrayBuffer);
     return new Response(body, {
@@ -117,7 +118,7 @@ export async function GET(
     });
   }
 
-  const element = buildConsignmentsPdf(rows, filters, clientName);
+  const element = buildConsignmentsPdf(rows, filters, clientName, canSeeAmount);
   const buffer = await renderToBuffer(element);
   const body = new Uint8Array(buffer);
   return new Response(body, {

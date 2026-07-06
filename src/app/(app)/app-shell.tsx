@@ -13,6 +13,8 @@ export type NavItem = {
   href: string;
   icon: React.ReactNode;
   roles?: string[];
+  /** Show when the user can read the audit log (admin, or granted via Roles). */
+  requiresAuditRead?: boolean;
 };
 
 const NAV: NavItem[] = [
@@ -114,6 +116,16 @@ const NAV: NavItem[] = [
     ),
   },
   {
+    label: "Activity",
+    href: "/activity",
+    requiresAuditRead: true,
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="w-5 h-5">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 12h4l2 6 4-14 2 8h6" />
+      </svg>
+    ),
+  },
+  {
     label: "Settings",
     href: "/settings",
     icon: (
@@ -134,7 +146,7 @@ export default function AppShell({
   user: { email: string };
 }) {
   const pathname = usePathname();
-  const { roles, isAdmin } = usePermissions();
+  const { roles, isAdmin, columns } = usePermissions();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [theme, setTheme] = useState<Theme>(readThemeSync);
 
@@ -149,12 +161,16 @@ export default function AppShell({
   const toggleTheme = () =>
     setTheme((t) => (t === "dark" ? "light" : "dark"));
 
-  const visibleNav = NAV.filter(
-    (item) =>
-      !item.roles ||
-      item.roles.some((r) => roles.includes(r)) ||
-      isAdmin
-  );
+  const canReadAuditLog =
+    isAdmin ||
+    columns.some(
+      (c) => c.tableName === "audit_log" && c.columnName === "read" && c.canRead
+    );
+
+  const visibleNav = NAV.filter((item) => {
+    if (item.requiresAuditRead) return canReadAuditLog;
+    return !item.roles || item.roles.some((r) => roles.includes(r)) || isAdmin;
+  });
 
   const initials =
     user.email.split("@")[0]?.slice(0, 2).toUpperCase() ?? "KD";

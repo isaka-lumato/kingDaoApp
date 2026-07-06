@@ -3,9 +3,9 @@
 import { useState, useTransition, useActionState } from "react";
 import Link from "next/link";
 import { PIPELINE_STAGES, isStageComplete, resolveActiveStage, type StageField } from "@/lib/pipeline";
-import { formatTzs } from "@/lib/money";
+import { maskedTzs } from "@/lib/money";
 import { cargoLabel } from "@/lib/cargo";
-import { usePermissions } from "@/hooks/use-permissions";
+import { usePermissions, useColumnPermission } from "@/hooks/use-permissions";
 
 import StageActionShell from "@/components/stage-action-shell";
 import AttachmentsTab from "./_attachments/attachments-tab";
@@ -179,6 +179,7 @@ export default function ConsignmentDetail({ consignment, auditLog, gutaPair, att
   );
   const [isDuplicating, startDuplicate] = useTransition();
   const { isAdmin } = usePermissions();
+  const { canRead: canSeeAmount } = useColumnPermission("consignments", "amount");
 
   function handleDuplicate(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -363,7 +364,13 @@ export default function ConsignmentDetail({ consignment, auditLog, gutaPair, att
               />
               <Field
                 label="Amount"
-                value={consignment.amount != null ? formatTzs(consignment.amount) : null}
+                value={
+                  !canSeeAmount
+                    ? maskedTzs(consignment.amount, false)
+                    : consignment.amount != null
+                      ? maskedTzs(consignment.amount, true)
+                      : null
+                }
               />
             </div>
           </section>
@@ -483,9 +490,11 @@ export default function ConsignmentDetail({ consignment, auditLog, gutaPair, att
                     <Field
                       label="Amount"
                       value={
-                        gutaPair.sibling.amount != null
-                          ? formatTzs(gutaPair.sibling.amount)
-                          : null
+                        !canSeeAmount
+                          ? maskedTzs(gutaPair.sibling.amount, false)
+                          : gutaPair.sibling.amount != null
+                            ? maskedTzs(gutaPair.sibling.amount, true)
+                            : null
                       }
                     />
                     <Field

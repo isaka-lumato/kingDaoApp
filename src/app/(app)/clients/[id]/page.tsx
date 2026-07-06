@@ -34,9 +34,9 @@ export default async function ClientDetailPage({
 
   const supabase = await getSupabaseServerClient();
   const perms = await getServerPermissions();
-  const isAdmin = perms?.isAdmin ?? false;
+  const canSeeAmount = perms?.canRead("consignments", "amount") ?? false;
 
-  const detail = await fetchClientDetail(supabase, id, year, isAdmin);
+  const detail = await fetchClientDetail(supabase, id, year, canSeeAmount);
   if (!detail) notFound();
 
   return (
@@ -61,7 +61,7 @@ async function fetchClientDetail(
   supabase: ServerClient,
   id: string,
   year: number,
-  isAdmin: boolean,
+  canSeeAmount: boolean,
 ): Promise<SelectedClient | null> {
   const [clientRes, consignmentsRes] = await Promise.all([
     supabase
@@ -133,13 +133,13 @@ async function fetchClientDetail(
     phone: clientRes.data.phone,
     notes: clientRes.data.notes,
     year,
-    isAdmin,
+    canSeeAmount,
     totalContainers,
     activeCount: active.length,
     completedCount: completed.length,
     avgClearanceDays,
-    // Only computed and shipped for admins.
-    totalRevenue: isAdmin
+    // Only computed and shipped to roles with "See financial amounts".
+    totalRevenue: canSeeAmount
       ? rows.reduce((sum, r) => sum + (r.amount ?? 0), 0)
       : null,
     active,

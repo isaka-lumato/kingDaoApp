@@ -12,10 +12,6 @@ import {
   normaliseFlagsFromCode,
 } from "@/schemas/efd";
 
-function canWriteEfd(roles: string[]): boolean {
-  return roles.includes("admin") || roles.includes("operator");
-}
-
 // PRD §8.4 batch-sibling expansion was keyed on in_ref which has been removed.
 // The function is retained for call-site compatibility but now simply deduplicates.
 async function expandToBatchSiblings(
@@ -55,7 +51,7 @@ export async function createEfdAction(
 ): Promise<{ error: string } | never> {
   const perms = await getServerPermissions();
   if (!perms) return { error: "Not authenticated" };
-  if (!canWriteEfd(perms.roles)) {
+  if (!perms.canWrite("efd_records", "efd_code")) {
     return { error: "You do not have permission to create EFD records." };
   }
 
@@ -139,7 +135,7 @@ export async function updateEfdAction(
 ): Promise<{ error: string } | { success: true }> {
   const perms = await getServerPermissions();
   if (!perms) return { error: "Not authenticated" };
-  if (!canWriteEfd(perms.roles)) {
+  if (!perms.canWrite("efd_records", "efd_code")) {
     return { error: "You do not have permission to edit EFD records." };
   }
 
@@ -223,7 +219,7 @@ export async function linkConsignmentsAction(
 ): Promise<{ error?: string; success?: boolean }> {
   const perms = await getServerPermissions();
   if (!perms) return { error: "Not authenticated" };
-  if (!canWriteEfd(perms.roles)) return { error: "Permission denied." };
+  if (!perms.canWrite("efd_records", "efd_code")) return { error: "Permission denied." };
 
   const parsed = linkSchema.safeParse({ efd_id: efdId, consignment_ids: consignmentIds });
   if (!parsed.success) {
@@ -262,7 +258,7 @@ export async function unlinkConsignmentAction(
 ): Promise<{ error?: string; success?: boolean }> {
   const perms = await getServerPermissions();
   if (!perms) return { error: "Not authenticated" };
-  if (!canWriteEfd(perms.roles)) return { error: "Permission denied." };
+  if (!perms.canWrite("efd_records", "efd_code")) return { error: "Permission denied." };
 
   if (!consignmentIdSchema.safeParse(efdId).success) return { error: "Invalid EFD id" };
   if (!consignmentIdSchema.safeParse(consignmentId).success) {

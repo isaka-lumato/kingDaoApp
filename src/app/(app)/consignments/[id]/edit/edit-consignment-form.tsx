@@ -39,6 +39,7 @@ type Props = {
   icds: ICD[];
   vessels: string[];
   writableCols: readonly string[];
+  canSeeAmount: boolean;
 };
 
 const inputCls =
@@ -84,7 +85,14 @@ function Field({
   );
 }
 
-export default function EditConsignmentForm({ consignment, clients, icds, vessels, writableCols }: Props) {
+export default function EditConsignmentForm({
+  consignment,
+  clients,
+  icds,
+  vessels,
+  writableCols,
+  canSeeAmount,
+}: Props) {
   const [state, action] = useActionState(editConsignmentAction, null);
 
   return (
@@ -182,7 +190,8 @@ export default function EditConsignmentForm({ consignment, clients, icds, vessel
                   type="number"
                   min={0}
                   step={1}
-                  defaultValue={consignment.amount ?? ""}
+                  defaultValue={canSeeAmount ? (consignment.amount ?? "") : ""}
+                  placeholder={canSeeAmount ? undefined : "Hidden by your role"}
                   disabled={disabled}
                   className={inputCls}
                 />

@@ -85,7 +85,7 @@ export default async function EfdDetailPage({
         : (c.clients as { name: string } | null)?.name ?? null,
     }));
 
-  const canWrite = !!perms && (perms.isAdmin || perms.roles.includes("operator"));
+  const canWrite = perms?.canWrite("efd_records", "efd_code") ?? false;
   const isAdmin = !!perms?.isAdmin;
 
   return (

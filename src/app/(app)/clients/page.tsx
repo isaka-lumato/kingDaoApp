@@ -19,9 +19,10 @@ export default async function ClientsPage({
 
   const supabase = await getSupabaseServerClient();
 
-  // Revenue is admin-gated; resolve before any amount is summed/shipped.
+  // Revenue is gated by the "See financial amounts" permission (D-063);
+  // resolve before any amount is summed/shipped. Admins pass implicitly.
   const perms = await getServerPermissions();
-  const isAdmin = perms?.isAdmin ?? false;
+  const canSeeAmount = perms?.canRead("consignments", "amount") ?? false;
 
   const [clientsRes, volumeRes] = await Promise.all([
     supabase
@@ -63,8 +64,8 @@ export default async function ClientsPage({
       is_active: c.is_active,
       jobCount: vol?.jobCount ?? 0,
       totalContainers: vol?.totalContainers ?? 0,
-      // Never ship revenue to non-admins.
-      totalRevenue: isAdmin ? (vol?.totalRevenue ?? 0) : null,
+      // Never ship revenue to roles without "See financial amounts".
+      totalRevenue: canSeeAmount ? (vol?.totalRevenue ?? 0) : null,
     };
   });
 

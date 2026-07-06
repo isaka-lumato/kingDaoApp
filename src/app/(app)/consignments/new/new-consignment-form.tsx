@@ -10,6 +10,7 @@ import {
   createIcdAction,
   createVesselAction,
 } from "@/server/actions/settings-reference";
+import { useColumnPermission } from "@/hooks/use-permissions";
 
 type Props = {
   clients: { id: string; name: string; display_name: string | null }[];
@@ -69,6 +70,10 @@ const inputCls =
 export default function NewConsignmentForm({ clients, icds, vessels }: Props) {
   const [state, action] = useActionState(createConsignmentAction, null);
   const errs = state?.fieldErrors ?? {};
+  const { canRead: canSeeAmount, canWrite: canEditAmount } = useColumnPermission(
+    "consignments",
+    "amount",
+  );
 
   // Local state for dynamically populated lists
   const [localClients, setLocalClients] = useState(clients);
@@ -368,16 +373,18 @@ export default function NewConsignmentForm({ clients, icds, vessels }: Props) {
               </select>
             </Field>
 
-            <Field label="Amount (TZS)" error={errs.amount}>
-              <input
-                name="amount"
-                type="number"
-                min={0}
-                step={1}
-                placeholder="e.g. 1500000"
-                className={inputCls}
-              />
-            </Field>
+            {canSeeAmount && canEditAmount && (
+              <Field label="Amount (TZS)" error={errs.amount}>
+                <input
+                  name="amount"
+                  type="number"
+                  min={0}
+                  step={1}
+                  placeholder="e.g. 1500000"
+                  className={inputCls}
+                />
+              </Field>
+            )}
           </div>
         </section>
 

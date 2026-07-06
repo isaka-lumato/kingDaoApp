@@ -83,7 +83,8 @@ export async function GET(
     );
   }
 
-  const element = buildReportPdf(payload, filters);
+  const canSeeAmount = perms.canRead("consignments", "amount");
+  const element = buildReportPdf(payload, filters, canSeeAmount);
   const buffer = await renderToBuffer(element);
   // `renderToBuffer` returns a Node `Buffer`; wrap it in a fresh `Uint8Array`
   // so it satisfies the Web `BodyInit` contract the Response constructor wants.

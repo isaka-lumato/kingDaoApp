@@ -1222,3 +1222,121 @@ Final design — **single `/clients` route, selection driven by `?c=<id>`** (the
 **Why enforce client-side too.** UI `pattern` + `title` give immediate feedback and block obvious typos, but the server zod is the real gate (UI guards alone are insufficient — CLAUDE.md §3). Both reference the same regex constant.
 
 **Trade-off.** The PRD (frozen) still describes TANSAD as the TRA numeric number and uses it to infer year. The live app now treats the UI TANSAD field as a formatted internal string. Any historical importer logic that reads a numeric TANSAD is untouched — this decision governs **UI create/edit only**, mirroring how D-028 scoped ref_no generation to UI inserts and left the importer alone. Existing rows with non-conforming TANSAD values are not rewritten; they only fail validation if edited and re-saved through the form.
+
+---
+
+> **Note (2026-07-06 rebase):** D-064…D-069 below were authored on a separate "import logic" branch that used the D-055…D-060 numbers concurrently with the office branch above. They are renumbered D-064+ to avoid collision. Two of them were partially superseded when the branches merged: **D-065/D-066** (list-level TanStack caching + realtime-on-list) were dropped for the office `list-query.ts` sort/search/export list — the TanStack provider + realtime hook survive on the Activity feed and the kanban/triage shell; only the consignments-list caching was reverted. **D-068** (cargo drift) is superseded by the office **D-059**, which performed the same rename via a proper migration. They are kept for history.
+
+## D-064 — Global Activity page (admin audit + usage), access via `audit_log` read permission
+
+**Date:** 2026-06-10
+**Status:** Active.
+
+**Context.** The only window into the append-only `audit_log` was the per-consignment audit tab (PRD §8.3). There was no place for an admin to see activity across the whole app or to track usage. Per user request, a top-level **Activity** page is added with two tabs (Changes, Usage), admin-only by default but grantable to other roles. None of this is in the PRD, so it is a decision.
+
+**Decision.**
+1. **Top-level `/activity` route + nav item** (not under Settings), placed below Reports. Two tabs: **Changes** (global, filterable `audit_log` feed across all tracked tables) and **Usage** (per-user last sign-in + 30-day action counts).
+2. **Access = `isAdmin` OR `canRead('audit_log','read')`.** Reuses the existing per-column permission system with **zero schema change** — `role_column_permissions` accepts arbitrary `(table_name, column_name)` and `getServerPermissions().canRead()` already returns true for admins. A single **Read** toggle on the Roles & Permissions screen, bound to `('audit_log','read')`, grants non-admin roles access. The page and every server action enforce this gate; the nav item is shown under the same condition.
+3. **Usage data is derived, not newly captured (v1).** Last sign-in comes from Supabase Auth (`auth.admin.listUsers()`, already surfaced by `listUsersAction`); action counts/last-action are aggregated from `audit_log.actor_id`. **No `login_events` table is built** — Supabase only exposes *last* sign-in, so per-session login history is out of scope for v1 (accepted by user).
+4. **Shared formatting.** `renderAuditValue` / `renderColumnLabel` (previously duplicated in two consignment detail files) are extracted to `src/lib/audit-format.ts` and reused by both the per-consignment panel and the global feed, plus a new `renderTableLabel`.
+
+**Trade-off.** `audit_log` RLS stays at its existing authenticated-read (migration 175820) — the **app-layer gate is the real boundary**, consistent with how the per-consignment panel already reads the table. Granting the `audit_log` read permission also exposes the Usage tab (which includes auth `last_sign_in_at`); this is intentional — "see the audit log" and "see who's been active" are treated as one capability for v1. Login data is only ever fetched inside the admin-checked server action, never shipped to unauthorized clients.
+
+## D-065 — Activate TanStack Query for client-side caching (mount QueryClient, seed from RSC)
+
+**Date:** 2026-06-11
+**Status:** Active.
+
+**Context.** `@tanstack/react-query` is in the locked stack (§2) and `src/lib/query-keys.ts` was fully built out, but the library was **dormant**: no `QueryClientProvider` was mounted and there were zero `useQuery` usages. Every navigation, filter change, pager click, and tab switch re-ran the full RSC → Supabase chain from scratch (the Activity feed re-fetched `listActivityAction`/`listUsageAction` on every interaction; the consignments list re-rendered server-side on every URL change). The server layer is already well-optimized (D-040/D-041/D-042), so the next meaningful speedup is a **client cache**. Prompted by the user asking to make the app faster.
+
+**Decision.**
+1. **Mount one `QueryClientProvider`** via a new client component `src/app/providers.tsx`, wrapping the `(app)` route group only (keeps `/login` lean). Client is `useState`-stabilised (one instance per browser tab, fresh per server request — standard App Router pattern). Defaults tuned for an internal low-churn tool: `staleTime: 30s`, `gcTime: 5min`, `refetchOnWindowFocus: false`.
+2. **Seed every cached read from the server's first render** via `initialData` so SSR first paint is unchanged — caching is purely additive; no page becomes client-only or loses its server-rendered first frame.
+3. **URL params stay the source of truth** for the consignments list. The query *key* is derived from the URL (year/page/filters); the cache just makes revisited combos instant. `placeholderData: keepPreviousData` preserves the D-043 "old rows stay visible while loading" feel.
+4. **Rollout order:** Activity feed first (lowest risk — already client-fetched), then the consignments list (extract `listConsignmentsAction` as the shared `queryFn`). Mutations invalidate `queryKeys.*` rather than relying solely on `revalidatePath`.
+
+**Trade-off.** Adds a provider + client cache to a previously RSC-pure data path. Accepted because the keys/infra already existed and `initialData` keeps SSR intact. The alternative (server-only + `revalidatePath`) cannot make back/forward or re-filter instant — which is the felt-latency the user reported.
+
+## D-066 — Supabase Realtime merged into the cache via `setQueryData` (not refetch)
+
+**Date:** 2026-06-11
+**Status:** Active. **Depends on D-056.**
+
+**Context.** §3.7 mandates subscribing to `consignments`/`efd_records` via Realtime and merging events with `setQueryData` rather than refetching. Realtime was not enabled on any table, and the kanban refreshed via `revalidatePath("/")` after `advanceStageAction` — which only updates the acting user's view on next navigation and never reflects *other* users' changes live (the multi-user visibility this app exists to provide).
+
+**Decision.**
+1. **Enable Realtime** on `public.consignments` and `public.efd_records` via a CLI migration (`alter publication supabase_realtime add table ...`) with `replica identity full` so UPDATE payloads carry old+new rows. No RLS change — Realtime respects existing RLS.
+2. **A client hook (`use-consignments-realtime.ts`)** opens one `postgres_changes` channel and patches cached list/kanban queries via `queryClient.setQueryData` on UPDATE; coarse `invalidateQueries` fallback for INSERT/DELETE. Cleanup via `removeChannel` on unmount.
+3. **Kanban** keeps its existing `useOptimistic` for the actor's own drag; Realtime covers changes made by *other* users, replacing the `revalidatePath`-driven refresh.
+
+**Trade-off.** `replica identity full` slightly increases WAL volume per update — negligible at ~400 consignments/year. Worth it for live multi-user sync without refetch storms.
+
+## D-067 — Excel import commits in client-driven bulk chunks with a live progress bar
+
+**Date:** 2026-07-04
+**Status:** Active.
+
+**Context.** Importing the historical tracker (~5,000 rows) was effectively unusable. The parser (T-060/T-088) is a pure in-memory pass and is not the problem; the commit path (`commitImportAction`) was. It re-parsed the uploaded file server-side and then inserted **one row at a time, sequentially**, awaiting ~4–6 Supabase round-trips per row (client lookup, ICD lookup, consignment insert, then two inserts per EFD code). At Cloud latency that is ~20,000–30,000 serialized round-trips for a 5,000-row file ≈ 15–25 min — far past the Vercel serverless limit, so the request was killed mid-way leaving a **partial, un-rolled-back import** and duplicates on retry. The UI showed only a `"Committing…"` spinner. Prompted by the user reporting the import is not easy and asking for clear progress UI.
+
+**Decision.**
+1. **Parse once, on preview.** `previewImportAction` already returns the full `result.consignments` array to the client (the preview table just `.slice(0, 25)`s it). The client keeps it in state — the file is never re-uploaded or re-parsed for commit.
+2. **Client-driven chunked commit.** A new `commitChunkAction({ jobId, chunk, isFirst, isLast })` accepts a ~300-row JSON slice (not the file). The client loops the parsed rows in `CHUNK_SIZE = 300` batches, awaiting each call and advancing a real progress bar (`committed / total`, %). Short requests never approach the timeout, and a failed/stopped chunk is resumable.
+3. **Bulk inserts inside each chunk.** References resolve in a couple of queries (one SELECT per `clients`/`icds` + one bulk INSERT of missing names → in-memory `upperName → id` map), then consignments bulk-insert in one statement (`.select("id, ref_no, year")`, matched back by the `(ref_no, year)` key), then EFD records and link rows bulk-insert (RETURNING preserves VALUES order, so ids zip back by position). A chunk that was hundreds of round-trips becomes a handful.
+4. **Row-by-row fallback preserves error attribution.** A bulk INSERT is atomic, so any error (bad enum, or a duplicate on re-run) means nothing was written for that statement — the chunk retries **row-by-row** to attribute the failure to the exact `ref_no` while the rest of the chunk still imports. Happy path stays fully bulk.
+5. **Idempotency via the existing partial unique index** `consignments_ref_no_year_uq (ref_no, year) where deleted_at is null` — re-running the same file rejects duplicates (surfaced per-row through the fallback) instead of double-inserting. No EFD-level dedup (full backfill is one-time).
+6. **Audit row folded per-chunk.** `import_jobs.inserted_count` and `payload.failures` accumulate across chunks; the terminal `status`/`committed_at` are stamped on `isLast`, which also fires the `revalidatePath` set.
+7. **Body limit.** `next.config.ts` sets `experimental.serverActions.bodySizeLimit = "8mb"`; the preview upload cap in `previewImportAction` is lowered from 25 MB to 8 MB to match (a 5,000-row `.xlsx` is ~1–3 MB).
+
+**Trade-off.** Not a single DB transaction, so an import is not strictly all-or-nothing — a mid-run stop leaves earlier chunks committed. Accepted because the unique index makes re-running safe/resumable and the chunked model is what enables the live progress UI the user asked for. The alternative (one Postgres RPC in a single transaction) is atomic and fast but cannot stream per-row progress back for the bar; chosen against for a one-time historical backfill where visible progress + resumability matter more than atomicity.
+
+## D-068 — Cargo rename + enum changes: DB is authoritative, code follows (drift adopted, migrations owed) — SUPERSEDED by D-059
+
+**Date:** 2026-07-04
+**Status:** Active — **partial: code + types aligned, migrations NOT yet written (debt, see below).**
+
+**Context.** Re-import QA after D-058 failed at runtime with `column consignments.container_count does not exist`, then (after the first fix) with `invalid input value for enum assessment_status: "Closed"`. Root cause: the **live dev DB was edited directly in Supabase Studio** (renames + enum changes) and those changes never went through a migration, so `supabase/migrations/`, `src/types/supabase.ts`, and all app code still spoke the old vocabulary. This is a **direct violation of CLAUDE.md §7 / D-007 / D-019** ("never edit schema via Studio for a deployed environment") — the edits were made by the user for a client requirement before the rule's cost was visible. Typecheck/lint/tests all stayed green *because they validate against the types file, not the live DB* — so the drift was invisible until a real insert hit Cloud.
+
+**What actually changed in the live DB (captured by introspecting the PostgREST OpenAPI spec with the secret key, since `supabase gen types` needs a CLI login we don't have in-session):**
+1. `consignments.container_count` → **`cargo_count`** (column rename).
+2. `consignments.container_type` → **`cargo_type`** (column rename) and the enum type `container_type` → **`cargo_type`**.
+3. Enum `cargo_type` gained **`MACHINERY_VEHICLE`, `LOOSE`, `BULK`** (was `40FT | 20FT | CAR | COIL`, now 7 values). Reflects real cargo the client handles that isn't containerised.
+4. Enum `assessment_status` terminal value `Closed` → **`Accepted`** (was `Waiting | Action | Closed`, now `Waiting | Action | Accepted`).
+5. A new column **`efd_receipt_no`** exists on the live DB (observed during the same introspection; unused by app code today — its adoption is deferred, see D-060 note / follow-up task).
+
+**Decision.** The DB rename is **intentional and authoritative** (client wants "cargo", not "container", and the new cargo/assessment values are real). Code follows the DB, not the reverse. Concretely:
+1. **Types hand-patched.** `src/types/supabase.ts` had been truncated to 0 bytes by a failed `gen:types` run — restored from `git HEAD`, then hand-edited to match the live DB (both column keys, the enum type name, the 3 new `cargo_type` values, and `assessment_status` → `Accepted`). Hand-patching (not regenerating) because `supabase gen types --linked` requires an interactive CLI login unavailable in-session; the introspected OpenAPI spec is the same source of truth the generator would use.
+2. **`container_* → cargo_*` propagated across ~23 code files** — server actions, forms (new/edit), consignment detail/secondary, dashboard, kanban card, clients page, audit-format labels, roles matrix, both import paths (`import-actions.ts` + `scripts/import-tracker.ts`), and `parse-tracker.ts`. UI labels changed "Container" → "Cargo"; the two form dropdowns + the create-consignment zod enum gained the 3 new values.
+3. **The Excel bridge is preserved.** The tracker `.xlsx` still uses container-era headers (`"container type"`, `"no of conts"`) and the legacy assessment label `"Closed"`. `parse-tracker.ts` keeps those header-alias strings and now **translates on import**: header-text → `cargo_*` logical fields, and `assessment_status` cell value `/^closed$/i` → `"Accepted"` (no warning — it's an expected legacy label, not a data error). So historical sheets import unchanged; only the DB-write vocabulary moved. Answers the user's question "can we write logic to accept container* Excel into cargo* columns?" — yes, the mapping lives entirely in the parser.
+4. **`isCargoType()` guard + the "unknown cargo_type" error message** updated to the 7-value set. Two new parser unit tests lock the `"Closed" → "Accepted"` translation and native `"Accepted"`.
+
+**DEBT — migrations still owed (does NOT match the live DB until written).** No SQL migration in `supabase/migrations/` reproduces renames #1–#5. This means: (a) a fresh `supabase db reset` / a new environment (incl. **prod**) would rebuild the OLD `container_*` / `Closed` schema and the app would break there exactly as dev did; (b) migration history is now drifted from the live dev DB. Before any prod deploy (T-083) a migration must be authored that does `alter table … rename column`, `alter type … rename`, `alter type … add value` (×3), and the `assessment_status` value change (enum value renames need the `rename value` form or a type-swap), plus adds `efd_receipt_no` properly. Tracked as a new human/задача item — see `humanTasks.md` H-014 and `tasks.md`. **This entry is the record that dev is ahead of the migrations, deliberately, and prod is not yet safe.**
+
+**Why hand-patch now instead of waiting for a proper migration:** the user needed the re-import unblocked immediately and had no Supabase login available in-session. Aligning code+types to the already-live dev schema unblocks the import today; the migration is a separate, non-urgent correctness task for the prod path. The risk (someone deploys to prod before the migration exists) is called out here and in `humanTasks.md` rather than silently carried.
+
+**Verification.** Introspected live enums to confirm exact values (not guessed). Typecheck clean, lint 0 errors / 4 pre-existing warnings, 36/36 parser tests (incl. 2 new), full suite green. Real-fixture re-import against dev still owed (D-058's outstanding item) — the two enum/column errors that blocked it are now fixed.
+
+## D-069 — File storage stays on Supabase for v1; external object store is a non-destructive swap later
+
+**Date:** 2026-07-04
+**Status:** Active — decision to **defer**; no code change.
+
+**Context.** User asked whether Supabase Storage will be expensive at scale and — if they later move file storage to an external service (S3/R2/Backblaze/etc.) — whether that migration would be **destructive**. Consignment attachments (T-089, migration `20260609120000_consignment_attachments.sql`) are the only user-uploaded binary today: a **private** bucket `consignment-attachments`, 10 MiB/file cap, images + PDF only, objects keyed `consignments/<consignmentId>/<file>`. The **bytes** live in Storage; the **metadata** (path, filename, mime, size, uploader) lives in the `attachments` Postgres table. Upload is browser-direct-to-Storage (RLS-gated) then a `recordAttachmentAction` metadata insert; download is a 60-second signed URL; delete is soft-delete-row-then-best-effort-object-remove.
+
+**Decision.** Stay on Supabase Storage for v1. Revisit only if storage cost or egress becomes material.
+
+**Why cost is a non-issue at this scale:** ~400 consignments/year, a handful of scanned docs each, ≤10 MiB apiece → low tens of GB/year even pessimistically. Supabase's included storage + egress covers that comfortably on the current plan; an external store would save cents while adding an integration to maintain. Premature (CLAUDE.md §3.8).
+
+**The migration would NOT be destructive — and the codebase is already shaped to make it a clean swap.** This is the substantive answer to the user's question:
+1. **The database is untouched by such a move.** Only the *bytes* relocate; the `attachments` table (the source of truth for what exists) stays exactly as is. `storage_path` is already an opaque string — it can name an S3/R2 key just as well as a Supabase object. No row is deleted, no consignment linkage changes.
+2. **The swap surface is tiny and centralised** — three call sites, all already isolated behind the `ATTACHMENT_BUCKET` constant and `supabase.storage`:
+   - upload: `attachments-tab.tsx` (`.storage.from(BUCKET).upload(...)`),
+   - signed download URL: `getAttachmentUrlAction` (`.createSignedUrl`),
+   - object delete: `deleteAttachmentAction` (`.storage.remove`).
+   Replacing these with an S3-compatible client (presigned PUT, presigned GET, DELETE) is a localised change; the metadata table, RLS model, permission gates, and UI stay put. (Note: **R2/S3 are themselves S3-compatible**, and Supabase Storage also exposes an S3-compatible endpoint — so an adapter interface over "put/get-signed-url/remove" would let both coexist during a cutover.)
+3. **Existing files migrate by copy, not cut.** Cutover = copy existing objects to the new bucket (keys can be preserved verbatim, since `storage_path` is reused as the new key), flip the storage client, verify, then delete the old objects afterward. Because download mints a fresh signed URL per request (URLs live 60s, nothing long-lived is persisted), there are **no stored URLs to rewrite** — the moment the client points at the new backend, downloads resolve there. Zero-downtime, reversible until the final old-bucket cleanup.
+
+**What WOULD make it destructive (and how we avoid it):** hard-coding public/permanent Storage URLs in the DB (we don't — we store paths + sign on read), or coupling `storage_path` to Supabase-specific structure (we don't — it's a plain key). So the current design already dodges the two things that turn a storage move into a data-rewrite.
+
+**When to revisit:** if monthly egress or stored volume crosses the plan's included tier, or if a client compliance requirement dictates a specific region/provider. At that point: introduce a `StorageAdapter` interface over the three operations, implement an S3/R2 backend, dual-write during cutover, backfill-copy history, verify, delete old. Logged as a *possible future* task, not scheduled.
+
+**Note on `efd_receipt_no`:** surfaced during the D-068 introspection as a new live column; if it is intended to hold an uploaded receipt reference rather than a code string, that intersects this decision — flagged for clarification, not resolved here.

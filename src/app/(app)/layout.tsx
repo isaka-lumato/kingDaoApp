@@ -3,6 +3,7 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getServerPermissions } from "@/lib/permissions";
 import { PermissionsProvider } from "@/hooks/use-permissions";
 import { perfTimer } from "@/lib/perf";
+import Providers from "../providers";
 import AppShell from "./app-shell";
 import { NavSkeletonSwap } from "./_nav/nav-skeleton-swap";
 
@@ -46,10 +47,12 @@ export default async function AppLayout({
   const email = (claims.email as string | undefined) ?? "";
 
   return (
-    <PermissionsProvider value={clientPerms}>
-      <AppShell user={{ email }}>
-        <NavSkeletonSwap>{children}</NavSkeletonSwap>
-      </AppShell>
-    </PermissionsProvider>
+    <Providers>
+      <PermissionsProvider value={clientPerms}>
+        <AppShell user={{ email }}>
+          <NavSkeletonSwap>{children}</NavSkeletonSwap>
+        </AppShell>
+      </PermissionsProvider>
+    </Providers>
   );
 }

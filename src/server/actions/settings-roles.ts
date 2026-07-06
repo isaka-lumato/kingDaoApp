@@ -4,6 +4,11 @@ import { revalidatePath } from "next/cache";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getServerPermissions } from "@/lib/permissions";
 import { invalidatePermissionsCacheAll } from "@/lib/permissions-cache";
+import {
+  getPermissionGroup,
+  isKnownPermissionTarget,
+  writeGroupCount,
+} from "@/lib/permission-groups";
 import { z } from "zod";
 
 async function requireAdmin() {
@@ -27,6 +32,12 @@ const updatePermSchema = z.object({
   columnName: z.string(),
   canRead: z.preprocess((v) => v === "true" || v === true, z.boolean()),
   canWrite: z.preprocess((v) => v === "true" || v === true, z.boolean()),
+});
+
+const updateGroupPermSchema = z.object({
+  roleId: z.uuid(),
+  groupId: z.string().min(1),
+  enabled: z.preprocess((v) => v === "true" || v === true, z.boolean()),
 });
 
 /**
@@ -108,6 +119,9 @@ export async function updateColumnPermAction(formData: FormData) {
     canWrite: formData.get("canWrite"),
   });
   if (!parsed.success) return { error: "Invalid input" };
+  if (!isKnownPermissionTarget(parsed.data.tableName, parsed.data.columnName)) {
+    return { error: "Unknown permission target." };
+  }
 
   const admin = getSupabaseAdminClient();
   const { error } = await admin.from("role_column_permissions").upsert(
@@ -115,7 +129,7 @@ export async function updateColumnPermAction(formData: FormData) {
       role_id: parsed.data.roleId,
       table_name: parsed.data.tableName,
       column_name: parsed.data.columnName,
-      can_read: parsed.data.canRead,
+      can_read: parsed.data.canRead || parsed.data.canWrite,
       can_write: parsed.data.canWrite,
     },
     { onConflict: "role_id,table_name,column_name" }
@@ -125,6 +139,64 @@ export async function updateColumnPermAction(formData: FormData) {
 
   // Clear all cached permissions — every user holding this role has stale
   // column rules in the cross-request cache (D-041).
+  invalidatePermissionsCacheAll();
+  revalidatePath("/settings/roles");
+  return { success: true };
+}
+
+/**
+ * Update a human-readable permission group. Each group fans out to one or more
+ * concrete role_column_permissions rows.
+ */
+export async function updateGroupPermAction(formData: FormData) {
+  await requireAdmin();
+
+  const parsed = updateGroupPermSchema.safeParse({
+    roleId: formData.get("roleId"),
+    groupId: formData.get("groupId"),
+    enabled: formData.get("enabled"),
+  });
+  if (!parsed.success) return { error: "Invalid input" };
+
+  const group = getPermissionGroup(parsed.data.groupId);
+  if (!group) return { error: "Unknown permission group." };
+
+  const admin = getSupabaseAdminClient();
+  const orFilter = group.columns
+    .map((target) => `and(table_name.eq.${target.table},column_name.eq.${target.column})`)
+    .join(",");
+  const { data: existingRows } = await admin
+    .from("role_column_permissions")
+    .select("table_name, column_name, can_read, can_write")
+    .eq("role_id", parsed.data.roleId)
+    .or(orFilter);
+
+  const rows = group.columns.map((target) => {
+    const existing = existingRows?.find(
+      (row) => row.table_name === target.table && row.column_name === target.column,
+    );
+    const nextCanWrite =
+      group.kind === "write" ? parsed.data.enabled : (existing?.can_write ?? false);
+    const nextCanRead =
+      group.kind === "read"
+        ? parsed.data.enabled || nextCanWrite
+        : parsed.data.enabled || (existing?.can_read ?? false);
+
+    return {
+    role_id: parsed.data.roleId,
+    table_name: target.table,
+    column_name: target.column,
+      can_read: nextCanRead,
+      can_write: nextCanWrite,
+    };
+  });
+
+  const { error } = await admin
+    .from("role_column_permissions")
+    .upsert(rows, { onConflict: "role_id,table_name,column_name" });
+
+  if (error) return { error: error.message };
+
   invalidatePermissionsCacheAll();
   revalidatePath("/settings/roles");
   return { success: true };
@@ -179,17 +251,19 @@ export async function listRolesAction() {
 
   const { data: perms } = await admin
     .from("role_column_permissions")
-    .select("role_id, can_write");
+    .select("role_id, table_name, column_name, can_write");
 
-  // Count write-enabled columns per role.
+  // Count enabled write groups per role. This keeps the role list aligned with
+  // the human-readable capability toggles shown in the detail panel.
   const writeCountByRole = new Map<string, number>();
-  for (const p of perms ?? []) {
-    if (p.can_write) {
-      writeCountByRole.set(
-        p.role_id,
-        (writeCountByRole.get(p.role_id) ?? 0) + 1
-      );
-    }
+  const permsByRole = new Map<string, NonNullable<typeof perms>>();
+  for (const permission of perms ?? []) {
+    const existing = permsByRole.get(permission.role_id) ?? [];
+    existing.push(permission);
+    permsByRole.set(permission.role_id, existing);
+  }
+  for (const [roleId, rolePerms] of permsByRole) {
+    writeCountByRole.set(roleId, writeGroupCount(rolePerms));
   }
 
   return {

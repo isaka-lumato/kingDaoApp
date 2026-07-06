@@ -27,7 +27,7 @@ import {
   StyleSheet,
   type DocumentProps,
 } from "@react-pdf/renderer";
-import { formatTzs } from "@/lib/money";
+import { formatTzs, MASKED_AMOUNT } from "@/lib/money";
 import {
   FUNNEL_STAGES,
   reportTitle,
@@ -243,7 +243,13 @@ function EmptyState() {
 
 // ─── Per-report tables ─────────────────────────────────────────────────────
 
-function RevenueTable({ rows }: { rows: RevenueRow[] }) {
+function RevenueTable({
+  rows,
+  canSeeAmount,
+}: {
+  rows: RevenueRow[];
+  canSeeAmount: boolean;
+}) {
   const columns: Col<RevenueRow>[] = [
     { header: "Month", flex: 2, value: (r) => r.month_label ?? "" },
     {
@@ -256,7 +262,7 @@ function RevenueTable({ rows }: { rows: RevenueRow[] }) {
       header: "Total revenue",
       flex: 2,
       align: "right",
-      value: (r) => formatTzs(num(r.total_amount)),
+      value: (r) => (canSeeAmount ? formatTzs(num(r.total_amount)) : MASKED_AMOUNT),
     },
   ];
   if (rows.length === 0) return <EmptyState />;
@@ -269,14 +275,24 @@ function RevenueTable({ rows }: { rows: RevenueRow[] }) {
         <DataRow key={i} row={r} columns={columns} />
       ))}
       <TotalsRow
-        cells={["TOTAL", String(totalCount), formatTzs(totalAmount)]}
+        cells={[
+          "TOTAL",
+          String(totalCount),
+          canSeeAmount ? formatTzs(totalAmount) : MASKED_AMOUNT,
+        ]}
         flexes={columns.map((c) => c.flex)}
       />
     </View>
   );
 }
 
-function ClientVolumeTable({ rows }: { rows: ClientVolumeRow[] }) {
+function ClientVolumeTable({
+  rows,
+  canSeeAmount,
+}: {
+  rows: ClientVolumeRow[];
+  canSeeAmount: boolean;
+}) {
   const columns: Col<ClientVolumeRow>[] = [
     { header: "Client", flex: 3, value: (r) => r.client_name ?? "" },
     { header: "Displayed Name", flex: 2, value: (r) => r.display_name ?? "" },
@@ -308,7 +324,7 @@ function ClientVolumeTable({ rows }: { rows: ClientVolumeRow[] }) {
       header: "Total revenue",
       flex: 2,
       align: "right",
-      value: (r) => formatTzs(num(r.total_revenue)),
+      value: (r) => (canSeeAmount ? formatTzs(num(r.total_revenue)) : MASKED_AMOUNT),
     },
   ];
   if (rows.length === 0) return <EmptyState />;
@@ -334,7 +350,7 @@ function ClientVolumeTable({ rows }: { rows: ClientVolumeRow[] }) {
           String(totals.containers),
           "",
           "",
-          formatTzs(totals.revenue),
+          canSeeAmount ? formatTzs(totals.revenue) : MASKED_AMOUNT,
         ]}
         flexes={columns.map((c) => c.flex)}
       />
@@ -449,7 +465,13 @@ function PipelineFunnelTable({ funnel }: { funnel: PipelineFunnelData | null }) 
   );
 }
 
-function PendingRefundsTable({ rows }: { rows: PendingRefundRow[] }) {
+function PendingRefundsTable({
+  rows,
+  canSeeAmount,
+}: {
+  rows: PendingRefundRow[];
+  canSeeAmount: boolean;
+}) {
   const columns: Col<PendingRefundRow>[] = [
     { header: "REF No", flex: 1.5, value: (r) => r.ref_no ?? "" },
     {
@@ -468,7 +490,7 @@ function PendingRefundsTable({ rows }: { rows: PendingRefundRow[] }) {
       header: "Amount",
       flex: 2,
       align: "right",
-      value: (r) => formatTzs(num(r.amount)),
+      value: (r) => (canSeeAmount ? formatTzs(num(r.amount)) : MASKED_AMOUNT),
     },
     { header: "Remarks", flex: 3, value: (r) => r.remarks ?? "" },
   ];
@@ -481,7 +503,14 @@ function PendingRefundsTable({ rows }: { rows: PendingRefundRow[] }) {
         <DataRow key={i} row={r} columns={columns} />
       ))}
       <TotalsRow
-        cells={["TOTAL", "", "", "", formatTzs(totalAmount), ""]}
+        cells={[
+          "TOTAL",
+          "",
+          "",
+          "",
+          canSeeAmount ? formatTzs(totalAmount) : MASKED_AMOUNT,
+          "",
+        ]}
         flexes={columns.map((c) => c.flex)}
       />
     </View>
@@ -493,15 +522,16 @@ function PendingRefundsTable({ rows }: { rows: PendingRefundRow[] }) {
 export function buildReportPdf(
   payload: ReportPayload,
   filters: ReportFilters,
+  canSeeAmount = true,
 ): React.ReactElement<DocumentProps> {
   const title = reportTitle(payload.kind, filters);
   let body: React.ReactElement;
   switch (payload.kind) {
     case "revenue":
-      body = <RevenueTable rows={payload.rows} />;
+      body = <RevenueTable rows={payload.rows} canSeeAmount={canSeeAmount} />;
       break;
     case "client_volume":
-      body = <ClientVolumeTable rows={payload.rows} />;
+      body = <ClientVolumeTable rows={payload.rows} canSeeAmount={canSeeAmount} />;
       break;
     case "turnaround_client":
       body = <TurnaroundClientTable rows={payload.rows} />;
@@ -513,7 +543,7 @@ export function buildReportPdf(
       body = <PipelineFunnelTable funnel={payload.funnel} />;
       break;
     case "pending_refunds":
-      body = <PendingRefundsTable rows={payload.rows} />;
+      body = <PendingRefundsTable rows={payload.rows} canSeeAmount={canSeeAmount} />;
       break;
   }
   return (

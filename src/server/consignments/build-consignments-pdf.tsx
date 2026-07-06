@@ -20,7 +20,7 @@ import {
   StyleSheet,
   type DocumentProps,
 } from "@react-pdf/renderer";
-import { formatTzs } from "@/lib/money";
+import { formatTzs, MASKED_AMOUNT } from "@/lib/money";
 import { currentStageLabel } from "@/lib/pipeline";
 import {
   exportFilterSummary,
@@ -108,22 +108,26 @@ function num(value: number | null | undefined): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
-// Trimmed, legible subset for landscape A4.
-const PDF_COLUMNS: PdfCol[] = [
-  { header: "Ref No", flex: 1.3, value: (r) => r.ref_no ?? "" },
-  { header: "Client", flex: 2.6, value: (r) => r.clients?.name ?? "" },
-  { header: "B/L", flex: 1.8, value: (r) => r.bl_number ?? "" },
+// Trimmed, legible subset for landscape A4. Amount masks to `•••` when the
+// requesting role lacks "See financial amounts" (D-063).
+function pdfColumns(canSeeAmount: boolean): PdfCol[] {
+  return [
+    { header: "Ref No", flex: 1.3, value: (r) => r.ref_no ?? "" },
+    { header: "Client", flex: 2.6, value: (r) => r.clients?.name ?? "" },
+    { header: "B/L", flex: 1.8, value: (r) => r.bl_number ?? "" },
 
-  { header: "Vessel", flex: 1.8, value: (r) => r.vessel_name ?? "" },
-  { header: "Arrival", flex: 1.1, value: (r) => r.arrival_date ?? "" },
-  { header: "Pipeline Stage", flex: 2.2, value: (r) => currentStageLabel(r) },
-  {
-    header: "Amount",
-    flex: 1.6,
-    align: "right",
-    value: (r) => (r.amount != null ? formatTzs(r.amount) : ""),
-  },
-];
+    { header: "Vessel", flex: 1.8, value: (r) => r.vessel_name ?? "" },
+    { header: "Arrival", flex: 1.1, value: (r) => r.arrival_date ?? "" },
+    { header: "Pipeline Stage", flex: 2.2, value: (r) => currentStageLabel(r) },
+    {
+      header: "Amount",
+      flex: 1.6,
+      align: "right",
+      value: (r) =>
+        !canSeeAmount ? MASKED_AMOUNT : r.amount != null ? formatTzs(r.amount) : "",
+    },
+  ];
+}
 
 function PageFrame({
   title,
@@ -159,10 +163,10 @@ function PageFrame({
   );
 }
 
-function HeaderRow() {
+function HeaderRow({ columns }: { columns: PdfCol[] }) {
   return (
     <View style={styles.headerRow} fixed>
-      {PDF_COLUMNS.map((c, i) => (
+      {columns.map((c, i) => (
         <Text
           key={i}
           style={[
@@ -179,10 +183,10 @@ function HeaderRow() {
   );
 }
 
-function DataRow({ row }: { row: ExportRow }) {
+function DataRow({ row, columns }: { row: ExportRow; columns: PdfCol[] }) {
   return (
     <View style={styles.row} wrap={false}>
-      {PDF_COLUMNS.map((c, i) => (
+      {columns.map((c, i) => (
         <Text
           key={i}
           style={[
@@ -202,12 +206,14 @@ export function buildConsignmentsPdf(
   rows: ExportRow[],
   filters: ExportFilters,
   clientName?: string,
+  canSeeAmount = true,
 ): React.ReactElement<DocumentProps> {
   const title = `Consignments · ${filters.year}`;
   const generated = `Generated ${new Date().toISOString().replace("T", " ").slice(0, 16)} UTC`;
   const subtitle = `${generated} — ${exportFilterSummary(filters, clientName)}`;
+  const columns = pdfColumns(canSeeAmount);
   const totalAmount = rows.reduce((s, r) => s + num(r.amount), 0);
-  const flexes = PDF_COLUMNS.map((c) => c.flex);
+  const flexes = columns.map((c) => c.flex);
 
   return (
     <Document title={title} author="KDL Tracker">
@@ -218,12 +224,12 @@ export function buildConsignmentsPdf(
           </Text>
         ) : (
           <View style={styles.table}>
-            <HeaderRow />
+            <HeaderRow columns={columns} />
             {rows.map((r, i) => (
-              <DataRow key={i} row={r} />
+              <DataRow key={i} row={r} columns={columns} />
             ))}
             <View style={styles.totalsRow} wrap={false}>
-              {PDF_COLUMNS.map((c, i) => (
+              {columns.map((c, i) => (
                 <Text
                   key={i}
                   style={[
@@ -235,7 +241,9 @@ export function buildConsignmentsPdf(
                   {i === 0
                     ? "TOTAL"
                     : c.header === "Amount"
-                      ? formatTzs(totalAmount)
+                      ? canSeeAmount
+                        ? formatTzs(totalAmount)
+                        : MASKED_AMOUNT
                       : ""}
                 </Text>
               ))}

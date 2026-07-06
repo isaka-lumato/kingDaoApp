@@ -5,8 +5,13 @@ import {
   createRoleAction,
   deleteRoleAction,
   getRolePermissionsAction,
-  updateColumnPermAction,
+  updateGroupPermAction,
 } from "@/server/actions/settings-roles";
+import {
+  READ_GROUPS,
+  WRITE_GROUPS,
+  type PermissionGroup,
+} from "@/lib/permission-groups";
 
 type RoleRow = {
   id: string;
@@ -17,44 +22,48 @@ type RoleRow = {
   writeableColumnCount: number;
 };
 
+type PermissionRow = {
+  table_name: string;
+  column_name: string;
+  can_read: boolean;
+  can_write: boolean;
+};
+
 type Props = {
   roles: RoleRow[];
   fetchError?: string;
 };
 
-// All consignment columns that can have permissions configured.
-const CONSIGNMENT_COLUMNS = [
-  "ref_no", "tansad_no", "bl_number", "cargo_count", "cargo_type",
-  "goods_description", "vessel_name", "arrival_date", "icd_id",
-  "efd_receipt_no", "remarks", "amount", "client_id",
-  "manifest_status", "shipping_batch_status", "tanesws_status",
-  "assessment_status", "tbs_loading_status", "tbs_debit_status",
-  "manifest_comp_status", "duty_status", "inspection_file_status",
-  "release_status", "release_date", "shared_with_consignment_id",
-];
-
-// Short, accurate one-line summary shown under each system role in the list.
 function roleSubtitle(role: RoleRow): string {
   switch (role.name) {
     case "admin":
-      return "Full access (admin)";
+      return "Full access";
     case "operator":
-      return "Reads all, writes most fields (no amount / client)";
+      return "Operational staff defaults";
     case "viewer":
-      return "Read-only — cannot edit any field";
+      return "Read-only";
     default:
       return role.is_system
         ? role.description ?? "System role"
-        : `${role.writeableColumnCount} writable cols`;
+        : `${role.writeableColumnCount} writable capabilities`;
   }
+}
+
+function groupsBySection(groups: PermissionGroup[]): [string, PermissionGroup[]][] {
+  const sections = new Map<string, PermissionGroup[]>();
+  for (const group of groups) {
+    const existing = sections.get(group.section) ?? [];
+    existing.push(group);
+    sections.set(group.section, existing);
+  }
+  return Array.from(sections.entries());
 }
 
 export default function RolesClient({ roles, fetchError }: Props) {
   const [selectedRole, setSelectedRole] = useState<RoleRow | null>(null);
-  const [permissions, setPermissions] = useState<
-    { table_name: string; column_name: string; can_read: boolean; can_write: boolean }[]
-  >([]);
+  const [permissions, setPermissions] = useState<PermissionRow[]>([]);
   const [permLoading, setPermLoading] = useState(false);
+  const [permError, setPermError] = useState<string | null>(null);
   const [cloneOpen, setCloneOpen] = useState(false);
   const [cloneError, setCloneError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -62,41 +71,77 @@ export default function RolesClient({ roles, fetchError }: Props) {
   async function openRole(role: RoleRow) {
     setSelectedRole(role);
     setPermLoading(true);
+    setPermError(null);
     const res = await getRolePermissionsAction(role.id);
     setPermissions(res.permissions ?? []);
+    if (res.error) setPermError(res.error);
     setPermLoading(false);
   }
 
-  function getPerm(col: string) {
+  function getPerm(table: string, column: string) {
     return permissions.find(
-      (p) => p.table_name === "consignments" && p.column_name === col
+      (permission) =>
+        permission.table_name === table && permission.column_name === column,
     );
   }
 
-  function togglePerm(col: string, field: "can_read" | "can_write", current: boolean) {
+  function groupEnabled(group: PermissionGroup): boolean {
+    return group.columns.every((target) => {
+      const permission = getPerm(target.table, target.column);
+      return group.kind === "read"
+        ? permission?.can_read ?? false
+        : permission?.can_write ?? false;
+    });
+  }
+
+  function toggleGroup(group: PermissionGroup) {
     if (!selectedRole || selectedRole.is_system) return;
+
+    const enabled = !groupEnabled(group);
+    const previous = permissions;
     const fd = new FormData();
     fd.set("roleId", selectedRole.id);
-    fd.set("tableName", "consignments");
-    fd.set("columnName", col);
-    const perm = getPerm(col);
-    fd.set("canRead", field === "can_read" ? String(!current) : String(perm?.can_read ?? false));
-    fd.set("canWrite", field === "can_write" ? String(!current) : String(perm?.can_write ?? false));
-    startTransition(async () => {
-      await updateColumnPermAction(fd);
-      // Optimistically update local state.
-      setPermissions((prev) => {
-        const idx = prev.findIndex(
-          (p) => p.table_name === "consignments" && p.column_name === col
+    fd.set("groupId", group.id);
+    fd.set("enabled", String(enabled));
+
+    setPermError(null);
+    setPermissions((current) => {
+      const next = [...current];
+      for (const target of group.columns) {
+        const idx = next.findIndex(
+          (permission) =>
+            permission.table_name === target.table &&
+            permission.column_name === target.column,
         );
-        const updated = { table_name: "consignments", column_name: col, can_read: perm?.can_read ?? false, can_write: perm?.can_write ?? false, [field]: !current };
-        if (idx >= 0) {
-          const next = [...prev];
-          next[idx] = updated;
-          return next;
-        }
-        return [...prev, updated];
-      });
+        const currentPermission =
+          idx >= 0
+            ? next[idx]
+            : {
+                table_name: target.table,
+                column_name: target.column,
+                can_read: false,
+                can_write: false,
+              };
+        const updated = {
+          ...currentPermission,
+          can_read:
+            group.kind === "read"
+              ? enabled || currentPermission.can_write
+              : enabled || currentPermission.can_read,
+          can_write: group.kind === "write" ? enabled : currentPermission.can_write,
+        };
+        if (idx >= 0) next[idx] = updated;
+        else next.push(updated);
+      }
+      return next;
+    });
+
+    startTransition(async () => {
+      const res = await updateGroupPermAction(fd);
+      if (res && "error" in res) {
+        setPermissions(previous);
+        setPermError(res.error ?? "Permission update failed.");
+      }
     });
   }
 
@@ -129,21 +174,24 @@ export default function RolesClient({ roles, fetchError }: Props) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-foreground">Roles &amp; Permissions</h2>
-          <p className="text-muted-foreground text-sm">
-            System roles are read-only. Clone them to create custom roles.
+          <h2 className="text-lg font-semibold text-foreground">
+            Roles &amp; Permissions
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Clone a system role, then adjust the business capabilities for that custom role.
           </p>
         </div>
         <button
           id="create-role-btn"
-          onClick={() => { setSelectedRole(null); setCloneOpen(true); }}
-          className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 transition-opacity"
+          onClick={() => {
+            setSelectedRole(null);
+            setCloneOpen(true);
+          }}
+          className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-          </svg>
+          <span className="text-base leading-none">+</span>
           New role
         </button>
       </div>
@@ -155,138 +203,126 @@ export default function RolesClient({ roles, fetchError }: Props) {
       )}
 
       <div className="flex gap-6">
-        {/* Role list */}
-        <div className="w-56 shrink-0 space-y-1">
+        <div className="w-60 shrink-0 space-y-1">
           {roles.map((role) => (
             <button
               key={role.id}
               onClick={() => openRole(role)}
               className={[
-                "w-full text-left rounded-lg px-3 py-2.5 transition-colors",
+                "w-full rounded-lg px-3 py-2.5 text-left transition-colors",
                 selectedRole?.id === role.id
-                  ? "bg-brand/15 border border-brand/30 text-foreground"
-                  : "hover:bg-muted/40 text-muted-foreground hover:text-foreground",
+                  ? "border border-brand/30 bg-brand/15 text-foreground"
+                  : "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
               ].join(" ")}
             >
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium">{role.name}</span>
                 {role.is_system && (
-                  <span className="text-[10px] rounded-full bg-muted px-1.5 py-0.5 text-muted-foreground">
+                  <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
                     system
                   </span>
                 )}
               </div>
-              <p className="text-xs text-muted-foreground mt-0.5">
+              <p className="mt-0.5 text-xs text-muted-foreground">
                 {roleSubtitle(role)}
               </p>
             </button>
           ))}
         </div>
 
-        {/* Permission matrix */}
         {selectedRole ? (
-          <div className="flex-1 rounded-xl border border-border overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
+          <div className="flex-1 overflow-hidden rounded-xl border border-border">
+            <div className="flex items-center justify-between gap-4 border-b border-border bg-muted/30 px-4 py-3">
               <div>
                 <span className="font-semibold text-foreground">{selectedRole.name}</span>
                 {selectedRole.is_system && (
-                  <span className="ml-2 text-xs text-muted-foreground">(system role — read only)</span>
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    (system role, read only)
+                  </span>
                 )}
-                <p className="text-xs text-muted-foreground mt-0.5">{roleSubtitle(selectedRole)}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {roleSubtitle(selectedRole)}
+                </p>
               </div>
-              <div className="flex gap-2">
-                {!selectedRole.is_system && (
-                  <>
-                    <button
-                      onClick={() => setCloneOpen(true)}
-                      className="text-xs rounded-lg border border-border px-3 py-1.5 hover:bg-muted/40 transition-colors text-foreground"
-                    >
-                      Clone
-                    </button>
-                    <button
-                      onClick={() => handleDelete(selectedRole)}
-                      className="text-xs rounded-lg border border-destructive/40 px-3 py-1.5 hover:bg-destructive/10 transition-colors text-destructive"
-                    >
-                      Delete
-                    </button>
-                  </>
-                )}
-              </div>
+              {!selectedRole.is_system && (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setCloneOpen(true)}
+                    className="rounded-lg border border-border px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-muted/40"
+                  >
+                    Clone
+                  </button>
+                  <button
+                    onClick={() => handleDelete(selectedRole)}
+                    className="rounded-lg border border-destructive/40 px-3 py-1.5 text-xs text-destructive transition-colors hover:bg-destructive/10"
+                  >
+                    Delete
+                  </button>
+                </div>
+              )}
             </div>
 
             {selectedRole.name === "admin" ? (
-              <div className="px-4 py-8 text-center text-muted-foreground text-sm">
-                Admin has implicit read + write access to all columns.
+              <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+                Admin has implicit read and write access to everything.
               </div>
             ) : permLoading ? (
-              <div className="px-4 py-8 text-center text-muted-foreground text-sm animate-pulse">
-                Loading permissions…
+              <div className="animate-pulse px-4 py-8 text-center text-sm text-muted-foreground">
+                Loading permissions...
               </div>
             ) : (
-              <div className="overflow-auto max-h-[60vh]">
+              <div className="max-h-[60vh] overflow-auto">
                 {selectedRole.is_system && (
-                  <p className="px-4 py-2.5 text-xs text-muted-foreground border-b border-border bg-muted/20">
-                    These permissions are fixed for system roles. Clone this role to create a customisable variant.
+                  <p className="border-b border-border bg-muted/20 px-4 py-2.5 text-xs text-muted-foreground">
+                    These permissions are fixed for system roles. Clone this role to create a custom version.
                   </p>
                 )}
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
-                    <tr>
-                      <th className="text-left px-4 py-2 font-medium text-muted-foreground">Column</th>
-                      <th className="text-center px-4 py-2 font-medium text-muted-foreground w-20">Read</th>
-                      <th className="text-center px-4 py-2 font-medium text-muted-foreground w-20">Write</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {CONSIGNMENT_COLUMNS.map((col) => {
-                      const perm = getPerm(col);
-                      const canRead = perm?.can_read ?? false;
-                      const canWrite = perm?.can_write ?? false;
-                      return (
-                        <tr key={col} className="hover:bg-muted/20 transition-colors">
-                          <td className="px-4 py-2.5 font-mono text-xs text-foreground">{col}</td>
-                          <td className="px-4 py-2.5 text-center">
-                            <Toggle
-                              checked={canRead}
-                              onChange={() => togglePerm(col, "can_read", canRead)}
-                              disabled={isPending || selectedRole.is_system}
-                              id={`read-${col}`}
-                            />
-                          </td>
-                          <td className="px-4 py-2.5 text-center">
-                            <Toggle
-                              checked={canWrite}
-                              onChange={() => togglePerm(col, "can_write", canWrite)}
-                              disabled={isPending || selectedRole.is_system}
-                              id={`write-${col}`}
-                            />
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+
+                {permError && (
+                  <div className="mx-4 mt-4 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    {permError}
+                  </div>
+                )}
+
+                <div className="space-y-6 px-4 py-4">
+                  <PermissionGroupSections
+                    title="Read access"
+                    groups={READ_GROUPS}
+                    checked={groupEnabled}
+                    onToggle={toggleGroup}
+                    disabled={isPending || selectedRole.is_system}
+                  />
+                  <PermissionGroupSections
+                    title="Work access"
+                    groups={WRITE_GROUPS}
+                    checked={groupEnabled}
+                    onToggle={toggleGroup}
+                    disabled={isPending || selectedRole.is_system}
+                  />
+                </div>
               </div>
             )}
           </div>
         ) : (
-          <div className="flex-1 rounded-xl border border-border border-dashed flex items-center justify-center text-muted-foreground text-sm">
+          <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-border text-sm text-muted-foreground">
             Select a role to view its permissions
           </div>
         )}
       </div>
 
-      {/* Clone / Create modal */}
       {cloneOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setCloneOpen(false)} />
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setCloneOpen(false)}
+          />
           <div className="relative z-10 w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-2xl">
-            <h3 className="text-lg font-semibold text-foreground mb-1">
+            <h3 className="mb-1 text-lg font-semibold text-foreground">
               {selectedRole ? `Clone "${selectedRole.name}"` : "New custom role"}
             </h3>
-            <p className="text-muted-foreground text-sm mb-5">
+            <p className="mb-5 text-sm text-muted-foreground">
               {selectedRole
-                ? "Creates a new role with the same column permissions. You can adjust them afterwards."
+                ? "Creates a new role with the same permissions. You can adjust it afterwards."
                 : "Creates a blank role with no permissions set."}
             </p>
 
@@ -299,7 +335,7 @@ export default function RolesClient({ roles, fetchError }: Props) {
             <form onSubmit={handleClone} className="space-y-4">
               <div className="space-y-1.5">
                 <label htmlFor="role-name" className="block text-sm font-medium text-foreground">
-                  Role name <span className="text-muted-foreground font-normal">(lowercase, no spaces)</span>
+                  Role name <span className="font-normal text-muted-foreground">(lowercase, no spaces)</span>
                 </label>
                 <input
                   id="role-name"
@@ -312,7 +348,7 @@ export default function RolesClient({ roles, fetchError }: Props) {
               </div>
               <div className="space-y-1.5">
                 <label htmlFor="role-desc" className="block text-sm font-medium text-foreground">
-                  Description <span className="text-muted-foreground font-normal">(optional)</span>
+                  Description <span className="font-normal text-muted-foreground">(optional)</span>
                 </label>
                 <input
                   id="role-desc"
@@ -325,7 +361,7 @@ export default function RolesClient({ roles, fetchError }: Props) {
                 <button
                   type="button"
                   onClick={() => setCloneOpen(false)}
-                  className="flex-1 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
+                  className="flex-1 rounded-lg border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted"
                 >
                   Cancel
                 </button>
@@ -334,7 +370,7 @@ export default function RolesClient({ roles, fetchError }: Props) {
                   disabled={isPending}
                   className="flex-1 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60"
                 >
-                  {isPending ? "Creating…" : "Create role"}
+                  {isPending ? "Creating..." : "Create role"}
                 </button>
               </div>
             </form>
@@ -342,6 +378,62 @@ export default function RolesClient({ roles, fetchError }: Props) {
         </div>
       )}
     </div>
+  );
+}
+
+function PermissionGroupSections({
+  title,
+  groups,
+  checked,
+  onToggle,
+  disabled,
+}: {
+  title: string;
+  groups: PermissionGroup[];
+  checked: (group: PermissionGroup) => boolean;
+  onToggle: (group: PermissionGroup) => void;
+  disabled: boolean;
+}) {
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between gap-4">
+        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+        <span className="text-xs text-muted-foreground">
+          {groups.filter(checked).length} of {groups.length} enabled
+        </span>
+      </div>
+
+      <div className="space-y-4">
+        {groupsBySection(groups).map(([section, sectionGroups]) => (
+          <div key={`${title}-${section}`} className="space-y-1.5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              {section}
+            </p>
+            <div className="divide-y divide-border rounded-lg border border-border">
+              {sectionGroups.map((group) => (
+                <div
+                  key={group.id}
+                  className="flex items-center justify-between gap-4 px-3 py-3 transition-colors hover:bg-muted/20"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground">{group.label}</p>
+                    <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                      {group.description}
+                    </p>
+                  </div>
+                  <Toggle
+                    checked={checked(group)}
+                    onChange={() => onToggle(group)}
+                    disabled={disabled}
+                    id={`permission-${group.id}`}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -367,7 +459,7 @@ function Toggle({
       className={[
         "relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent",
         "transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1",
-        "disabled:opacity-50 disabled:cursor-not-allowed",
+        "disabled:cursor-not-allowed disabled:opacity-50",
         checked ? "bg-brand" : "bg-muted",
       ].join(" ")}
     >
