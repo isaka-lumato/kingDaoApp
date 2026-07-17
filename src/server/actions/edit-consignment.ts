@@ -7,7 +7,7 @@ import { friendlyConsignmentDbError } from "@/lib/db-errors";
 
 // cargo_count and cargo_type are NOT NULL in the DB — never allow a
 // blank edit to clear them (it would trigger a not-null constraint violation).
-const NON_NULLABLE_FIELDS = new Set(["cargo_count", "cargo_type"]);
+const NON_NULLABLE_FIELDS = new Set(["cargo_count", "cargo_type", "consignment_nature"]);
 
 export async function editConsignmentAction(
   _prevState: { error?: string; success?: boolean } | null,
@@ -24,6 +24,8 @@ export async function editConsignmentAction(
     "client_id", "bl_number", "tansad_no", "vessel_name", "arrival_date",
     "cargo_count", "cargo_type", "efd_receipt_no", "goods_description", "icd_id",
     "amount", "remarks",
+    // D-071: intake/nature fields, editable for corrections.
+    "consignment_nature", "estimated_arrival_date", "ucr_no",
   ] as const;
 
   type EditableField = typeof EDITABLE_FIELDS[number];

@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { type StageField, type KanbanConsignment } from "@/lib/pipeline";
+import type { IntakeIcd } from "@/components/intake-dialog";
 
 const KanbanBoard = dynamic(() => import("./kanban-board"), {
   ssr: false,
@@ -16,6 +17,7 @@ type Props = {
   byStage: Record<StageField, KanbanConsignment[]>;
   year: number;
   fetchError?: string;
+  icds?: IntakeIcd[];
 };
 
 export default function KanbanBoardClient(props: Props) {

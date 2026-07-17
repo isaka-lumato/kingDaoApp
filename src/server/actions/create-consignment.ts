@@ -5,10 +5,16 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getServerPermissions } from "@/lib/permissions";
 import { friendlyConsignmentDbError } from "@/lib/db-errors";
 import { CARGO_TYPES } from "@/lib/cargo";
+import { CONSIGNMENT_NATURES } from "@/lib/pipeline";
 import { TZ } from "@/lib/dates";
 import { formatInTimeZone } from "date-fns-tz";
 import { z } from "zod";
 
+// D-071: the intake form is deliberately minimal. Exact arrival + ICD are
+// captured at the Manifest drop-popup; TANSAD + UCR at the Duty-Application
+// drop-popup — so tansad_no / icd_id are NOT collected here. amount +
+// efd_receipt_no move to the edit page. What remains is what's known the day a
+// consignment is booked.
 const newConsignmentSchema = z.object({
   client_id: z.string().uuid("Please select a client."),
   bl_number: z
@@ -16,20 +22,15 @@ const newConsignmentSchema = z.object({
     .trim()
     .min(1, "Please enter the B/L number.")
     .max(100, "B/L number is too long (max 100 characters)."),
-  tansad_no: z
-    .string()
-    .trim()
-    .min(1, "Please enter the TANSAD number.")
-    .max(100, "TANSAD number is too long (max 100 characters)."),
   vessel_name: z
     .string({ error: "Please enter the vessel name." })
     .trim()
     .min(1, "Please enter the vessel name.")
     .max(200, "Vessel name is too long (max 200 characters)."),
-  arrival_date: z
-    .string({ error: "Please enter the arrival date." })
+  estimated_arrival_date: z
+    .string({ error: "Please enter the estimated arrival date." })
     .trim()
-    .min(1, "Please enter the arrival date."),
+    .min(1, "Please enter the estimated arrival date."),
   cargo_count: z.coerce
     .number({ error: "Cargo count must be a number." })
     .int("Cargo count must be a whole number.")
@@ -37,21 +38,12 @@ const newConsignmentSchema = z.object({
   cargo_type: z.enum(CARGO_TYPES, {
     error: "Please select a cargo type.",
   }),
-  efd_receipt_no: z
-    .string()
-    .max(100, "EFD receipt number is too long (max 100 characters).")
-    .optional()
-    .or(z.literal("")),
+  consignment_nature: z.enum(CONSIGNMENT_NATURES, {
+    error: "Please select the consignment nature.",
+  }),
   goods_description: z
     .string()
     .max(1000, "Goods description is too long (max 1000 characters).")
-    .optional()
-    .or(z.literal("")),
-  icd_id: z.string().uuid("Please select a valid ICD."),
-  amount: z.coerce
-    .number({ error: "Amount must be a number." })
-    .int("Amount must be a whole number.")
-    .min(0, "Amount cannot be negative.")
     .optional()
     .or(z.literal("")),
   remarks: z
@@ -77,7 +69,6 @@ export async function createConsignmentAction(
   if (!perms.canWrite("consignments", "ref_no")) {
     return { error: "You do not have permission to create consignments." };
   }
-  const canWriteAmount = perms.canWrite("consignments", "amount");
 
   const raw = Object.fromEntries(
     Array.from(formData.entries()).map(([k, v]) => [k, v === "" ? undefined : v])
@@ -147,16 +138,17 @@ export async function createConsignmentAction(
       client_id: d.client_id,
       year,
       bl_number: d.bl_number || null,
-      tansad_no: d.tansad_no || null,
       vessel_name: d.vessel_name || null,
-      arrival_date: d.arrival_date || null,
+      // D-071: only the ESTIMATED arrival is known at intake. arrival_date (the
+      // actual) stays null until the Manifest drop-popup — this keeps the card
+      // in the New Consignments bucket (isNewConsignment predicate).
+      estimated_arrival_date: d.estimated_arrival_date || null,
+      arrival_date: null,
+      consignment_nature: d.consignment_nature,
       // cargo_count is NOT NULL in the DB (defaults to 1); fall back to 1 when blank.
       cargo_count: d.cargo_count ? Number(d.cargo_count) : 1,
       cargo_type: d.cargo_type,
-      efd_receipt_no: d.efd_receipt_no || null,
       goods_description: d.goods_description || null,
-      icd_id: d.icd_id || null,
-      amount: canWriteAmount && d.amount ? Number(d.amount) : null,
       remarks: d.remarks || null,
       // All stages start at Waiting
       manifest_status: "Waiting",

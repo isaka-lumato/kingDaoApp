@@ -5,6 +5,7 @@ import { useFormStatus } from "react-dom";
 import Link from "next/link";
 import { editConsignmentAction } from "@/server/actions/edit-consignment";
 import { CARGO_TYPES, cargoLabel } from "@/lib/cargo";
+import { CONSIGNMENT_NATURES, type ConsignmentNature } from "@/lib/pipeline";
 
 type Client = { id: string; name: string; display_name: string | null };
 type ICD = { id: string; name: string; location: string | null };
@@ -28,6 +29,9 @@ type Consignment = {
   icd_id: string | null;
   amount: number | null;
   remarks: string | null;
+  consignment_nature: ConsignmentNature;
+  estimated_arrival_date: string | null;
+  ucr_no: string | null;
 };
 
 type Props = {
@@ -171,6 +175,33 @@ export default function EditConsignmentForm({
               )}
             </Field>
 
+            <Field label="Consignment nature" col="consignment_nature" writableCols={writableCols}>
+              {(disabled) => (
+                <select
+                  name="consignment_nature"
+                  defaultValue={consignment.consignment_nature}
+                  disabled={disabled}
+                  className={inputCls}
+                >
+                  {CONSIGNMENT_NATURES.map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+              )}
+            </Field>
+
+            <Field label="Estimated arrival date" col="estimated_arrival_date" writableCols={writableCols}>
+              {(disabled) => (
+                <input
+                  name="estimated_arrival_date"
+                  type="date"
+                  defaultValue={consignment.estimated_arrival_date ?? ""}
+                  disabled={disabled}
+                  className={inputCls}
+                />
+              )}
+            </Field>
+
             <Field label="Goods description" col="goods_description" writableCols={writableCols}>
               {(disabled) => (
                 <textarea
@@ -224,6 +255,18 @@ export default function EditConsignmentForm({
                   name="tansad_no"
                   type="text"
                   defaultValue={consignment.tansad_no ?? ""}
+                  disabled={disabled}
+                  className={inputCls}
+                />
+              )}
+            </Field>
+
+            <Field label="UCR No" col="ucr_no" writableCols={writableCols}>
+              {(disabled) => (
+                <input
+                  name="ucr_no"
+                  type="text"
+                  defaultValue={consignment.ucr_no ?? ""}
                   disabled={disabled}
                   className={inputCls}
                 />

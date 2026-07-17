@@ -234,11 +234,13 @@ export type Database = {
           cargo_count: number
           cargo_type: Database["public"]["Enums"]["cargo_type"]
           client_id: string
+          consignment_nature: Database["public"]["Enums"]["consignment_nature"]
           created_at: string
           current_status: string | null
           deleted_at: string | null
           duty_status: Database["public"]["Enums"]["duty_status"]
           efd_receipt_no: string | null
+          estimated_arrival_date: string | null
           goods_description: string | null
           guta_pair_id: string | null
           icd_id: string | null
@@ -262,6 +264,7 @@ export type Database = {
           tansad_no: string | null
           tbs_debit_status: Database["public"]["Enums"]["tbs_debit_status"]
           tbs_loading_status: Database["public"]["Enums"]["tbs_loading_status"]
+          ucr_no: string | null
           updated_at: string
           updated_by: string | null
           vessel_name: string | null
@@ -275,11 +278,13 @@ export type Database = {
           cargo_count?: number
           cargo_type: Database["public"]["Enums"]["cargo_type"]
           client_id: string
+          consignment_nature?: Database["public"]["Enums"]["consignment_nature"]
           created_at?: string
           current_status?: string | null
           deleted_at?: string | null
           duty_status?: Database["public"]["Enums"]["duty_status"]
           efd_receipt_no?: string | null
+          estimated_arrival_date?: string | null
           goods_description?: string | null
           guta_pair_id?: string | null
           icd_id?: string | null
@@ -303,6 +308,7 @@ export type Database = {
           tansad_no?: string | null
           tbs_debit_status?: Database["public"]["Enums"]["tbs_debit_status"]
           tbs_loading_status?: Database["public"]["Enums"]["tbs_loading_status"]
+          ucr_no?: string | null
           updated_at?: string
           updated_by?: string | null
           vessel_name?: string | null
@@ -316,11 +322,13 @@ export type Database = {
           cargo_count?: number
           cargo_type?: Database["public"]["Enums"]["cargo_type"]
           client_id?: string
+          consignment_nature?: Database["public"]["Enums"]["consignment_nature"]
           created_at?: string
           current_status?: string | null
           deleted_at?: string | null
           duty_status?: Database["public"]["Enums"]["duty_status"]
           efd_receipt_no?: string | null
+          estimated_arrival_date?: string | null
           goods_description?: string | null
           guta_pair_id?: string | null
           icd_id?: string | null
@@ -344,6 +352,7 @@ export type Database = {
           tansad_no?: string | null
           tbs_debit_status?: Database["public"]["Enums"]["tbs_debit_status"]
           tbs_loading_status?: Database["public"]["Enums"]["tbs_loading_status"]
+          ucr_no?: string | null
           updated_at?: string
           updated_by?: string | null
           vessel_name?: string | null
@@ -1006,6 +1015,7 @@ export type Database = {
     Functions: {
       advance_stage: {
         Args: {
+          p_extra?: Json
           p_id: string
           p_new_value: string
           p_reason?: string
@@ -1019,11 +1029,13 @@ export type Database = {
           cargo_count: number
           cargo_type: Database["public"]["Enums"]["cargo_type"]
           client_id: string
+          consignment_nature: Database["public"]["Enums"]["consignment_nature"]
           created_at: string
           current_status: string | null
           deleted_at: string | null
           duty_status: Database["public"]["Enums"]["duty_status"]
           efd_receipt_no: string | null
+          estimated_arrival_date: string | null
           goods_description: string | null
           guta_pair_id: string | null
           icd_id: string | null
@@ -1047,6 +1059,7 @@ export type Database = {
           tansad_no: string | null
           tbs_debit_status: Database["public"]["Enums"]["tbs_debit_status"]
           tbs_loading_status: Database["public"]["Enums"]["tbs_loading_status"]
+          ucr_no: string | null
           updated_at: string
           updated_by: string | null
           vessel_name: string | null
@@ -1096,11 +1109,13 @@ export type Database = {
           cargo_count: number
           cargo_type: Database["public"]["Enums"]["cargo_type"]
           client_id: string
+          consignment_nature: Database["public"]["Enums"]["consignment_nature"]
           created_at: string
           current_status: string | null
           deleted_at: string | null
           duty_status: Database["public"]["Enums"]["duty_status"]
           efd_receipt_no: string | null
+          estimated_arrival_date: string | null
           goods_description: string | null
           guta_pair_id: string | null
           icd_id: string | null
@@ -1124,6 +1139,7 @@ export type Database = {
           tansad_no: string | null
           tbs_debit_status: Database["public"]["Enums"]["tbs_debit_status"]
           tbs_loading_status: Database["public"]["Enums"]["tbs_loading_status"]
+          ucr_no: string | null
           updated_at: string
           updated_by: string | null
           vessel_name: string | null
@@ -1151,6 +1167,7 @@ export type Database = {
         | "MACHINERY_VEHICLE"
         | "LOOSE"
         | "BULK"
+      consignment_nature: "Import" | "Export" | "Transit"
       duty_status: "Waiting" | "Action" | "Paid"
       inspection_file_status: "Waiting" | "Action" | "Done" | "SHARED"
       manifest_comp_status: "Waiting" | "Action" | "Done"

@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useActionState } from "react";
 import Link from "next/link";
-import { PIPELINE_STAGES, isStageComplete, resolveActiveStage, type StageField } from "@/lib/pipeline";
+import { PIPELINE_STAGES, isStageComplete, resolveActiveStage, type StageField, type ConsignmentNature } from "@/lib/pipeline";
 import { maskedTzs } from "@/lib/money";
 import { cargoLabel } from "@/lib/cargo";
 import { usePermissions, useColumnPermission } from "@/hooks/use-permissions";
@@ -34,6 +34,9 @@ type Consignment = {
   goods_description: string | null;
   vessel_name: string | null;
   arrival_date: string | null;
+  estimated_arrival_date: string | null;
+  consignment_nature: ConsignmentNature;
+  ucr_no: string | null;
   amount: number | null;
   remarks: string | null;
   is_failed: boolean | null;
@@ -131,6 +134,8 @@ type Props = {
   gutaPair: GutaPair | null;
   attachments: AttachmentRow[];
   folders: FolderRow[];
+  /** ICDs for the Manifest drop-popup on the stage menu (D-071). */
+  icds: ICD[];
 };
 
 const STATUS_STYLES: Record<string, string> = {
@@ -166,7 +171,7 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
 // `linkedEfds` (still on Props, still passed by the page) is intentionally not
 // destructured while the EFD UI is temporarily hidden — see the commented
 // "Linked EFDs" section below. Restore the destructure when re-enabling EFD.
-export default function ConsignmentDetail({ consignment, auditLog, gutaPair, attachments, folders }: Props) {
+export default function ConsignmentDetail({ consignment, auditLog, gutaPair, attachments, folders, icds }: Props) {
   const [tab, setTab] = useState<"overview" | "pipeline" | "files" | "audit">("overview");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteReason, setDeleteReason] = useState("");
@@ -222,6 +227,10 @@ export default function ConsignmentDetail({ consignment, auditLog, gutaPair, att
     ref_no: consignment.ref_no,
     client_name: client?.name ?? "—",
     active_stage: activeStage,
+    consignment_nature: consignment.consignment_nature,
+    arrival_date: consignment.arrival_date,
+    tansad_no: consignment.tansad_no,
+    ucr_no: consignment.ucr_no,
     manifest_status: consignment.manifest_status,
     shipping_batch_status: consignment.shipping_batch_status,
     tanesws_status: consignment.tanesws_status,
@@ -348,10 +357,12 @@ export default function ConsignmentDetail({ consignment, auditLog, gutaPair, att
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4">
               <Field label="Client" value={client?.name} />
+              <Field label="Nature" value={consignment.consignment_nature} />
               <Field label="Year" value={consignment.year} />
               <Field label="Serial No" value={consignment.serial_no} />
               <Field label="B/L Number" value={consignment.bl_number} />
               <Field label="TANSAD No" value={consignment.tansad_no} />
+              <Field label="UCR No" value={consignment.ucr_no} />
 
               <Field label="ICD" value={icd ? `${icd.name}${icd.location ? ` (${icd.location})` : ""}` : null} />
               <Field
@@ -382,6 +393,18 @@ export default function ConsignmentDetail({ consignment, auditLog, gutaPair, att
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4">
               <Field label="Vessel" value={consignment.vessel_name} />
+              <Field
+                label="Est. arrival date"
+                value={
+                  consignment.estimated_arrival_date
+                    ? new Date(consignment.estimated_arrival_date).toLocaleDateString("en-GB", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      })
+                    : null
+                }
+              />
               <Field
                 label="Arrival date"
                 value={
@@ -680,6 +703,7 @@ export default function ConsignmentDetail({ consignment, auditLog, gutaPair, att
                 key={stage.field}
                 consignment={stageMenuTarget}
                 targetStage={stage.field}
+                icds={icds}
                 triggerClassName={`${rowClass} w-full text-left cursor-pointer hover:bg-muted/30`}
                 trigger={rowContent}
               />

@@ -1340,3 +1340,66 @@ Final design — **single `/clients` route, selection driven by `?c=<id>`** (the
 **When to revisit:** if monthly egress or stored volume crosses the plan's included tier, or if a client compliance requirement dictates a specific region/provider. At that point: introduce a `StorageAdapter` interface over the three operations, implement an S3/R2 backend, dual-write during cutover, backfill-copy history, verify, delete old. Logged as a *possible future* task, not scheduled.
 
 **Note on `efd_receipt_no`:** surfaced during the D-068 introspection as a new live column; if it is intended to hold an uploaded receipt reference rather than a code string, that intersects this decision — flagged for clarification, not resolved here.
+
+---
+
+## D-070 — Roles UI: plain-English permission groups over `role_column_permissions`, with real read + write enforcement
+
+**Date:** 2026-07-06
+**Status:** Active — refines D-004 (permission model).
+
+**Context.** The `/settings/roles` screen exposed a per-column matrix: one **Read** and one **Write** toggle for each of ~27 raw `snake_case` `consignments` columns (~54 switches). Two problems: (1) non-technical customs staff can't reason about raw column names; (2) the **Read** toggles were **not enforced anywhere on display** — turning off Read `amount` changed a DB row that no display code consulted, so amounts still showed on the dashboard, consignments list, detail, clients, and exports. The only read permission ever honored was the synthetic `audit_log`/`read` one (nav-gates the Activity page, D-064).
+
+**Decision.** Replace the column matrix with a small set of **human-readable permission groups**, grouped into **Read access** and **Work access** and sub-grouped by section (Visibility / Consignments / Pipeline / EFD). Groups are a **presentation layer** over the existing `role_column_permissions` table — each group maps to one or more concrete `(table, column)` rows. Toggling a group fans out to all its underlying rows via `updateGroupPermAction`. Single source of truth: `src/lib/permission-groups.ts` (`PERMISSION_GROUPS`).
+
+Groups shipped: *See financial amounts* (read `amount`), *View activity log* (read `audit_log`), *Add new consignments* (write `ref_no`), *Edit shipment details* (write 11 descriptive columns), *Edit client assignment* (write `client_id`), *Edit financial amounts* (write `amount`), *Update pipeline statuses* (write the 10 `*_status` columns + `shared_with_consignment_id`), *Manage EFD receipts* (write 6 `efd_records` columns).
+
+**Read enforcement is now real** (the bug fix). Amounts are gated by `canRead("consignments","amount")` everywhere: dashboard revenue tile (hidden when off), consignments list, consignment detail + GUTA sibling, clients revenue (previously gated by a hard-coded `isAdmin`, now by the permission), and PDF/XLSX exports. Hidden values render a masked `•••` placeholder (`MASKED_AMOUNT` / `maskedTzs` in `src/lib/money.ts`) rather than disappearing, so layouts stay stable. Admins always pass (`canRead`/`canWrite` short-circuit true for admin).
+
+**Advancing pipeline stages is now permission-driven, not role-name-driven.** Migration `20260706120000_roles_permissions_groups_and_efd_guard.sql`:
+- Re-emits `advance_stage()` to gate on `can_user_write('consignments', <target status column>)` instead of the hard-coded `r.name in ('admin','operator')` check (D-029's gate is replaced by the column-permission check; the function is still `SECURITY DEFINER` and still bypasses the generic column guard for its `updated_by`/`release_date`/duty-propagation side effects).
+- Adds `can_user_write_any(table)` and switches the `consignments`/`efd_records` table-level RLS UPDATE/INSERT policies from role-name checks to permission-row checks, so **custom roles** work.
+- Adds an `efd_records` per-column BEFORE UPDATE guard mirroring the `consignments` one (D-046), and seeds operator (write) / viewer (read) EFD permission rows.
+
+UI guards align with the DB: `stage-action-menu.tsx` now gates on `useColumnPermission("consignments", <stageField>).canWrite`; the kanban board already gated on `canWrite` per status column.
+
+**Custom roles retained.** System roles (admin/operator/viewer) stay read-only in the UI; cloning opens the same group toggles (per user choice).
+
+**Scope decisions (confirmed with user):** exports stay open to any authenticated user (only the amounts *inside* them are masked by the read group); "advance stage" was included in this pass rather than deferred; backward stage moves stay admin-only via `force_set_stage` (not a group).
+
+**Why groups-over-columns rather than making the 54 toggles honest (Option A):** even fully enforced, 54 `snake_case` toggles are unusable for the target staff. Groups give a stable vocabulary ("See financial amounts") that maps to whatever columns implement it, and let the underlying column set evolve without changing the operator-facing UI.
+
+**Verification surface:** clone a role, assign a test user, toggle each group, confirm both the UI change and a direct REST/RPC attempt (PATCH a guarded column; call `advance_stage` for a stage the role lacks) returns `42501`. `pnpm typecheck` + `pnpm lint` clean.
+
+---
+
+## D-071 — Pipeline restructure: New-Consignments intake bucket, blocking drop-popups, Consignment Nature + TBS skip, Duty Application reorder
+
+**Date:** 2026-07-17
+**Status:** Active — extends D-005 (kanban), D-009 (advance_stage as sole mutator), D-027 (pipeline constants), D-028 (ref_no allocation).
+
+**Numbering note:** the plan doc `docs/plan-pipeline-nature-restructure.md` and an earlier build pass referred to this work as "D-070". D-070 was already taken by the Roles UI decision, so this restructure is **D-071**; all code + migration citations were corrected to D-071.
+
+**Context.** The board started at "Manifest Uploaded". Creating a consignment demanded fields (exact arrival, ICD, TANSAD) that aren't known until processing begins — forcing operators to invent placeholder data. This adds a lightweight intake stage and defers the discovered-later fields to the exact moment they're first needed.
+
+**Decisions (locked with user 2026-07-13, Ref-No semantics 2026-07-17):**
+
+1. **"New Consignments" is a derived board bucket, not a new enum value.** A card is New while `manifest_status = 'Waiting'` AND `arrival_date IS NULL` (`isNewConsignment()` in `lib/pipeline.ts`). It leaves the bucket when the Manifest drop-popup sets the actual arrival + ICD and bumps `manifest_status → 'Action'`. No pipeline enum change.
+
+2. **Estimated vs actual arrival are two columns.** New `estimated_arrival_date` (set at creation); `arrival_date` stays the ACTUAL arrival, set at the Manifest popup. Preserves the PRD §7.2 "no arrival ⇒ forced Waiting" rule and the §8.1 "arrival required before terminal states" guard.
+
+3. **Blocking drop-popups collect discovered-later data** (`intake-dialog.tsx`). The drop opens the popup; the card only moves after required fields are saved; Cancel = card stays put (no optimistic move applied). Two popups:
+   - **Manifest** (New → Manifest): actual `arrival_date` + `icd_id` (both required). Advances `manifest_status → Action`.
+   - **Duty Application** (entering `tanesws`): `ref_no` + `tansad_no` (required) + `ucr_no` (optional). Advances `manifest_status → Uploaded` so the card lands in Duty Application.
+
+4. **Ref No is editable at the Duty-Application popup, defaulting to the auto-generated value** (user, 2026-07-17). The field pre-fills with the card's existing `ref_no` (D-028 allocation) but the operator can overwrite it (e.g. to match the real customs declaration reference). Only sent in `p_extra` when changed; the `(ref_no, year)` unique index (`consignments_ref_no_year_uq`) is the collision backstop — a duplicate raises 23505 and aborts the advance. This makes `ref_no` a member of the `advance_stage()` `p_extra` whitelist.
+
+5. **Consignment Nature (Import / Export / Transit) drives a DB-enforced TBS skip.** New `consignment_nature` enum + column (default 'Import' — historical/imported rows unaffected). For Export/Transit, once Assessment is Accepted, `advance_stage()` auto-completes both TBS stages (`tbs_loading=Done`, `tbs_debit=Paid`) with `'skipped (nature=…)'` stage_history rows, and the card visually jumps both columns. **The skip is written directly, NOT through the `tbs_debit='Paid'` branch — so it does NOT auto-pay duty. Duty stays Waiting and remains a real step** (user confirmed 2026-07-17: only TBS skips; Duty still runs for Transit/Export).
+
+6. **Duty Application (`tanesws`) reordered before Shipping Batch** — app-layer only, in `PIPELINE_STAGES` order (D-027), not the DB enum. Verified no `advance_stage()` prerequisite depends on the old order: `tanesws→Done` still requires `manifest=Uploaded` (still precedes it); `shipping_batch` has no prerequisite. **Naming: two "Duty…" columns coexist — "Duty Application" (early, customs declaration) and "Duty" (later, payment). User chose to keep both names as-is** (2026-07-17).
+
+7. **`p_extra jsonb` on `advance_stage()` keeps one sanctioned mutation path** (D-009). Whitelist fixed in SQL (`arrival_date, icd_id, ref_no, tansad_no, ucr_no`); any other key raises 22023; each supplied key is also `can_user_write()`-checked before the column-guard bypass. Popup write + stage advance are one atomic transaction.
+
+**Migrations:** `20260713120000_consignment_nature_and_intake.sql` (enum + 3 columns + per-column perm seed, idempotent) and `20260713120500_advance_stage_nature_and_intake.sql` (`create or replace advance_stage()` with p_extra + TBS skip; also folds in the latent assessment `Closed→Accepted` fix). `src/types/supabase.ts` regenerated.
+
+**Verification surface:** V-NATURE in `validation.md`. Key checks: create → lands in New; Manifest popup gates arrival+ICD; Duty popup gates ref+tansad (ucr optional, ref editable); Transit/Export skip both TBS columns with duty still Waiting; `p_extra` non-whitelisted key rejected; operator can write the new columns without 42501.

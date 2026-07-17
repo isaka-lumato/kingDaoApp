@@ -183,9 +183,9 @@ export async function updateGroupPermAction(formData: FormData) {
         : parsed.data.enabled || (existing?.can_read ?? false);
 
     return {
-    role_id: parsed.data.roleId,
-    table_name: target.table,
-    column_name: target.column,
+      role_id: parsed.data.roleId,
+      table_name: target.table,
+      column_name: target.column,
       can_read: nextCanRead,
       can_write: nextCanWrite,
     };

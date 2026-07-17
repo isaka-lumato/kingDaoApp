@@ -9,11 +9,14 @@ import {
   type TriageBucket,
 } from "@/lib/pipeline";
 import StageActionShell from "@/components/stage-action-shell";
+import type { IntakeIcd } from "@/components/intake-dialog";
 
 type Props = {
   byStage: Record<StageField, KanbanConsignment[]>;
   year: number;
   fetchError?: string;
+  /** ICDs for the Manifest drop-popup (D-071). */
+  icds?: IntakeIcd[];
 };
 
 type ClassifiedRow = KanbanConsignment & {
@@ -29,7 +32,7 @@ const SECTIONS: { bucket: TriageBucket; title: string; defaultOpen: boolean }[] 
   { bucket: "done", title: "Done", defaultOpen: false },
 ];
 
-export default function TriageView({ byStage, year, fetchError }: Props) {
+export default function TriageView({ byStage, year, fetchError, icds }: Props) {
   const rows = useMemo<ClassifiedRow[]>(() => {
     const flat = Object.values(byStage).flat();
     return flat.map((c) => {
@@ -181,6 +184,7 @@ export default function TriageView({ byStage, year, fetchError }: Props) {
                     <li key={row.id}>
                       <StageActionShell
                         consignment={row}
+                        icds={icds}
                         triggerClassName="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-muted/40 transition-colors text-left"
                         trigger={
                           <>

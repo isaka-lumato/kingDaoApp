@@ -6,12 +6,18 @@ import {
   PIPELINE_STAGES,
   STAGE_DONE_VALUE,
   isStageComplete,
+  isNewConsignment,
+  gatedPopupForForwardMove,
+  resolveActiveStage,
+  STAGE_FIELDS,
   type StageField,
   type KanbanConsignment,
+  type DropPopupKind,
 } from "@/lib/pipeline";
 import { advanceStageAction } from "@/server/actions/consignments";
-import { usePermissions } from "@/hooks/use-permissions";
+import { usePermissions, useColumnPermission } from "@/hooks/use-permissions";
 import ForceStageDialog from "./force-stage-dialog";
+import IntakeDialog, { type IntakeIcd } from "./intake-dialog";
 
 type Props = {
   consignment: Pick<
@@ -20,6 +26,10 @@ type Props = {
     | "ref_no"
     | "client_name"
     | "active_stage"
+    | "consignment_nature"
+    | "arrival_date"
+    | "tansad_no"
+    | "ucr_no"
     | "manifest_status"
     | "shipping_batch_status"
     | "tanesws_status"
@@ -33,6 +43,8 @@ type Props = {
   >;
   /** Stage the menu targets. Defaults to the row's active stage. */
   targetStage?: StageField;
+  /** ICDs for the Manifest drop-popup (D-071). */
+  icds?: IntakeIcd[];
   /** Called after a successful action so the host can close the drawer/popover. */
   onActionComplete?: () => void;
 };
@@ -49,6 +61,7 @@ function intermediateValues(field: StageField): string[] {
 export default function StageActionMenu({
   consignment,
   targetStage,
+  icds = [],
   onActionComplete,
 }: Props) {
   const perms = usePermissions();
@@ -57,18 +70,25 @@ export default function StageActionMenu({
   const currentValue = consignment[stageField] as string;
   const isDone = isStageComplete(stageField, currentValue);
 
-  const canWrite = perms.isAdmin || perms.roles.includes("operator");
+  // Advancing writes the target stage's status column; gate on write access to
+  // that column, matching advance_stage()'s DB-side permission check (D-063).
+  const { canWrite } = useColumnPermission("consignments", stageField);
 
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [forceOpen, setForceOpen] = useState(false);
+  // D-071: pending gated advance awaiting the drop-popup's intake fields.
+  const [gate, setGate] = useState<{ kind: DropPopupKind; newValue: string } | null>(null);
 
-  function callAdvance(newValue: string) {
+  const isNew = isNewConsignment(consignment);
+
+  function runAdvance(newValue: string, extra?: Record<string, string>) {
     setError(null);
     const fd = new FormData();
     fd.set("consignmentId", consignment.id);
     fd.set("stage", stageField);
     fd.set("newValue", newValue);
+    if (extra) fd.set("extra", JSON.stringify(extra));
     startTransition(async () => {
       const res = await advanceStageAction(fd);
       if (res?.error) {
@@ -77,6 +97,27 @@ export default function StageActionMenu({
       }
       onActionComplete?.();
     });
+  }
+
+  // Decide whether advancing the current stage needs a blocking popup (D-071).
+  function callAdvance(newValue: string) {
+    // A New card's only forward move is New → Manifest (via the Manifest popup).
+    if (isNew && stageField === "manifest_status") {
+      setGate({ kind: "manifest", newValue: "Action" });
+      return;
+    }
+    if (stageField === consignment.active_stage) {
+      const stageValues: Record<string, string> = {};
+      for (const f of STAGE_FIELDS) stageValues[f] = consignment[f] as string;
+      stageValues[stageField] = newValue;
+      const landingStage = resolveActiveStage(stageValues, consignment.consignment_nature);
+      const popup = gatedPopupForForwardMove(consignment, stageField, landingStage);
+      if (popup === "duty_application") {
+        setGate({ kind: "duty_application", newValue });
+        return;
+      }
+    }
+    runAdvance(newValue);
   }
 
   const intermediates = intermediateValues(stageField);
@@ -159,6 +200,25 @@ export default function StageActionMenu({
         onSuccess={onActionComplete}
         onError={setError}
       />
+
+      {/* Blocking drop-popup for gated tap-to-advance (D-071). Cancel discards
+          the pending advance; the row stays put. */}
+      {gate && (
+        <IntakeDialog
+          kind={gate.kind}
+          refNo={consignment.ref_no}
+          icds={icds}
+          defaultRef={consignment.ref_no}
+          defaultTansad={consignment.tansad_no ?? null}
+          defaultUcr={consignment.ucr_no ?? null}
+          onConfirm={(extra) => {
+            runAdvance(gate.newValue, extra);
+            setGate(null);
+          }}
+          onCancel={() => setGate(null)}
+          isPending={isPending}
+        />
+      )}
     </div>
   );
 }

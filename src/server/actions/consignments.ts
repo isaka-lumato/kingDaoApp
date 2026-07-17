@@ -47,6 +47,7 @@ export async function fetchKanbanData(year?: number): Promise<{
     .from("consignments")
     .select(
       `id, ref_no, year, goods_description, vessel_name, arrival_date,
+       estimated_arrival_date, consignment_nature, tansad_no, ucr_no,
        cargo_count, cargo_type, amount, updated_at,
        manifest_status, shipping_batch_status, tanesws_status,
        assessment_status, tbs_loading_status, tbs_debit_status,
@@ -81,7 +82,7 @@ export async function fetchKanbanData(year?: number): Promise<{
       release_status: row.release_status,
     };
 
-    const active_stage = resolveActiveStage(stageValues);
+    const active_stage = resolveActiveStage(stageValues, row.consignment_nature);
     const client = row.clients as unknown as { name: string } | null;
 
     byStage[active_stage].push({
@@ -91,6 +92,10 @@ export async function fetchKanbanData(year?: number): Promise<{
       goods_description: row.goods_description,
       vessel_name: row.vessel_name,
       arrival_date: row.arrival_date,
+      estimated_arrival_date: row.estimated_arrival_date,
+      consignment_nature: row.consignment_nature,
+      tansad_no: row.tansad_no,
+      ucr_no: row.ucr_no,
       cargo_count: row.cargo_count ? Number(row.cargo_count) : null,
       cargo_type: row.cargo_type,
       amount: row.amount,
@@ -121,10 +126,27 @@ export async function fetchKanbanData(year?: number): Promise<{
 // (`manifest`) below via `stageFieldToDbEnum`.
 const stageFieldSchema = z.enum(STAGE_FIELDS as [StageField, ...StageField[]]);
 
+// D-071: intake columns collected by the drop-popups, passed to advance_stage
+// as p_extra. The DB whitelists these keys again (source of truth); this schema
+// is the client-facing shape + length guard.
+const extraSchema = z
+  .object({
+    arrival_date: z.string().trim().min(1).max(40).optional(),
+    icd_id: z.uuid().optional(),
+    // ref_no is editable at the Duty-Application popup (defaults to the
+    // auto-generated value); only sent when the operator changes it.
+    ref_no: z.string().trim().min(1).max(100).optional(),
+    tansad_no: z.string().trim().max(100).optional(),
+    ucr_no: z.string().trim().max(100).optional(),
+  })
+  .strict();
+
 const advanceSchema = z.object({
   consignmentId: z.uuid(),
   stage: stageFieldSchema,
   newValue: z.string(),
+  /** Optional JSON string of intake columns (drop-popups). */
+  extra: z.string().optional(),
 });
 
 /**
@@ -142,14 +164,34 @@ export async function advanceStageAction(formData: FormData) {
     consignmentId: formData.get("consignmentId"),
     stage: formData.get("stage"),
     newValue: formData.get("newValue"),
+    extra: formData.get("extra") ?? undefined,
   });
   if (!parsed.success) return { error: "Invalid input" };
+
+  // D-071: decode + validate the optional intake payload from the drop-popups.
+  let extra: Record<string, string> | null = null;
+  if (parsed.data.extra) {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(parsed.data.extra);
+    } catch {
+      return { error: "Invalid input" };
+    }
+    const extraParsed = extraSchema.safeParse(raw);
+    if (!extraParsed.success) return { error: "Invalid input" };
+    // Drop undefined keys so the DB whitelist only sees supplied columns.
+    const clean = Object.fromEntries(
+      Object.entries(extraParsed.data).filter(([, v]) => v !== undefined),
+    ) as Record<string, string>;
+    if (Object.keys(clean).length > 0) extra = clean;
+  }
 
   const supabase = await getSupabaseServerClient();
   const { error } = await supabase.rpc("advance_stage", {
     p_id: parsed.data.consignmentId,
     p_stage: stageFieldToDbEnum(parsed.data.stage),
     p_new_value: parsed.data.newValue,
+    ...(extra ? { p_extra: extra } : {}),
   });
 
   if (error) return { error: error.message };
