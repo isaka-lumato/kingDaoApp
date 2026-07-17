@@ -423,6 +423,21 @@ Run after any change to `src/app/(app)/consignments/page.tsx`, `consignments-cli
 
 ---
 
+## V-NATURE — Pipeline restructure: New bucket, drop-popups, Nature skip (D-071)
+
+- [ ] **Create → New bucket:** a new consignment created with only the minimal fields (client, goods, nature, B/L, vessel, estimated arrival, cargo count/type, remarks) lands in the **New Consignments** column — `manifest_status='Waiting'`, `arrival_date IS NULL`, `estimated_arrival_date` set.
+- [ ] **Manifest popup is blocking:** dragging a New card onto Manifest opens the popup (actual arrival + ICD). Cancel ⇒ the card stays in New and the DB is unchanged (no optimistic move stuck). Submit ⇒ `arrival_date` + `icd_id` set, `manifest_status='Action'`, card now in Manifest.
+- [ ] **Duty Application popup:** advancing out of Manifest opens the popup with **Ref No** (pre-filled with the card's ref, editable), **TANSAD No** (required), **UCR No** (optional). Submit sets `tansad_no` (+`ucr_no` if given), `manifest_status='Uploaded'`, card lands in **Duty Application** (which sits before Shipping Batch).
+- [ ] **Editable Ref No:** changing the Ref No in the Duty popup persists the new `ref_no`; leaving it unchanged sends no `ref_no` in `p_extra` (no needless write). Entering a Ref No that collides with another consignment's `(ref_no, year)` is rejected (23505) and the advance aborts.
+- [ ] **Import nature:** an Import consignment visits **TBS Applications** and **TBS Debit** columns normally.
+- [ ] **Transit / Export skip:** advancing an Export/Transit card out of Assessment auto-skips both TBS columns (two `stage_history` rows `reason='skipped (nature=…)'`), lands in Manifest Comparison, and **`duty_status` is still `Waiting`** — the skip did NOT auto-pay duty.
+- [ ] **p_extra whitelist:** a direct REST `advance_stage` call with a non-whitelisted `p_extra` key (e.g. `amount`) is rejected (22023); a whitelisted key the caller can't write is rejected (42501).
+- [ ] **Column guard:** an operator can write the 3 new columns (`consignment_nature`, `estimated_arrival_date`, `ucr_no`) via the popups + edit form without a `42501`.
+- [ ] **Reorder safety:** `tanesws→Done` still requires `manifest_status='Uploaded'` (prerequisite unaffected by moving Duty Application ahead of Shipping Batch).
+- [ ] **Mobile parity:** the tap-to-advance action menu (`stage-action-menu.tsx`) opens the same popups for the same gated transitions.
+
+---
+
 ## How to run a full pre-merge check (Phase 7 onward)
 
 ```powershell

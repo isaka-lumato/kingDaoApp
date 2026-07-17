@@ -5,6 +5,7 @@ import { Drawer } from "@base-ui/react/drawer";
 import { Popover } from "@base-ui/react/popover";
 import type { StageField } from "@/lib/pipeline";
 import StageActionMenu from "./stage-action-menu";
+import type { IntakeIcd } from "./intake-dialog";
 
 const MD = "(min-width: 768px)";
 function subscribe(cb: () => void) {
@@ -28,6 +29,8 @@ type Props = {
   targetStage?: StageField;
   /** Optional className for the trigger wrapper (e.g. to make the row look tappable). */
   triggerClassName?: string;
+  /** ICDs for the Manifest drop-popup (D-071). */
+  icds?: IntakeIcd[];
 };
 
 export default function StageActionShell({
@@ -35,6 +38,7 @@ export default function StageActionShell({
   consignment,
   targetStage,
   triggerClassName,
+  icds,
 }: Props) {
   const isDesktop = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const [open, setOpen] = useState(false);
@@ -56,6 +60,7 @@ export default function StageActionShell({
               <StageActionMenu
                 consignment={consignment}
                 targetStage={targetStage}
+                icds={icds}
                 onActionComplete={close}
               />
             </Popover.Popup>
@@ -81,6 +86,7 @@ export default function StageActionShell({
           <StageActionMenu
             consignment={consignment}
             targetStage={targetStage}
+            icds={icds}
             onActionComplete={close}
           />
         </Drawer.Popup>

@@ -20,12 +20,17 @@ import {
   STAGE_DONE_VALUE,
   resolveActiveStage,
   STAGE_FIELDS,
+  isNewConsignment,
+  gatedPopupForForwardMove,
+  NEW_COLUMN_ID,
   type StageField,
   type KanbanConsignment,
+  type DropPopupKind,
 } from "@/lib/pipeline";
 import { advanceStageAction } from "@/server/actions/consignments";
 import { usePermissions } from "@/hooks/use-permissions";
 import ForceStageDialog from "@/components/force-stage-dialog";
+import IntakeDialog, { type IntakeIcd } from "@/components/intake-dialog";
 import KanbanCard from "./kanban-card";
 import KanbanColumn from "./kanban-column";
 // Type-only — erased at compile time, so canvas-confetti stays out of the
@@ -36,9 +41,21 @@ type Props = {
   byStage: Record<StageField, KanbanConsignment[]>;
   year: number;
   fetchError?: string;
+  /** ICDs for the Manifest drop-popup (D-071). */
+  icds?: IntakeIcd[];
 };
 
 type Board = Record<StageField, KanbanConsignment[]>;
+
+// A pending gated advance: the drop opened a popup and we're waiting for the
+// operator to submit the intake fields before committing. D-071.
+type PendingGate = {
+  card: KanbanConsignment;
+  kind: DropPopupKind;
+  stage: StageField; // the stage column to advance
+  newValue: string; // the value to set it to
+  landingStage: StageField; // where the card will visibly land
+};
 
 // Optimistic move: pull `card` out of whichever column currently holds it and
 // drop it into `landingStage` (the stage the server will recompute it into).
@@ -128,19 +145,27 @@ function ReleaseDropZone() {
   );
 }
 
-export default function KanbanBoard({ byStage, year, fetchError }: Props) {
+export default function KanbanBoard({ byStage, year, fetchError, icds = [] }: Props) {
   const [activeCard, setActiveCard] = useState<KanbanConsignment | null>(null);
   const [forceDialog, setForceDialog] = useState<{
     card: KanbanConsignment;
     toStage: StageField;
     newValue: string;
   } | null>(null);
+  // D-071: a drag that needs a blocking drop-popup before it can commit.
+  const [pendingGate, setPendingGate] = useState<PendingGate | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [optimisticBoard, applyOptimistic] = useOptimistic(byStage, applyMove);
   const perms = usePermissions();
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // The board splits Manifest-stage cards into the New-Consignments pseudo-column
+  // (intake-only: no actual arrival yet) and the real Manifest column. D-071.
+  const manifestCards = optimisticBoard.manifest_status ?? [];
+  const newCards = manifestCards.filter((c) => isNewConsignment(c));
+  const manifestReadyCards = manifestCards.filter((c) => !isNewConsignment(c));
 
   // Wheel handling. A plain vertical wheel should scroll the column under the
   // cursor (its card list) like normal; we only redirect it to *horizontal*
@@ -213,132 +238,167 @@ export default function KanbanBoard({ byStage, year, fetchError }: Props) {
     setInfo(null);
   }
 
+  // Shared commit path for every stage advance (drag, popup submit, action
+  // menu). `card` may be pre-patched with intake fields so the optimistic
+  // render matches the post-refetch state (e.g. arrival_date set → the card
+  // leaves the New column). `extra` rides along to advance_stage's p_extra.
+  function commitAdvance(opts: {
+    card: KanbanConsignment;
+    stage: StageField;
+    newValue: string;
+    landingStage: StageField;
+    fullyReleased: boolean;
+    extra?: Record<string, string>;
+  }) {
+    const { card, stage, newValue, landingStage, fullyReleased, extra } = opts;
+    const fd = new FormData();
+    fd.set("consignmentId", card.id);
+    fd.set("stage", stage);
+    fd.set("newValue", newValue);
+    if (extra) fd.set("extra", JSON.stringify(extra));
+
+    startTransition(async () => {
+      applyOptimistic({ card, landingStage, removed: fullyReleased });
+      const res = await advanceStageAction(fd);
+      if (res?.error) {
+        setError(res.error);
+        return;
+      }
+      if (fullyReleased) {
+        setInfo(`${card.ref_no} is fully released — moved off the active board.`);
+      }
+    });
+  }
+
+  // Compute the landing column the same way the server's resolveActiveStage
+  // will (nature-aware, so Export/Transit cards skip the TBS columns).
+  function landingFor(card: KanbanConsignment, stage: StageField, newValue: string) {
+    const stageValues: Record<string, string> = {};
+    for (const f of STAGE_FIELDS) stageValues[f] = card[f];
+    stageValues[stage] = newValue;
+    const landingStage = resolveActiveStage(stageValues, card.consignment_nature);
+    const fullyReleased =
+      landingStage === "release_status" &&
+      stageValues.release_status === STAGE_DONE_VALUE.release_status;
+    return { landingStage, fullyReleased };
+  }
+
   function handleDragEnd(e: DragEndEvent) {
     setActiveCard(null);
     const card = e.active.data.current?.card as KanbanConsignment | undefined;
-    const overId = e.over?.id as StageField | typeof RELEASE_DROP_ID | undefined;
+    const overId = e.over?.id as
+      | StageField
+      | typeof RELEASE_DROP_ID
+      | typeof NEW_COLUMN_ID
+      | undefined;
 
     if (!card || !overId) return;
 
-    // Drag-to-release zone (D-049). releaseConsignment guards role + that the
-    // card is actually in Release, surfacing a friendly message otherwise.
+    // Drag-to-release zone (D-049).
     if (overId === RELEASE_DROP_ID) {
       releaseConsignment(card);
       return;
     }
 
-    // Resolve the drop target to a column (StageField). Because every card is a
-    // sortable droppable, dropping ON or ABOVE another card reports that card's
-    // id (a UUID) as `over.id`, not the column's field. We only care which
-    // column the card landed in — the "advance one stage" model ignores
-    // position within a column — so map a card drop to that card's stage. The
-    // dragged card carries its full record in over.data.card (see KanbanCard's
-    // useSortable data prop). Anything we still can't resolve is ignored rather
-    // than fed into stageIndex() as a bogus -1 (which surfaced as a spurious
-    // error when dropping near a card instead of on empty space).
-    const overCard = e.over?.data.current?.card as
-      | KanbanConsignment
-      | undefined;
-    const toField: StageField | undefined = STAGE_FIELDS.includes(
-      overId as StageField
-    )
-      ? (overId as StageField)
-      : overCard?.active_stage;
+    // Resolve the drop target column. Dropping on a card reports that card's id
+    // (a UUID); map it to that card's active_stage. The New pseudo-column
+    // reports NEW_COLUMN_ID.
+    const overCard = e.over?.data.current?.card as KanbanConsignment | undefined;
+    const dropTarget: StageField | typeof NEW_COLUMN_ID | undefined =
+      overId === NEW_COLUMN_ID
+        ? NEW_COLUMN_ID
+        : STAGE_FIELDS.includes(overId as StageField)
+          ? (overId as StageField)
+          : overCard?.active_stage;
 
-    if (!toField) return;
-    if (toField === card.active_stage) return;
+    if (!dropTarget) return;
 
-    // Belt-and-braces: even if a viewer bypasses the card-level `disabled`
-    // flag, refuse here. The DB function rejects too (D-029).
+    // Belt-and-braces role check (DB re-checks too, D-029).
     if (!canWriteStage(card.active_stage)) {
       setError("Your role cannot update this pipeline stage.");
       return;
     }
 
+    const isNew = isNewConsignment(card);
+
+    // ── D-071 gated transitions ───────────────────────────────────────────
+    // New → Manifest: opens the Manifest popup (arrival + ICD). The advance is
+    // manifest → Action (card enters processing), NOT → Uploaded.
+    if (isNew && dropTarget === "manifest_status") {
+      setError(null);
+      setPendingGate({
+        card,
+        kind: "manifest",
+        stage: "manifest_status",
+        newValue: "Action",
+        landingStage: "manifest_status",
+      });
+      return;
+    }
+    // Dropping a New card anywhere else (or onto the New column) is a no-op —
+    // it must go through the Manifest popup first.
+    if (isNew) return;
+
+    if (dropTarget === NEW_COLUMN_ID) return; // can't move a real card back to New
+
+    if (dropTarget === card.active_stage) return;
+
     const fromIdx = stageIndex(card.active_stage);
-    const toIdx = stageIndex(toField);
+    const toIdx = stageIndex(dropTarget);
 
     if (toIdx < fromIdx) {
-      // Backward move — admin only with reason
+      // Backward move — admin only, with reason.
       if (!perms.isAdmin) {
         setError("Only admins can move cards backward in the pipeline.");
         return;
       }
-      setForceDialog({ card, toStage: toField, newValue: "Action" });
+      setForceDialog({ card, toStage: dropTarget, newValue: "Action" });
       return;
     }
 
-    // Forward move — "advance one stage at a time" semantics.
-    // Per the Kanban product model, a forward drag means "I'm done with the
-    // CURRENT active stage." We mark the source stage as done (Uploaded /
-    // Closed / Paid / Done / Released — see STAGE_DONE_VALUE) and let the
-    // server's resolveActiveStage recompute which column the card belongs in
-    // on refetch. The drop target column is intentionally ignored beyond
-    // direction (forward vs backward) — if the user overshoots, the card
-    // moves one column forward and they can drag again. The DB function
-    // enforces PRD §7.1 (stages must complete in order); since we only
-    // advance the active stage, prereqs are by definition satisfied.
-    const newValue = STAGE_DONE_VALUE[card.active_stage];
+    // Forward move — advance the current active stage to its done value.
+    const stage = card.active_stage;
+    const newValue = STAGE_DONE_VALUE[stage];
+    const { landingStage, fullyReleased } = landingFor(card, stage, newValue);
 
-    // Compute where the card will ACTUALLY land, the same way the server's
-    // fetchKanbanData → resolveActiveStage will: clone the card's stage values,
-    // mark the source field done, then resolve the first non-complete stage.
-    // This may differ from the column the user dropped on when later stages are
-    // already at their done value (imported data with gaps) — the card then
-    // jumps several columns forward, which previously looked like it vanished.
-    const stageValues: Record<string, string> = {};
-    for (const f of STAGE_FIELDS) stageValues[f] = card[f];
-    stageValues[card.active_stage] = newValue;
-    const landingStage = resolveActiveStage(stageValues);
+    // Does entering the landing stage require a blocking drop-popup? (D-071)
+    const popup = gatedPopupForForwardMove(card, dropTarget, landingStage);
+    if (popup === "duty_application") {
+      setError(null);
+      setPendingGate({ card, kind: "duty_application", stage, newValue, landingStage });
+      return;
+    }
 
-    // A card whose remaining stages were all already done lands on release as
-    // "Released" — fetchKanbanData filters those out, so it legitimately leaves
-    // the active board. Detect that so we can explain the disappearance.
-    const fullyReleased =
-      landingStage === "release_status" &&
-      stageValues.release_status === STAGE_DONE_VALUE.release_status;
+    commitAdvance({ card, stage, newValue, landingStage, fullyReleased });
+  }
 
-    console.log("[kanban] advance", {
-      id: card.id,
-      ref_no: card.ref_no,
-      from: card.active_stage,
-      dropTarget: toField,
-      landingStage,
+  // Popup submit — commit the gated advance with the collected intake fields.
+  function confirmGate(extra: Record<string, string>) {
+    if (!pendingGate) return;
+    const { card, kind, stage, newValue, landingStage } = pendingGate;
+    // Patch the optimistic card so it renders in the right column immediately
+    // (e.g. arrival_date set → the manifest gate moves it out of New).
+    const patched: KanbanConsignment = {
+      ...card,
+      ...(extra.arrival_date ? { arrival_date: extra.arrival_date } : {}),
+      ...(extra.ref_no ? { ref_no: extra.ref_no } : {}),
+      ...(extra.ucr_no ? { ucr_no: extra.ucr_no } : {}),
+      [stage]: newValue,
+    };
+    commitAdvance({
+      card: patched,
+      stage,
       newValue,
-      fullyReleased,
+      landingStage,
+      fullyReleased: false,
+      extra,
     });
-
-    const fd = new FormData();
-    fd.set("consignmentId", card.id);
-    fd.set("stage", card.active_stage);
-    fd.set("newValue", newValue);
-    startTransition(async () => {
-      // Optimistically move the card to its computed landing column (or off the
-      // board if fully released) so the UI feels instant. Reverts automatically
-      // if the server action throws or the refetched props don't confirm it.
-      applyOptimistic({ card, landingStage, removed: fullyReleased });
-
-      const res = await advanceStageAction(fd);
-      if (res?.error) {
-        console.error("[kanban] advance failed", {
-          id: card.id,
-          ref_no: card.ref_no,
-          error: res.error,
-        });
-        setError(res.error);
-        return;
-      }
-      console.log("[kanban] advance ok", {
-        id: card.id,
-        ref_no: card.ref_no,
-        landingStage,
-      });
-      if (fullyReleased) {
-        setInfo(
-          `${card.ref_no} is fully released — moved off the active board.`
-        );
-      }
-    });
+    setPendingGate(null);
+    // A manifest-gate card that stays in the manifest column reads clearer with
+    // a hint, since it visually jumps from New to Manifest.
+    if (kind === "manifest") {
+      setInfo(`${card.ref_no} moved into Manifest.`);
+    }
   }
 
   // Shared release routine for both triggers (the per-card "Mark Released"
@@ -473,14 +533,29 @@ export default function KanbanBoard({ byStage, year, fetchError }: Props) {
           >
             <div
               className="flex gap-3 h-full"
-              style={{ minWidth: `${PIPELINE_STAGES.length * 260 + (canDrag ? 132 : 0)}px` }}
+              style={{ minWidth: `${(PIPELINE_STAGES.length + 1) * 260 + (canDrag ? 132 : 0)}px` }}
             >
+              {/* New Consignments intake bucket (D-071) — left of Manifest. */}
+              <KanbanColumn
+                key={NEW_COLUMN_ID}
+                field="manifest_status"
+                droppableId={NEW_COLUMN_ID}
+                label="New Consignments"
+                cards={newCards}
+                isPending={isPending}
+                canDrag={canDrag}
+              />
+
               {PIPELINE_STAGES.map((stage) => (
                 <KanbanColumn
                   key={stage.field}
                   field={stage.field}
                   label={stage.label}
-                  cards={optimisticBoard[stage.field] ?? []}
+                  cards={
+                    stage.field === "manifest_status"
+                      ? manifestReadyCards
+                      : optimisticBoard[stage.field] ?? []
+                  }
                   isPending={isPending}
                   canDrag={canDrag}
                   onRelease={releaseConsignment}
@@ -510,6 +585,22 @@ export default function KanbanBoard({ byStage, year, fetchError }: Props) {
           defaultValue={forceDialog.newValue}
           onSuccess={() => setForceDialog(null)}
           onError={setError}
+        />
+      )}
+
+      {/* Blocking drop-popups (D-071). Cancel discards the pending advance so
+          the card stays put (no optimistic move was applied). */}
+      {pendingGate && (
+        <IntakeDialog
+          kind={pendingGate.kind}
+          refNo={pendingGate.card.ref_no}
+          icds={icds}
+          defaultRef={pendingGate.card.ref_no}
+          defaultTansad={pendingGate.card.tansad_no ?? null}
+          defaultUcr={pendingGate.card.ucr_no}
+          onConfirm={confirmGate}
+          onCancel={() => setPendingGate(null)}
+          isPending={isPending}
         />
       )}
     </div>

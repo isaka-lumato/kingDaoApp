@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import type { StageField, KanbanConsignment } from "@/lib/pipeline";
+import type { IntakeIcd } from "@/components/intake-dialog";
 import { useConsignmentsRealtime } from "@/hooks/use-consignments-realtime";
 import KanbanBoardClient from "./kanban-board-client";
 import TriageView from "./triage-view";
@@ -13,6 +14,8 @@ type Props = {
   byStage: Record<StageField, KanbanConsignment[]>;
   year: number;
   fetchError?: string;
+  /** ICDs for the Manifest drop-popup (D-071); board-only. */
+  icds?: IntakeIcd[];
 };
 
 // Tailwind `md` = 768px.
@@ -33,7 +36,7 @@ function getServerSnapshot() {
   return true;
 }
 
-export default function HomeShell(props: Props) {
+export default function HomeShell({ icds, ...props }: Props) {
   const isDesktop = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   // Explicit user override of the auto-default. Null = follow viewport.
   const [override, setOverride] = useState<Tab | null>(null);
@@ -85,9 +88,9 @@ export default function HomeShell(props: Props) {
 
       <div className="flex-1 min-h-0">
         {tab === "kanban" ? (
-          <KanbanBoardClient {...props} />
+          <KanbanBoardClient {...props} icds={icds} />
         ) : (
-          <TriageView {...props} />
+          <TriageView {...props} icds={icds} />
         )}
       </div>
     </div>

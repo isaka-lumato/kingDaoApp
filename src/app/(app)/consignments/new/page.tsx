@@ -8,16 +8,12 @@ export default async function NewConsignmentPage() {
   // Per T-048 / D-026: user-bound server client; RLS enforced.
   const supabase = await getSupabaseServerClient();
 
-  const [{ data: clients }, { data: icds }, { data: vessels }] = await Promise.all([
+  // D-071: the intake form no longer collects ICD (captured at the Manifest
+  // drop-popup), so only clients + vessels are needed here.
+  const [{ data: clients }, { data: vessels }] = await Promise.all([
     supabase
       .from("clients")
       .select("id, name, display_name")
-      .is("deleted_at", null)
-      .eq("is_active", true)
-      .order("name"),
-    supabase
-      .from("icds")
-      .select("id, name, location")
       .is("deleted_at", null)
       .eq("is_active", true)
       .order("name"),
@@ -32,7 +28,6 @@ export default async function NewConsignmentPage() {
   return (
     <NewConsignmentForm
       clients={clients ?? []}
-      icds={icds ?? []}
       vessels={(vessels ?? []).map((v) => v.name)}
     />
   );

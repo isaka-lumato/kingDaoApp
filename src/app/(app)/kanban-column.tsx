@@ -26,10 +26,16 @@ type Props = {
   canDrag: boolean;
   /** Forwarded to each card so Release-column cards can trigger release (D-049). */
   onRelease?: (card: KanbanConsignment) => void;
+  /**
+   * Droppable id override — defaults to `field`. The New-Consignments
+   * pseudo-column (D-071) passes NEW_COLUMN_ID so its drops are distinguishable
+   * from the Manifest column even though both hold manifest-stage cards.
+   */
+  droppableId?: string;
 };
 
-export default function KanbanColumn({ field, label, cards, isPending, canDrag, onRelease }: Props) {
-  const { setNodeRef, isOver } = useDroppable({ id: field });
+export default function KanbanColumn({ field, label, cards, isPending, canDrag, onRelease, droppableId }: Props) {
+  const { setNodeRef, isOver } = useDroppable({ id: droppableId ?? field });
 
   return (
     <div

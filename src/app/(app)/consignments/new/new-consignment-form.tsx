@@ -5,16 +5,14 @@ import { useFormStatus } from "react-dom";
 import Link from "next/link";
 import { createConsignmentAction } from "@/server/actions/create-consignment";
 import { CARGO_TYPES, cargoLabel } from "@/lib/cargo";
+import { CONSIGNMENT_NATURES } from "@/lib/pipeline";
 import {
   createClientAction,
-  createIcdAction,
   createVesselAction,
 } from "@/server/actions/settings-reference";
-import { useColumnPermission } from "@/hooks/use-permissions";
 
 type Props = {
   clients: { id: string; name: string; display_name: string | null }[];
-  icds: { id: string; name: string; location: string | null }[];
   vessels: string[];
 };
 
@@ -67,26 +65,20 @@ function Field({
 const inputCls =
   "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring";
 
-export default function NewConsignmentForm({ clients, icds, vessels }: Props) {
+export default function NewConsignmentForm({ clients, vessels }: Props) {
   const [state, action] = useActionState(createConsignmentAction, null);
   const errs = state?.fieldErrors ?? {};
-  const { canRead: canSeeAmount, canWrite: canEditAmount } = useColumnPermission(
-    "consignments",
-    "amount",
-  );
 
   // Local state for dynamically populated lists
   const [localClients, setLocalClients] = useState(clients);
-  const [localIcds, setLocalIcds] = useState(icds);
   const [localVessels, setLocalVessels] = useState(vessels);
 
   // Controlled fields to allow programmatic selection after creation
   const [selectedClient, setSelectedClient] = useState("");
-  const [selectedIcd, setSelectedIcd] = useState("");
   const [selectedVessel, setSelectedVessel] = useState("");
 
   // Modal control
-  const [activeModal, setActiveModal] = useState<"client" | "icd" | "vessel" | null>(null);
+  const [activeModal, setActiveModal] = useState<"client" | "vessel" | null>(null);
   const [modalSubmitting, setModalSubmitting] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
 
@@ -97,9 +89,6 @@ export default function NewConsignmentForm({ clients, icds, vessels }: Props) {
   const [newClientEmail, setNewClientEmail] = useState("");
   const [newClientPhone, setNewClientPhone] = useState("");
   const [newClientNotes, setNewClientNotes] = useState("");
-
-  const [newIcdName, setNewIcdName] = useState("");
-  const [newIcdLocation, setNewIcdLocation] = useState("");
 
   const [newVesselName, setNewVesselName] = useState("");
 
@@ -114,9 +103,6 @@ export default function NewConsignmentForm({ clients, icds, vessels }: Props) {
     setNewClientEmail("");
     setNewClientPhone("");
     setNewClientNotes("");
-    // ICD
-    setNewIcdName("");
-    setNewIcdLocation("");
     // Vessel
     setNewVesselName("");
   }
@@ -140,28 +126,6 @@ export default function NewConsignmentForm({ clients, icds, vessels }: Props) {
       resetModalStates();
     } else {
       setModalError("Something went wrong while creating client.");
-      setModalSubmitting(false);
-    }
-  }
-
-  async function handleCreateIcd(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setModalSubmitting(true);
-    setModalError(null);
-
-    const fd = new FormData(e.currentTarget);
-    const res = await createIcdAction(fd);
-
-    if (res && "error" in res && res.error) {
-      setModalError(res.error);
-      setModalSubmitting(false);
-    } else if (res && "success" in res && res.success && res.data) {
-      const newIcd = res.data as { id: string; name: string; location: string | null };
-      setLocalIcds((prev) => [...prev, newIcd]);
-      setSelectedIcd(newIcd.id);
-      resetModalStates();
-    } else {
-      setModalError("Something went wrong while creating ICD.");
       setModalSubmitting(false);
     }
   }
@@ -202,7 +166,9 @@ export default function NewConsignmentForm({ clients, icds, vessels }: Props) {
         <div>
           <h1 className="text-2xl font-bold text-foreground tracking-tight">New consignment</h1>
           <p className="text-muted-foreground text-sm mt-0.5">
-            All pipeline stages start at Waiting. Advance them from the Kanban board.
+            Just the essentials — the card lands in <strong>New Consignments</strong>.
+            Arrival, ICD and customs details are captured on the board as work
+            begins.
           </p>
         </div>
       </div>
@@ -245,13 +211,37 @@ export default function NewConsignmentForm({ clients, icds, vessels }: Props) {
             </select>
           </Field>
 
-          <Field label="Goods description" error={errs.goods_description}>
+          <Field
+            label="Goods description"
+            hint="Label the cargo, e.g. motorcycle spares"
+            error={errs.goods_description}
+          >
             <textarea
               name="goods_description"
               rows={2}
-              placeholder="e.g. 1 x 40GP Container of Textile Products"
+              placeholder="e.g. motorcycle spares"
               className={`${inputCls} resize-none`}
             />
+          </Field>
+
+          <Field
+            label="Consignment nature"
+            required
+            hint="Transit & Export skip the TBS stages; Import runs the full pipeline."
+            error={errs.consignment_nature}
+          >
+            <select
+              name="consignment_nature"
+              required
+              defaultValue="Import"
+              className={inputCls}
+            >
+              {CONSIGNMENT_NATURES.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
           </Field>
         </section>
 
@@ -268,16 +258,6 @@ export default function NewConsignmentForm({ clients, icds, vessels }: Props) {
                 type="text"
                 required
                 placeholder="e.g. HLBU1234567"
-                className={inputCls}
-              />
-            </Field>
-
-            <Field label="TANSAD No" required error={errs.tansad_no}>
-              <input
-                name="tansad_no"
-                type="text"
-                required
-                placeholder="e.g. TZ-2024-001234"
                 className={inputCls}
               />
             </Field>
@@ -310,9 +290,14 @@ export default function NewConsignmentForm({ clients, icds, vessels }: Props) {
               </datalist>
             </Field>
 
-            <Field label="Arrival date" required error={errs.arrival_date}>
+            <Field
+              label="Estimated arrival date"
+              required
+              hint="The exact arrival is confirmed at the Manifest step."
+              error={errs.estimated_arrival_date}
+            >
               <input
-                name="arrival_date"
+                name="estimated_arrival_date"
                 type="date"
                 required
                 className={inputCls}
@@ -339,52 +324,6 @@ export default function NewConsignmentForm({ clients, icds, vessels }: Props) {
               </select>
             </Field>
 
-            <Field label="EFD receipt number" error={errs.efd_receipt_no}>
-              <input
-                name="efd_receipt_no"
-                type="text"
-                placeholder="e.g. 03429118"
-                className={inputCls}
-              />
-            </Field>
-
-            <Field label="ICD" required error={errs.icd_id}>
-              <select
-                name="icd_id"
-                required
-                value={selectedIcd}
-                onChange={(e) => {
-                  if (e.target.value === "__ADD_NEW__") {
-                    setSelectedIcd("");
-                    setActiveModal("icd");
-                  } else {
-                    setSelectedIcd(e.target.value);
-                  }
-                }}
-                className={inputCls}
-              >
-                <option value="">Select ICD…</option>
-                {localIcds.map((icd) => (
-                  <option key={icd.id} value={icd.id}>
-                    {icd.name}{icd.location ? ` (${icd.location})` : ""}
-                  </option>
-                ))}
-                <option value="__ADD_NEW__">+ Add new ICD...</option>
-              </select>
-            </Field>
-
-            {canSeeAmount && canEditAmount && (
-              <Field label="Amount (TZS)" error={errs.amount}>
-                <input
-                  name="amount"
-                  type="number"
-                  min={0}
-                  step={1}
-                  placeholder="e.g. 1500000"
-                  className={inputCls}
-                />
-              </Field>
-            )}
           </div>
         </section>
 
@@ -528,77 +467,6 @@ export default function NewConsignmentForm({ clients, icds, vessels }: Props) {
                   className="flex-1 rounded-lg bg-primary py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60 transition-opacity"
                 >
                   {modalSubmitting ? "Creating…" : "Save Client"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ── ICD Creation Modal ── */}
-      {activeModal === "icd" && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={resetModalStates} />
-          <div className="relative z-10 w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex justify-between items-center">
-              <h3 className="text-lg font-semibold text-foreground">Add New ICD</h3>
-              <button
-                type="button"
-                onClick={resetModalStates}
-                className="text-muted-foreground hover:text-foreground text-sm font-semibold transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-
-            {modalError && (
-              <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                {modalError}
-              </div>
-            )}
-
-            <form onSubmit={handleCreateIcd} className="space-y-3">
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-muted-foreground">
-                  ICD Name <span className="text-destructive">*</span>
-                </label>
-                <input
-                  name="name"
-                  type="text"
-                  required
-                  placeholder="e.g. AMI"
-                  value={newIcdName}
-                  onChange={(e) => setNewIcdName(e.target.value)}
-                  className={inputCls}
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-muted-foreground">Location</label>
-                <input
-                  name="location"
-                  type="text"
-                  placeholder="e.g. Kurasini"
-                  value={newIcdLocation}
-                  onChange={(e) => setNewIcdLocation(e.target.value)}
-                  className={inputCls}
-                />
-              </div>
-
-              <div className="flex gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={resetModalStates}
-                  className="flex-1 rounded-lg border border-border py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={modalSubmitting}
-                  className="flex-1 rounded-lg bg-primary py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60 transition-opacity"
-                >
-                  {modalSubmitting ? "Creating…" : "Save ICD"}
                 </button>
               </div>
             </form>

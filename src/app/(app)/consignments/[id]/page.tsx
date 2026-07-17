@@ -49,6 +49,7 @@ export default async function ConsignmentPage({
     { data: efdLinks },
     { data: attachments },
     { data: folders },
+    { data: icdList },
   ] = await Promise.all([
     consignment.client_id
       ? supabase
@@ -94,6 +95,13 @@ export default async function ConsignmentPage({
       .eq("consignment_id", id)
       .is("deleted_at", null)
       .order("name", { ascending: true }),
+    // D-071: active ICD list for the Manifest drop-popup on the stage menu.
+    supabase
+      .from("icds")
+      .select("id, name, location")
+      .is("deleted_at", null)
+      .eq("is_active", true)
+      .order("name"),
   ]);
   t.mark("fanout");
 
@@ -175,6 +183,7 @@ export default async function ConsignmentPage({
       gutaPair={gutaPair}
       attachments={attachments ?? []}
       folders={folders ?? []}
+      icds={icdList ?? []}
     />
   );
 }

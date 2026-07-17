@@ -13,6 +13,8 @@ const EDITABLE_COLS = [
   "bl_number", "tansad_no", "vessel_name", "arrival_date",
   "cargo_count", "cargo_type", "efd_receipt_no", "goods_description",
   "amount", "remarks",
+  // D-071
+  "consignment_nature", "estimated_arrival_date", "ucr_no",
   ...STAGE_FIELDS,
 ] as const;
 
@@ -55,6 +57,7 @@ export default async function EditConsignmentPage({
   const writableCols = EDITABLE_COLS.filter(
     (col) => perms?.canWrite("consignments", col) ?? false
   );
+  const canSeeAmount = perms?.canRead("consignments", "amount") ?? false;
 
   return (
     <EditConsignmentForm
@@ -63,6 +66,7 @@ export default async function EditConsignmentPage({
       icds={icds ?? []}
       vessels={(vessels ?? []).map((v) => v.name)}
       writableCols={writableCols}
+      canSeeAmount={canSeeAmount}
     />
   );
 }

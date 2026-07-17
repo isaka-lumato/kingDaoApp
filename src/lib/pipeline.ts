@@ -19,6 +19,26 @@ export type StageField =
   | "inspection_file_status"
   | "release_status";
 
+/** D-071: Import runs the full pipeline; Export/Transit skip both TBS stages. */
+export type ConsignmentNature = "Import" | "Export" | "Transit";
+
+export const CONSIGNMENT_NATURES: ConsignmentNature[] = [
+  "Import",
+  "Export",
+  "Transit",
+];
+
+/** Stages auto-skipped in the DB (and visually) for Export/Transit — D-071. */
+export const TBS_SKIP_FIELDS: StageField[] = [
+  "tbs_loading_status",
+  "tbs_debit_status",
+];
+
+/** True when this nature skips the TBS stages. */
+export function natureSkipsTbs(nature: ConsignmentNature | null | undefined): boolean {
+  return nature === "Export" || nature === "Transit";
+}
+
 export type KanbanConsignment = {
   id: string;
   ref_no: string;
@@ -26,6 +46,10 @@ export type KanbanConsignment = {
   goods_description: string | null;
   vessel_name: string | null;
   arrival_date: string | null;
+  estimated_arrival_date: string | null;
+  consignment_nature: ConsignmentNature;
+  tansad_no: string | null;
+  ucr_no: string | null;
   cargo_count: number | null;
   cargo_type: string | null;
   amount: number | null;
@@ -79,17 +103,21 @@ export const PIPELINE_STAGES: {
     doneValue: "Uploaded",
   },
   {
-    field: "shipping_batch_status",
-    label: "Shipping Batch",
-    shortLabel: "Shipping",
-    validValues: ["Waiting", "Action", "PREPARED", "W/CARRY IN", "CARRY IN END", "Done"],
-    doneValue: "Done",
-  },
-  {
+    // D-071: Duty Application moved ahead of Shipping Batch. Order lives here
+    // (app layer), not the DB enum. advance_stage()'s only prerequisite for
+    // this stage is manifest=Uploaded, which still precedes it — so the reorder
+    // is safe. Entering this stage opens the Duty-Application drop-popup.
     field: "tanesws_status",
     label: "Duty Application",
     shortLabel: "Duty App",
     validValues: ["Waiting", "Action", "Done"],
+    doneValue: "Done",
+  },
+  {
+    field: "shipping_batch_status",
+    label: "Shipping Batch",
+    shortLabel: "Shipping",
+    validValues: ["Waiting", "Action", "PREPARED", "W/CARRY IN", "CARRY IN END", "Done"],
     doneValue: "Done",
   },
   {
@@ -145,9 +173,21 @@ export const PIPELINE_STAGES: {
 
 export const STAGE_FIELDS = PIPELINE_STAGES.map((s) => s.field);
 
-/** Returns the field of the first stage that isn't at its "done" value. */
-export function resolveActiveStage(row: Record<string, string>): StageField {
+/**
+ * Returns the field of the first stage that isn't at its "done" value.
+ *
+ * D-071: when `nature` is Export/Transit, the TBS stages are skipped — they're
+ * never the active stage, matching the DB's auto-skip in advance_stage(). Pass
+ * nature so the optimistic landing column + triage bucket agree with the server.
+ * Omitting nature (or Import) preserves the original full-pipeline behaviour.
+ */
+export function resolveActiveStage(
+  row: Record<string, string>,
+  nature?: ConsignmentNature | null,
+): StageField {
+  const skip = natureSkipsTbs(nature);
   for (const stage of PIPELINE_STAGES) {
+    if (skip && TBS_SKIP_FIELDS.includes(stage.field)) continue;
     if (row[stage.field] !== stage.doneValue) return stage.field;
   }
   return "release_status"; // fully released
@@ -232,6 +272,8 @@ const STUCK_THRESHOLD_MS = 48 * 60 * 60 * 1000;
 type ClassifiableRow = Record<StageField, string> & {
   arrival_date: string | null;
   updated_at: string;
+  /** D-071: optional; when Export/Transit, TBS stages are skipped. */
+  consignment_nature?: ConsignmentNature | null;
 };
 
 export function classifyConsignment(
@@ -248,11 +290,14 @@ export function classifyConsignment(
     };
   }
 
+  const skip = natureSkipsTbs(row.consignment_nature);
   const stageOnly = {} as Record<string, string>;
   for (const s of PIPELINE_STAGES) stageOnly[s.field] = row[s.field];
-  const activeField = resolveActiveStage(stageOnly);
+  const activeField = resolveActiveStage(stageOnly, row.consignment_nature);
   const fullyReleased = PIPELINE_STAGES.every(
-    (s) => row[s.field] === s.doneValue,
+    (s) =>
+      (skip && TBS_SKIP_FIELDS.includes(s.field)) ||
+      row[s.field] === s.doneValue,
   );
 
   if (fullyReleased) {
@@ -284,4 +329,63 @@ export function classifyConsignment(
     activeStage: activeField,
     subtitleLabel: stage.label,
   };
+}
+
+// ── New-Consignments intake bucket + drop-popup gating — D-071 ───────────────
+
+/**
+ * The board renders a "New Consignments" column left of Manifest. A card lives
+ * there while it has only intake data: manifest still Waiting AND no ACTUAL
+ * arrival yet (estimated arrival doesn't count — the real one is captured at
+ * the Manifest drop-popup). The DB still treats these rows as active_stage
+ * `manifest_status`; this is a board-only split.
+ */
+export function isNewConsignment(row: {
+  manifest_status: string;
+  arrival_date: string | null;
+}): boolean {
+  return row.manifest_status === "Waiting" && !row.arrival_date;
+}
+
+/**
+ * Which blocking drop-popup (if any) a transition must open before it can be
+ * committed — D-071. Both popups collect real-world data discovered at that
+ * step, so the advance is deferred until the operator submits.
+ *
+ *   - "manifest": New → Manifest. Collects actual arrival_date + icd_id, then
+ *     advances manifest_status → Action.
+ *   - "duty_application": entering Duty Application (tanesws). Collects
+ *     tansad_no + ucr_no, then advances manifest_status → Uploaded so the card
+ *     lands in the (now second) Duty Application column.
+ *   - null: no popup; advance directly.
+ *
+ * `card` carries the current row; `dropTarget` is the column the user dropped
+ * on (the New pseudo-column is reported as "__new__"); `landingStage` is where
+ * resolveActiveStage says the card ends up after the forward move. Shared by
+ * the kanban board and the tap-to-advance action menu so both paths gate
+ * identically.
+ */
+export type DropPopupKind = "manifest" | "duty_application";
+
+/** Sentinel drop-target id for the New-Consignments pseudo-column. */
+export const NEW_COLUMN_ID = "__new__";
+
+export function gatedPopupForForwardMove(
+  card: { manifest_status: string; arrival_date: string | null },
+  dropTarget: StageField | typeof NEW_COLUMN_ID,
+  landingStage: StageField,
+): DropPopupKind | null {
+  // New → Manifest: a New-bucket card dropped onto the Manifest column. Both
+  // its active_stage and the target are manifest_status, so key off the New
+  // predicate + the target column rather than a stage change.
+  if (isNewConsignment(card) && dropTarget === "manifest_status") {
+    return "manifest";
+  }
+  // Advancing into Duty Application (tanesws) opens the customs popup. This
+  // fires whether the user drops on the Duty App column or overshoots — the
+  // landing stage is what matters.
+  if (landingStage === "tanesws_status" && !isNewConsignment(card)) {
+    return "duty_application";
+  }
+  return null;
 }

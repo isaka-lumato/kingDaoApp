@@ -73,7 +73,6 @@ export async function previewImportAction(formData: FormData): Promise<PreviewSt
   if (!canImport(perms)) {
     return { ok: false, error: "Your role cannot import." };
   }
-  const canWriteAmount = perms.canWrite("consignments", "amount");
 
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) {
@@ -201,6 +200,7 @@ export async function commitChunkAction(input: CommitChunkInput): Promise<Commit
   if (!canImport(perms)) {
     return { ok: false, error: "Your role cannot import." };
   }
+  const canWriteAmount = perms.canWrite("consignments", "amount");
 
   const jobId = String(input.jobId ?? "").trim();
   if (!jobId) return { ok: false, error: "Missing jobId." };
@@ -324,6 +324,9 @@ function buildConsignmentRow(p: Prepared, canWriteAmount: boolean) {
     inspection_file_status: c.inspection_file_status,
     release_status: c.release_status,
     release_date: c.release_date,
+    // D-071: consignment_nature intentionally omitted — the DB column defaults
+    // to 'Import' (full pipeline), which is correct for historical rows.
+    // estimated_arrival_date / ucr_no also default to null on import.
   };
 }
 
