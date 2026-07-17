@@ -245,7 +245,6 @@ export type Database = {
           guta_pair_id: string | null
           icd_id: string | null
           id: string
-
           inspection_file_status: Database["public"]["Enums"]["inspection_file_status"]
           is_failed: boolean
           is_refund_pending: boolean
@@ -289,7 +288,6 @@ export type Database = {
           guta_pair_id?: string | null
           icd_id?: string | null
           id?: string
-
           inspection_file_status?: Database["public"]["Enums"]["inspection_file_status"]
           is_failed?: boolean
           is_refund_pending?: boolean
@@ -333,7 +331,6 @@ export type Database = {
           guta_pair_id?: string | null
           icd_id?: string | null
           id?: string
-
           inspection_file_status?: Database["public"]["Enums"]["inspection_file_status"]
           is_failed?: boolean
           is_refund_pending?: boolean
@@ -1040,7 +1037,6 @@ export type Database = {
           guta_pair_id: string | null
           icd_id: string | null
           id: string
-
           inspection_file_status: Database["public"]["Enums"]["inspection_file_status"]
           is_failed: boolean
           is_refund_pending: boolean
@@ -1080,6 +1076,7 @@ export type Database = {
         Args: { p_column: string; p_table: string }
         Returns: boolean
       }
+      can_user_write_any: { Args: { p_table: string }; Returns: boolean }
       claim_new_stuck_alerts: {
         Args: never
         Returns: {
@@ -1120,7 +1117,6 @@ export type Database = {
           guta_pair_id: string | null
           icd_id: string | null
           id: string
-
           inspection_file_status: Database["public"]["Enums"]["inspection_file_status"]
           is_failed: boolean
           is_refund_pending: boolean
@@ -1153,6 +1149,10 @@ export type Database = {
         }
       }
       is_admin: { Args: never; Returns: boolean }
+      pipeline_stage_column: {
+        Args: { p_stage: Database["public"]["Enums"]["pipeline_stage"] }
+        Returns: string
+      }
       reset_resolved_stuck_alerts: { Args: never; Returns: number }
       seed_operator_consignment_perms: { Args: never; Returns: undefined }
       seed_viewer_consignment_perms: { Args: never; Returns: undefined }
@@ -1331,6 +1331,7 @@ export const Constants = {
         "LOOSE",
         "BULK",
       ],
+      consignment_nature: ["Import", "Export", "Transit"],
       duty_status: ["Waiting", "Action", "Paid"],
       inspection_file_status: ["Waiting", "Action", "Done", "SHARED"],
       manifest_comp_status: ["Waiting", "Action", "Done"],
