@@ -393,6 +393,20 @@ After regen, `git diff src/types/supabase.ts` should be **empty** (the hand-patc
 
 ---
 
+## H-015 — Authenticated Pipeline Matrix smoke test (T-090)
+
+**Why:** The new desktop Excel Matrix has passed typechecking, linting, unit tests, and a production build, but the local browser session has no safe dev login. A real operator/admin session is required to verify the existing Supabase `advance_stage()` path end to end.
+**Status:** [ ]
+
+1. Start the app with `pnpm dev`, then sign in to the **dev** environment as an operator or admin.
+2. Open **Pipeline → Excel matrix** on a desktop-width browser. Confirm the summary counts, All/Action Needed/Stuck/Released filters, search (including a B/L fragment), and horizontal scroll with REF NO + CLIENT & CARGO fixed in place.
+3. Keyboard-tab to an amber `Action →` control, activate it with Enter, and complete one safe non-production stage advance. Confirm the appropriate intake dialog (if any), success feedback, and updated row state.
+4. On a phone-width browser, confirm Triage is still the default. On desktop, confirm **Kanban (drag)** remains available.
+
+**Tell Codex when done:** "H-015 done" and mention any mismatch. Codex will record the outcome and mark T-090 complete.
+
+---
+
 ## Notes / blockers
 
 > Use this section to write down anything that didn't go to plan, errors you hit, decisions you want to revisit, etc. Claude will read this before suggesting fixes.

@@ -96,7 +96,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     id: "update_pipeline_statuses",
     label: "Update pipeline statuses",
     description:
-      "Edit the operational status fields used by manifest, duty, TBS, inspection and release tracking.",
+      "Edit the operational status fields used by manifest, duty, OGA, inspection and release tracking.",
     section: "Pipeline",
     kind: "write",
     columns: consignmentCols(

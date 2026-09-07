@@ -438,6 +438,44 @@ Run after any change to `src/app/(app)/consignments/page.tsx`, `consignments-cli
 
 ---
 
+## V-PIPELINE-MATRIX — Excel-style desktop Pipeline Matrix (D-074 / T-090)
+
+Run after changes to `src/app/(app)/pipeline-matrix.tsx` or `home-shell.tsx`.
+
+- [ ] **Desktop default:** opening `/` at `md` and above selects **Excel matrix**. The optional **Kanban (drag)** tab still exposes the pre-existing drag workflow; below `md`, Triage remains the default.
+- [ ] **Workbook scan:** the summary strip reports Active pipeline, Action needed, Awaiting external, and Released counts. `Action needed` is the count of non-released consignments whose active stage is `Action`; `Awaiting external` is the analogous `Waiting` count.
+- [ ] **Filters and search:** All, Action Needed, Stuck > 48h, and Released counts update from the current rows. Action Needed shows only rows with an active `Action` stage; search finds matching REF, client, vessel, B/L, goods, or TANSAD values case-insensitively and combines with the selected filter.
+- [ ] **Grid mechanics:** REF NO and CLIENT & CARGO stay aligned while horizontally scrolling the ten stages. At normal desktop width, a row shows completed values with a check, one amber `Action →` control at the active stage, and muted dots for future stages. Long client/cargo/vessel strings truncate without expanding a row.
+- [ ] **Advance flow:** activate the amber stage control by mouse and keyboard. The applicable Manifest, Duty Application, and Release safeguards appear; Cancel leaves the row unchanged, Submit advances through the existing `advance_stage()` path, shows success feedback, and invalidates the consignment cache.
+- [ ] **Access and admin control:** viewers get no successful write through the matrix; an admin sees the Force-stage control and a successful forced update refreshes the matrix/list data.
+- [ ] **Presentation:** light and dark themes retain readable contrast; at desktop/tablet widths the grid scrolls rather than clips. No focusable control is hidden behind a sticky column.
+
+---
+
+## V-LIST-CACHE — `/consignments` grid served from the query cache (D-072)
+
+Run with the network tab open and `PERF_LOG=1` in the server console.
+
+- [ ] **SSR first paint unchanged:** a cold load of `/consignments` renders rows in the initial HTML (view source / disable JS — rows are present). Exactly **one** `[perf] consignments-list` line appears in the server log; no duplicate fetch fires on hydration. This is the `initialData` seed working — a second immediate fetch means the seed key didn't match.
+- [ ] **Revisited filter is instant:** select client A, then client B, then client A again. The third selection renders with **no network request** and no visible loading state.
+- [ ] **Revisited page is instant:** page 1 → 2 → 1. The return to page 1 issues no request.
+- [ ] **First visit to a new combination still fetches** and shows the stale-rows-fading + "Updating…" affordance (the D-043 contract, now driven by `isFetching`).
+- [ ] **URL stays in sync:** every year/client/stage/sort/search/page change updates the address bar. Copying the URL into a new tab reproduces the same view server-rendered.
+- [ ] **Page omitted on page 1:** the URL carries no `page=` param while on the first page; it appears from page 2 onward.
+- [ ] **Back/forward works:** apply three different filters, then press Back twice — the grid follows the URL back through the previous views (served from cache, no flash).
+- [ ] **Sort round-trips:** click a sortable header to sort desc, navigate away, come back via Back — the same sort is still applied.
+- [ ] **Export mirrors the on-screen view:** with filters + a non-default sort applied, the XLSX/PDF export links carry the identical params (minus `page`) and the file contents match the grid's filtering and order.
+- [ ] **Realtime:** with the grid open in two browsers as two users, advance a stage in one. The other's grid reflects the change without a manual reload.
+- [ ] **Error path is non-fatal:** force a query failure (e.g. revoke the SELECT policy temporarily, or go offline and change a filter). The grid shows its inline error banner and the previous rows stay readable — it does **not** blank out or trip an error boundary.
+- [ ] **Actor sees their own stage advance:** open `/consignments` and note a row's Pipeline Stage. Navigate to that consignment's detail page, advance the stage via the action menu, then go **back** to the list — the row shows the new stage (not the pre-change cached value). Repeat for the kanban drag and the admin force-move dialog.
+- [ ] **Actor sees their own edit:** visit `/consignments` (so the view is cached), edit a consignment's vessel or arrival date, then return to the list — the change is visible without a manual reload.
+- [ ] **Actor sees their own create/duplicate:** with the list cached, create a new consignment (and separately, duplicate one). Returning to the list shows the new row.
+- [ ] **Actor sees their own delete:** with the list cached, soft-delete a consignment as admin. Returning to the list no longer shows it.
+- [ ] **Permission gate:** `listConsignmentsAction` called without a session returns `{ rows: [], total: 0, error: "Not authenticated" }` — no rows leak.
+- [ ] **Amount masking intact:** a role without `consignments.amount` read still sees masked amounts in both the mobile cards and the desktop table, including on cache-served views.
+
+---
+
 ## How to run a full pre-merge check (Phase 7 onward)
 
 ```powershell

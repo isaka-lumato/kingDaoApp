@@ -46,9 +46,9 @@ export async function fetchKanbanData(year?: number): Promise<{
   const { data, error } = await supabase
     .from("consignments")
     .select(
-      `id, ref_no, year, goods_description, vessel_name, arrival_date,
+      `id, ref_no, year, goods_description, vessel_name, bl_number, arrival_date,
        estimated_arrival_date, consignment_nature, tansad_no, ucr_no,
-       cargo_count, cargo_type, amount, updated_at,
+       cargo_count, cargo_type, amount, efd_receipt_no, remarks, updated_at,
        manifest_status, shipping_batch_status, tanesws_status,
        assessment_status, tbs_loading_status, tbs_debit_status,
        manifest_comp_status, duty_status, inspection_file_status, release_status,
@@ -91,6 +91,7 @@ export async function fetchKanbanData(year?: number): Promise<{
       year: row.year,
       goods_description: row.goods_description,
       vessel_name: row.vessel_name,
+      bl_number: row.bl_number,
       arrival_date: row.arrival_date,
       estimated_arrival_date: row.estimated_arrival_date,
       consignment_nature: row.consignment_nature,
@@ -99,6 +100,8 @@ export async function fetchKanbanData(year?: number): Promise<{
       cargo_count: row.cargo_count ? Number(row.cargo_count) : null,
       cargo_type: row.cargo_type,
       amount: row.amount,
+      efd_receipt_no: row.efd_receipt_no,
+      remarks: row.remarks,
       client_name: client?.name ?? "—",
       manifest_status: row.manifest_status,
       shipping_batch_status: row.shipping_batch_status,
@@ -138,6 +141,17 @@ const extraSchema = z
     ref_no: z.string().trim().min(1).max(100).optional(),
     tansad_no: z.string().trim().max(100).optional(),
     ucr_no: z.string().trim().max(100).optional(),
+    // D-073: Release drop-popup. All three optional; the client omits blank
+    // inputs entirely so an untouched field never overwrites a stored value.
+    efd_receipt_no: z.string().trim().max(100).optional(),
+    // Whole shillings (D-017). Sent as a decimal string because the column is
+    // bigint — parsed here to reject non-integers/negatives before the DB cast.
+    amount: z
+      .string()
+      .trim()
+      .regex(/^\d{1,18}$/, "Amount must be a whole number of shillings")
+      .optional(),
+    remarks: z.string().trim().max(2000).optional(),
   })
   .strict();
 

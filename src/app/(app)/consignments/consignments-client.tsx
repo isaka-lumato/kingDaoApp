@@ -1,61 +1,34 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useTransition } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { maskedTzs } from "@/lib/money";
 import { useColumnPermission } from "@/hooks/use-permissions";
+import { useConsignmentsRealtime } from "@/hooks/use-consignments-realtime";
+import { queryKeys } from "@/lib/query-keys";
+import { listConsignmentsAction } from "@/server/actions/consignments-list";
 
 import { currentStageLabel } from "@/lib/pipeline";
-import { type SortKey, type SortDir } from "@/lib/consignments-list";
+import {
+  buildListSearch,
+  type ConsignmentListPage,
+  type ConsignmentListRow as Row,
+  type ListView,
+  type SortKey,
+  type SortDir,
+} from "@/lib/consignments-list";
 
 type Client = { id: string; name: string };
-type Row = {
-  id: string;
-  ref_no: string;
-  year: number;
-  serial_no: number | null;
-  tansad_no: string | null;
-  bl_number: string | null;
-
-  client_id: string;
-  cargo_count: number | null;
-  cargo_type: string | null;
-  efd_receipt_no: string | null;
-  goods_description: string | null;
-  vessel_name: string | null;
-  arrival_date: string | null;
-  amount: number | null;
-  release_status: string;
-  release_date: string | null;
-  manifest_status: string;
-  shipping_batch_status: string;
-  tanesws_status: string;
-  assessment_status: string;
-  tbs_loading_status: string;
-  tbs_debit_status: string;
-  manifest_comp_status: string;
-  duty_status: string;
-  inspection_file_status: string;
-  updated_at: string;
-  clients: { id: string; name: string } | null;
-};
 
 type Props = {
-  rows: Row[];
-  total: number;
-  page: number;
+  /** The page the server rendered — seeds the cache for `initialView`'s key. */
+  initialPage: ConsignmentListPage;
+  /** The view the server rendered, parsed from the URL's search params. */
+  initialView: ListView;
   pageSize: number;
-  year: number;
   clients: Client[];
-  filters: {
-    client?: string;
-    stage?: string;
-    q?: string;
-    sort: SortKey;
-    dir: SortDir;
-  };
-  fetchError?: string;
 };
 
 /**
@@ -104,65 +77,109 @@ function SortHeader({
 }
 
 export default function ConsignmentsClient({
-  rows,
-  total,
-  page,
+  initialPage,
+  initialView,
   pageSize,
-  year,
   clients,
-  filters,
-  fetchError,
 }: Props) {
   const router = useRouter();
   const { canRead: canSeeAmount } = useColumnPermission("consignments", "amount");
-  // D-043: useTransition keeps the previously-rendered rows visible (with a
-  // subtle opacity fade) while the new query runs server-side. Without this,
-  // any filter change unmounts the table and shows the loading skeleton —
-  // jarring on a fast-feeling page.
-  const [isPending, startTransition] = useTransition();
+
+  // D-065: the view lives in client state and drives both the query key and the
+  // address bar. Previously every filter change was a `router.push()` → full RSC
+  // round-trip with no cache, so revisiting a filter refetched it. Now the URL
+  // is kept in sync for shareability/back-forward, but the data comes from the
+  // TanStack Query cache — a revisited combination renders instantly.
+  const [view, setView] = useState<ListView>(initialView);
+
+  // Seed only the exact key the server rendered. `useState` holds the initial
+  // view for the component's lifetime, so this stays true across re-renders and
+  // the seed is never wrongly applied to a different filter combination.
+  const [seedView] = useState<ListView>(initialView);
+  const isSeedView = buildListSearch(view) === buildListSearch(seedView);
+
+  const { data, isFetching } = useQuery({
+    queryKey: queryKeys.consignments.list(view),
+    queryFn: () => listConsignmentsAction(view),
+    initialData: isSeedView ? initialPage : undefined,
+    // D-043's "stale rows stay visible while the new query runs" feel, now
+    // served from the cache instead of a server round-trip.
+    placeholderData: keepPreviousData,
+  });
+
+  const rows: Row[] = data?.rows ?? [];
+  const total = data?.total ?? 0;
+  const fetchError = data?.error;
+  const isPending = isFetching;
+  const page = view.page;
+
+  // Another user's change invalidates the consignments keys; TanStack refetches
+  // only the mounted (i.e. currently-visible) one.
+  useConsignmentsRealtime();
+
+  // Keep the address bar in step with the view without re-running the RSC tree.
+  // `router.replace` would re-render the server component and re-fetch what we
+  // just cached, so we push history directly — the page reads these params only
+  // on a fresh load, which is exactly when we want them honoured.
+  useEffect(() => {
+    const search = buildListSearch(view);
+    if (search !== window.location.search.replace(/^\?/, "")) {
+      window.history.replaceState(null, "", `/consignments?${search}`);
+    }
+  }, [view]);
+
+  // Back/forward: re-derive the view from the URL the browser restored.
+  useEffect(() => {
+    function onPopState() {
+      const p = new URLSearchParams(window.location.search);
+      setView((prev) => ({
+        ...prev,
+        year: Number(p.get("year")) || prev.year,
+        client: p.get("client") || undefined,
+        stage: p.get("stage") || undefined,
+        q: p.get("q") || undefined,
+        sort: (p.get("sort") as SortKey) || prev.sort,
+        dir: (p.get("dir") as SortDir) || prev.dir,
+        page: Number(p.get("page")) || 1,
+      }));
+    }
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
   const totalPages = Math.ceil(total / pageSize);
   const currentYear = new Date().getFullYear();
   const yearOptions = [currentYear - 1, currentYear, currentYear + 1];
 
-  function buildUrl(overrides: Record<string, string | undefined>) {
-    const params = new URLSearchParams();
-    const merged = { year: String(year), ...filters, ...overrides };
-    for (const [k, v] of Object.entries(merged)) {
-      if (v) params.set(k, v);
-    }
-    return `/consignments?${params.toString()}`;
-  }
-
-  function navigate(href: string) {
-    startTransition(() => router.push(href));
+  /** Apply a patch to the view. Any filter change resets to page 1. */
+  function patchView(patch: Partial<ListView>) {
+    setView((prev) => ({
+      ...prev,
+      ...patch,
+      page: patch.page ?? 1,
+    }));
   }
 
   function handleSearch(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
-    navigate(buildUrl({ q: fd.get("q") as string, page: "1" }));
+    const raw = ((fd.get("q") as string) ?? "").trim();
+    patchView({ q: raw || undefined });
   }
 
   // Export download URL — carries the exact year + filters + sort + search
   // currently on screen, minus pagination, so the file mirrors the view.
   function exportHref(format: "xlsx" | "pdf") {
-    const params = new URLSearchParams();
-    const merged: Record<string, string | undefined> = {
-      year: String(year),
-      ...filters,
-    };
-    for (const [k, v] of Object.entries(merged)) {
-      if (v) params.set(k, v);
-    }
-    return `/api/consignments/export/${format}?${params.toString()}`;
+    const search = buildListSearch({ ...view, page: 1 });
+    return `/api/consignments/export/${format}?${search}`;
   }
 
   // Click a sortable header: first click sorts ascending; clicking the active
   // column flips direction. Page resets to 1.
   function onSort(column: SortKey) {
-    const active = filters.sort === column;
-    const nextDir: SortDir = active && filters.dir === "asc" ? "desc" : "asc";
-    navigate(buildUrl({ sort: column, dir: nextDir, page: "1" }));
+    const active = view.sort === column;
+    const nextDir: SortDir = active && view.dir === "asc" ? "desc" : "asc";
+    patchView({ sort: column, dir: nextDir });
   }
 
   const exportAnchorCls =
@@ -175,7 +192,7 @@ export default function ConsignmentsClient({
         <div>
           <h1 className="text-2xl font-bold text-foreground tracking-tight">Consignments</h1>
           <p className="text-muted-foreground text-sm mt-0.5">
-            {total.toLocaleString()} record{total !== 1 ? "s" : ""} · {year}
+            {total.toLocaleString()} record{total !== 1 ? "s" : ""} · {view.year}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -209,25 +226,26 @@ export default function ConsignmentsClient({
         {/* Year tabs */}
         <div className="flex rounded-lg border border-border overflow-hidden text-sm">
           {yearOptions.map((y) => (
-            <Link
+            <button
               key={y}
-              href={buildUrl({ year: String(y), page: "1" })}
+              type="button"
+              onClick={() => patchView({ year: y })}
               className={[
                 "px-3 py-1.5 transition-colors",
-                y === year
+                y === view.year
                   ? "bg-primary text-primary-foreground font-semibold"
                   : "bg-card text-muted-foreground hover:bg-muted",
               ].join(" ")}
             >
               {y}
-            </Link>
+            </button>
           ))}
         </div>
 
         {/* Client filter */}
         <select
-          value={filters.client ?? ""}
-          onChange={(e) => navigate(buildUrl({ client: e.target.value || undefined, page: "1" }))}
+          value={view.client ?? ""}
+          onChange={(e) => patchView({ client: e.target.value || undefined })}
           className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
         >
           <option value="">All clients</option>
@@ -238,8 +256,8 @@ export default function ConsignmentsClient({
 
         {/* Stage filter */}
         <select
-          value={filters.stage ?? ""}
-          onChange={(e) => navigate(buildUrl({ stage: e.target.value || undefined, page: "1" }))}
+          value={view.stage ?? ""}
+          onChange={(e) => patchView({ stage: e.target.value || undefined })}
           className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
         >
           <option value="">All statuses</option>
@@ -251,7 +269,7 @@ export default function ConsignmentsClient({
         <form onSubmit={handleSearch} className="flex gap-1 ml-auto">
           <input
             name="q"
-            defaultValue={filters.q ?? ""}
+            defaultValue={view.q ?? ""}
             placeholder="Search ref, B/L, TANSAD, vessel, client…"
             aria-label="Search consignments by ref, B/L, TANSAD, in-ref, vessel, goods, or client"
             className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring w-56 sm:w-64"
@@ -369,14 +387,14 @@ export default function ConsignmentsClient({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/40">
-                <SortHeader column="ref_no" label="Ref No" className="text-left" activeSort={filters.sort} activeDir={filters.dir} onSort={onSort} />
+                <SortHeader column="ref_no" label="Ref No" className="text-left" activeSort={view.sort} activeDir={view.dir} onSort={onSort} />
                 <th className="text-left px-4 py-2.5 font-medium text-muted-foreground whitespace-nowrap">Client</th>
-                <SortHeader column="bl_number" label="B/L" className="text-left hidden md:table-cell" activeSort={filters.sort} activeDir={filters.dir} onSort={onSort} />
+                <SortHeader column="bl_number" label="B/L" className="text-left hidden md:table-cell" activeSort={view.sort} activeDir={view.dir} onSort={onSort} />
 
-                <SortHeader column="vessel_name" label="Vessel" className="text-left hidden lg:table-cell" activeSort={filters.sort} activeDir={filters.dir} onSort={onSort} />
-                <SortHeader column="arrival_date" label="Arrival" className="text-left hidden lg:table-cell" activeSort={filters.sort} activeDir={filters.dir} onSort={onSort} />
+                <SortHeader column="vessel_name" label="Vessel" className="text-left hidden lg:table-cell" activeSort={view.sort} activeDir={view.dir} onSort={onSort} />
+                <SortHeader column="arrival_date" label="Arrival" className="text-left hidden lg:table-cell" activeSort={view.sort} activeDir={view.dir} onSort={onSort} />
                 <th className="text-left px-4 py-2.5 font-medium text-muted-foreground whitespace-nowrap">Pipeline Stage</th>
-                <SortHeader column="amount" label="Amount" align="right" className="text-right hidden xl:table-cell" activeSort={filters.sort} activeDir={filters.dir} onSort={onSort} />
+                <SortHeader column="amount" label="Amount" align="right" className="text-right hidden xl:table-cell" activeSort={view.sort} activeDir={view.dir} onSort={onSort} />
                 <th className="px-4 py-2.5 w-16" />
               </tr>
             </thead>
@@ -461,20 +479,22 @@ export default function ConsignmentsClient({
           </span>
           <div className="flex gap-2">
             {page > 1 && (
-              <Link
-                href={buildUrl({ page: String(page - 1) })}
+              <button
+                type="button"
+                onClick={() => patchView({ page: page - 1 })}
                 className="rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-muted transition-colors"
               >
                 ← Prev
-              </Link>
+              </button>
             )}
             {page < totalPages && (
-              <Link
-                href={buildUrl({ page: String(page + 1) })}
+              <button
+                type="button"
+                onClick={() => patchView({ page: page + 1 })}
                 className="rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-muted transition-colors"
               >
                 Next →
-              </Link>
+              </button>
             )}
           </div>
         </div>
