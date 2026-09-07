@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
 import Link from "next/link";
 import { createConsignmentAction } from "@/server/actions/create-consignment";
+import { useInvalidateConsignments } from "@/hooks/use-invalidate-consignments";
 import { CARGO_TYPES, cargoLabel } from "@/lib/cargo";
 import { CONSIGNMENT_NATURES } from "@/lib/pipeline";
 import {
@@ -66,7 +67,20 @@ const inputCls =
   "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring";
 
 export default function NewConsignmentForm({ clients, vessels }: Props) {
-  const [state, action] = useActionState(createConsignmentAction, null);
+  const invalidateConsignments = useInvalidateConsignments();
+  // The action redirects on success, so it never resolves here — invalidate
+  // before calling (D-072). `refetchType: "active"` only flags the unmounted
+  // grid stale rather than refetching now, so the new row can't be missed.
+  const [state, action] = useActionState(
+    async (
+      prev: Parameters<typeof createConsignmentAction>[0],
+      fd: FormData,
+    ) => {
+      invalidateConsignments();
+      return createConsignmentAction(prev, fd);
+    },
+    null,
+  );
   const errs = state?.fieldErrors ?? {};
 
   // Local state for dynamically populated lists
@@ -227,7 +241,7 @@ export default function NewConsignmentForm({ clients, vessels }: Props) {
           <Field
             label="Consignment nature"
             required
-            hint="Transit & Export skip the TBS stages; Import runs the full pipeline."
+            hint="Transit & Export skip the OGA stages; Import runs the full pipeline."
             error={errs.consignment_nature}
           >
             <select

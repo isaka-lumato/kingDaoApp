@@ -15,6 +15,7 @@ import {
   duplicateConsignmentAction,
   softDeleteConsignmentAction,
 } from "@/server/actions/consignment-actions";
+import { useInvalidateConsignments } from "@/hooks/use-invalidate-consignments";
 
 type Client = { id: string; name: string };
 type ICD = { id: string; name: string; location: string | null };
@@ -175,11 +176,17 @@ export default function ConsignmentDetail({ consignment, auditLog, gutaPair, att
   const [tab, setTab] = useState<"overview" | "pipeline" | "files" | "audit">("overview");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteReason, setDeleteReason] = useState("");
+  const invalidateConsignments = useInvalidateConsignments();
   const [deleteState, deleteAction] = useActionState<
     { error?: string; success?: boolean } | null,
     FormData
   >(
-    async (_prev, fd) => softDeleteConsignmentAction(_prev, fd),
+    async (_prev, fd) => {
+      const res = await softDeleteConsignmentAction(_prev, fd);
+      // D-072: drop the cached grid so the deleted row doesn't linger there.
+      if (res && "success" in res) invalidateConsignments();
+      return res;
+    },
     null
   );
   const [isDuplicating, startDuplicate] = useTransition();
@@ -190,6 +197,11 @@ export default function ConsignmentDetail({ consignment, auditLog, gutaPair, att
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     startDuplicate(() => {
+      // The action redirects to the new consignment on success, so nothing
+      // resolves here — invalidate up front (D-072). `refetchType: "active"`
+      // means the unmounted grid is only flagged stale, not refetched now, so
+      // there's no risk of re-caching pre-insert rows.
+      invalidateConsignments();
       void duplicateConsignmentAction(fd);
     });
   }
@@ -231,6 +243,10 @@ export default function ConsignmentDetail({ consignment, auditLog, gutaPair, att
     arrival_date: consignment.arrival_date,
     tansad_no: consignment.tansad_no,
     ucr_no: consignment.ucr_no,
+    // D-073: Release-popup prefills.
+    efd_receipt_no: consignment.efd_receipt_no,
+    amount: consignment.amount,
+    remarks: consignment.remarks,
     manifest_status: consignment.manifest_status,
     shipping_batch_status: consignment.shipping_batch_status,
     tanesws_status: consignment.tanesws_status,

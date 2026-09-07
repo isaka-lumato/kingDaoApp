@@ -22,12 +22,14 @@ import {
   STAGE_FIELDS,
   isNewConsignment,
   gatedPopupForForwardMove,
+  isReleaseAdvance,
   NEW_COLUMN_ID,
   type StageField,
   type KanbanConsignment,
   type DropPopupKind,
 } from "@/lib/pipeline";
 import { advanceStageAction } from "@/server/actions/consignments";
+import { useInvalidateConsignments } from "@/hooks/use-invalidate-consignments";
 import { usePermissions } from "@/hooks/use-permissions";
 import ForceStageDialog from "@/components/force-stage-dialog";
 import IntakeDialog, { type IntakeIcd } from "@/components/intake-dialog";
@@ -159,6 +161,7 @@ export default function KanbanBoard({ byStage, year, fetchError, icds = [] }: Pr
   const [isPending, startTransition] = useTransition();
   const [optimisticBoard, applyOptimistic] = useOptimistic(byStage, applyMove);
   const perms = usePermissions();
+  const invalidateConsignments = useInvalidateConsignments();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // The board splits Manifest-stage cards into the New-Consignments pseudo-column
@@ -264,6 +267,8 @@ export default function KanbanBoard({ byStage, year, fetchError, icds = [] }: Pr
         setError(res.error);
         return;
       }
+      // D-072: keep the cached /consignments grid in step for this user.
+      invalidateConsignments();
       if (fullyReleased) {
         setInfo(`${card.ref_no} is fully released — moved off the active board.`);
       }
@@ -361,6 +366,16 @@ export default function KanbanBoard({ byStage, year, fetchError, icds = [] }: Pr
     const newValue = STAGE_DONE_VALUE[stage];
     const { landingStage, fullyReleased } = landingFor(card, stage, newValue);
 
+    // D-073: a forward move that *is* the release goes through the Release
+    // popup, same as the card button and the drop zone. In practice a drop can't
+    // reach here (a Release-column card's only target is its own column, which
+    // short-circuits above), but routing it keeps the popup the single choke
+    // point rather than relying on that layout detail.
+    if (isReleaseAdvance(stage, newValue)) {
+      releaseConsignment(card);
+      return;
+    }
+
     // Does entering the landing stage require a blocking drop-popup? (D-071)
     const popup = gatedPopupForForwardMove(card, dropTarget, landingStage);
     if (popup === "duty_application") {
@@ -376,6 +391,14 @@ export default function KanbanBoard({ byStage, year, fetchError, icds = [] }: Pr
   function confirmGate(extra: Record<string, string>) {
     if (!pendingGate) return;
     const { card, kind, stage, newValue, landingStage } = pendingGate;
+
+    // D-073: a release has its own commit path (optimistic removal + confetti).
+    if (kind === "release") {
+      setPendingGate(null);
+      commitRelease(card, extra);
+      return;
+    }
+
     // Patch the optimistic card so it renders in the right column immediately
     // (e.g. arrival_date set → the manifest gate moves it out of New).
     const patched: KanbanConsignment = {
@@ -401,12 +424,13 @@ export default function KanbanBoard({ byStage, year, fetchError, icds = [] }: Pr
     }
   }
 
-  // Shared release routine for both triggers (the per-card "Mark Released"
+  // Shared release entry point for both triggers (the per-card "Mark Released"
   // button and the drag-to-release zone — D-049). A card is releasable only
-  // when it's the active stage is release_status; the caller guarantees that,
-  // but we re-check role here (belt-and-braces; advance_stage() re-checks too,
-  // D-029). Optimistically removes the card (release filters it off the board
-  // on refetch), then advances release_status → "Released" and celebrates.
+  // when its active stage is release_status; the caller guarantees that, but we
+  // re-check role here (belt-and-braces; advance_stage() re-checks too, D-029).
+  //
+  // D-073: this no longer commits directly — it opens the Release popup, and
+  // commitRelease() below runs once the operator submits it.
   function releaseConsignment(card: KanbanConsignment) {
     setError(null);
     setInfo(null);
@@ -420,10 +444,25 @@ export default function KanbanBoard({ byStage, year, fetchError, icds = [] }: Pr
       return;
     }
 
+    setPendingGate({
+      card,
+      kind: "release",
+      stage: "release_status",
+      newValue: STAGE_DONE_VALUE.release_status, // "Released"
+      landingStage: "release_status",
+    });
+  }
+
+  // Commits the release once the D-073 popup is submitted. Optimistically
+  // removes the card (release filters it off the board on refetch), advances
+  // release_status → "Released" with the captured EFD/amount/remarks riding
+  // along in p_extra, then celebrates.
+  function commitRelease(card: KanbanConsignment, extra: Record<string, string>) {
     const fd = new FormData();
     fd.set("consignmentId", card.id);
     fd.set("stage", "release_status");
     fd.set("newValue", STAGE_DONE_VALUE.release_status); // "Released"
+    if (Object.keys(extra).length > 0) fd.set("extra", JSON.stringify(extra));
 
     startTransition(async () => {
       applyOptimistic({ card, landingStage: "release_status", removed: true });
@@ -440,6 +479,8 @@ export default function KanbanBoard({ byStage, year, fetchError, icds = [] }: Pr
       }
 
       console.log("[kanban] released", { id: card.id, ref_no: card.ref_no });
+      // D-072: keep the cached /consignments grid in step for this user.
+      invalidateConsignments();
       setInfo(`🎉 ${card.ref_no} released!`);
       void celebrateRelease();
     });
@@ -598,6 +639,9 @@ export default function KanbanBoard({ byStage, year, fetchError, icds = [] }: Pr
           defaultRef={pendingGate.card.ref_no}
           defaultTansad={pendingGate.card.tansad_no ?? null}
           defaultUcr={pendingGate.card.ucr_no}
+          defaultEfdReceipt={pendingGate.card.efd_receipt_no}
+          defaultAmount={pendingGate.card.amount}
+          defaultRemarks={pendingGate.card.remarks}
           onConfirm={confirmGate}
           onCancel={() => setPendingGate(null)}
           isPending={isPending}

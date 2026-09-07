@@ -64,9 +64,9 @@ Here is the exact journey of a shipment:
        ↓
 4. Assessment Accepted (Taxes Calculated by TRA)
        ↓
-5. TBS Loading Done
+5. OGA Loading Done
        ↓
-6. TBS Debit Paid (Standards Fee Paid)
+6. OGA Debit Paid (Standards Fee Paid)
        ↓
 7. Manifest Complete
        ↓
@@ -84,10 +84,10 @@ Here is the exact journey of a shipment:
 2. **Shipping Batch (`shipping_batch_status`)**: The containers are offloaded from the ship and moved to their designated storage yard (the ICD). When they have arrived and settled at the yard, it is marked as `CARRY IN END` (Done).
 3. **TANESWS Loading (`tanesws_status`)**: We log into the Tanzania Electronic Single Window System (TANESWS) and upload all the cargo documents to begin the clearance process.
 4. **Assessment Accepted (`assessment_status`)**: The Tanzania Revenue Authority (TRA) reviews our documents and calculates exactly how much customs tax (duty) KDL's client needs to pay. Once this tax amount is locked in, the assessment is "Accepted".
-5. **TBS Loading (`tbs_loading_status`)**: We load the shipment information into the Tanzania Bureau of Standards (TBS) system to ensure the imports comply with safety standards.
-6. **TBS Debit Paid (`tbs_debit_status`)**: We pay the standard TBS verification fees.
+5. **OGA Loading (`tbs_loading_status`)**: We load the shipment information into the Other Government Agencies (OGA) system to ensure the imports comply with safety standards.
+6. **OGA Debit Paid (`tbs_debit_status`)**: We pay the standard OGA verification fees.
 7. **Manifest Complete (`manifest_comp_status`)**: We finalize the customs documentation, matching the physical containers to the manifest entries.
-8. **Duty Paid (`duty_status`)**: The client pays the main import tax (customs duty) assessed in Step 4. (Usually, when TBS Debit is Paid, this stage is paid simultaneously).
+8. **Duty Paid (`duty_status`)**: The client pays the main import tax (customs duty) assessed in Step 4. (Usually, when OGA Debit is Paid, this stage is paid simultaneously).
 9. **Inspection File (`inspection_file_status`)**: Customs officers open an inspection file and physically inspect the cargo inside the containers to confirm they match the paperwork.
 10. **Released (`release_status`)**: The ultimate goal! The government issues a "Release Order". The security gates open, the containers are loaded onto trucks, and they leave the ICD.
 11. **EFD Issued (`efd_code` / `efd_time`)**: We issue the official legal tax receipt to the client for our clearing fees, and the job is marked 100% complete and closed.
@@ -96,7 +96,7 @@ Here is the exact journey of a shipment:
 > **Strict Progression Rules:**
 > You cannot cheat the pipeline! The database enforces real-world logic. For example:
 > * You cannot start **TANESWS Loading** (Step 3) until the **Manifest** (Step 1) is uploaded.
-> * You cannot pay **TBS Debit** (Step 6) until the tax **Assessment** (Step 4) is closed.
+> * You cannot pay **OGA Debit** (Step 6) until the tax **Assessment** (Step 4) is closed.
 > * You cannot **Release** the goods (Step 10) until the **Inspection File** (Step 9) is done.
 
 ---

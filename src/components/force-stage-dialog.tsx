@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { PIPELINE_STAGES, type StageField } from "@/lib/pipeline";
 import { forceSetStageAction } from "@/server/actions/consignments";
+import { useInvalidateConsignments } from "@/hooks/use-invalidate-consignments";
 
 type Props = {
   open: boolean;
@@ -31,6 +32,7 @@ export default function ForceStageDialog({
   const [stage, setStage] = useState<StageField>(defaultStage);
   const [newValue, setNewValue] = useState(defaultValue);
   const [isPending, startTransition] = useTransition();
+  const invalidateConsignments = useInvalidateConsignments();
 
   if (!open) return null;
 
@@ -56,6 +58,9 @@ export default function ForceStageDialog({
         onError?.(res.error);
         return;
       }
+      // D-072: the cached grid needs an explicit invalidation, not just
+      // revalidatePath, to reflect this for the admin who forced the move.
+      invalidateConsignments();
       close();
       onSuccess?.();
     });

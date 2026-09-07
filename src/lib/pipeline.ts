@@ -45,6 +45,7 @@ export type KanbanConsignment = {
   year: number;
   goods_description: string | null;
   vessel_name: string | null;
+  bl_number: string | null;
   arrival_date: string | null;
   estimated_arrival_date: string | null;
   consignment_nature: ConsignmentNature;
@@ -53,6 +54,9 @@ export type KanbanConsignment = {
   cargo_count: number | null;
   cargo_type: string | null;
   amount: number | null;
+  /** Prefills for the Release drop-popup (D-073). */
+  efd_receipt_no: string | null;
+  remarks: string | null;
   client_name: string;
   manifest_status: string;
   shipping_batch_status: string;
@@ -129,15 +133,15 @@ export const PIPELINE_STAGES: {
   },
   {
     field: "tbs_loading_status",
-    label: "TBS Applications",
-    shortLabel: "TBS Apps",
+    label: "OGA Applications",
+    shortLabel: "OGA Apps",
     validValues: ["Waiting", "Action", "Done"],
     doneValue: "Done",
   },
   {
     field: "tbs_debit_status",
-    label: "TBS Debit",
-    shortLabel: "TBS Debit",
+    label: "OGA Debit",
+    shortLabel: "OGA Debit",
     validValues: ["Waiting", "Action", "Paid", "SHARED"],
     doneValue: "Paid",
   },
@@ -364,8 +368,24 @@ export function isNewConsignment(row: {
  * resolveActiveStage says the card ends up after the forward move. Shared by
  * the kanban board and the tap-to-advance action menu so both paths gate
  * identically.
+ *
+ * The third kind, "release", is not reachable from this function — a release is
+ * never an ordinary forward move (see isReleaseAdvance below).
  */
-export type DropPopupKind = "manifest" | "duty_application";
+export type DropPopupKind = "manifest" | "duty_application" | "release";
+
+/**
+ * True when an advance is the final release — `release_status → 'Released'`.
+ * D-073: this transition is gated by the Release popup (EFD receipt no, amount,
+ * remarks). It's the single choke point every release path funnels through: the
+ * card's "Mark Released" button, the drag-to-release drop zone, and the
+ * tap-to-advance action menu.
+ */
+export function isReleaseAdvance(stage: StageField, newValue: string): boolean {
+  return (
+    stage === "release_status" && newValue === STAGE_DONE_VALUE.release_status
+  );
+}
 
 /** Sentinel drop-target id for the New-Consignments pseudo-column. */
 export const NEW_COLUMN_ID = "__new__";

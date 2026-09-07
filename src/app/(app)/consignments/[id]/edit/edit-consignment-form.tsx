@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 import Link from "next/link";
 import { editConsignmentAction } from "@/server/actions/edit-consignment";
+import { useInvalidateConsignments } from "@/hooks/use-invalidate-consignments";
 import { CARGO_TYPES, cargoLabel } from "@/lib/cargo";
 import { CONSIGNMENT_NATURES, type ConsignmentNature } from "@/lib/pipeline";
 
@@ -97,7 +98,20 @@ export default function EditConsignmentForm({
   writableCols,
   canSeeAmount,
 }: Props) {
-  const [state, action] = useActionState(editConsignmentAction, null);
+  const invalidateConsignments = useInvalidateConsignments();
+  // The action redirects on success, so it never resolves here — invalidate
+  // before calling (D-072). `refetchType: "active"` only flags the unmounted
+  // grid stale rather than refetching now, so pre-edit rows can't be re-cached.
+  const [state, action] = useActionState(
+    async (
+      prev: Parameters<typeof editConsignmentAction>[0],
+      fd: FormData,
+    ) => {
+      invalidateConsignments();
+      return editConsignmentAction(prev, fd);
+    },
+    null,
+  );
 
   return (
     <div className="max-w-2xl space-y-6">

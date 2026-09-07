@@ -42,7 +42,7 @@ describe("classifyConsignment", () => {
     );
     expect(r.bucket).toBe("action");
     expect(r.activeStage).toBe("manifest_status");
-    expect(r.subtitleLabel).toBe("Manifest");
+    expect(r.subtitleLabel).toBe("Manifest Uploaded");
     expect(r.isStuck).toBe(false);
   });
 

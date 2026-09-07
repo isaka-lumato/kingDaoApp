@@ -8,6 +8,7 @@ import {
   isStageComplete,
   isNewConsignment,
   gatedPopupForForwardMove,
+  isReleaseAdvance,
   resolveActiveStage,
   STAGE_FIELDS,
   type StageField,
@@ -16,6 +17,7 @@ import {
 } from "@/lib/pipeline";
 import { advanceStageAction } from "@/server/actions/consignments";
 import { usePermissions, useColumnPermission } from "@/hooks/use-permissions";
+import { useInvalidateConsignments } from "@/hooks/use-invalidate-consignments";
 import ForceStageDialog from "./force-stage-dialog";
 import IntakeDialog, { type IntakeIcd } from "./intake-dialog";
 
@@ -30,6 +32,10 @@ type Props = {
     | "arrival_date"
     | "tansad_no"
     | "ucr_no"
+    // D-073: Release-popup prefills.
+    | "efd_receipt_no"
+    | "amount"
+    | "remarks"
     | "manifest_status"
     | "shipping_batch_status"
     | "tanesws_status"
@@ -65,6 +71,7 @@ export default function StageActionMenu({
   onActionComplete,
 }: Props) {
   const perms = usePermissions();
+  const invalidateConsignments = useInvalidateConsignments();
   const stageField: StageField = targetStage ?? consignment.active_stage;
   const stageDef = PIPELINE_STAGES.find((s) => s.field === stageField)!;
   const currentValue = consignment[stageField] as string;
@@ -95,6 +102,9 @@ export default function StageActionMenu({
         setError(res.error);
         return;
       }
+      // D-072: the grid reads from the cache, so revalidatePath alone won't
+      // refresh it for the user who made this change.
+      invalidateConsignments();
       onActionComplete?.();
     });
   }
@@ -104,6 +114,14 @@ export default function StageActionMenu({
     // A New card's only forward move is New → Manifest (via the Manifest popup).
     if (isNew && stageField === "manifest_status") {
       setGate({ kind: "manifest", newValue: "Action" });
+      return;
+    }
+    // D-073: the final release opens the Release popup (EFD receipt, amount,
+    // remarks). Checked before the active-stage branch below so it also gates a
+    // release triggered from the detail page's stage list, where `targetStage`
+    // is passed explicitly rather than derived from active_stage.
+    if (isReleaseAdvance(stageField, newValue)) {
+      setGate({ kind: "release", newValue });
       return;
     }
     if (stageField === consignment.active_stage) {
@@ -211,6 +229,9 @@ export default function StageActionMenu({
           defaultRef={consignment.ref_no}
           defaultTansad={consignment.tansad_no ?? null}
           defaultUcr={consignment.ucr_no ?? null}
+          defaultEfdReceipt={consignment.efd_receipt_no ?? null}
+          defaultAmount={consignment.amount ?? null}
+          defaultRemarks={consignment.remarks ?? null}
           onConfirm={(extra) => {
             runAdvance(gate.newValue, extra);
             setGate(null);

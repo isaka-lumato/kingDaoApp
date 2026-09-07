@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { DropPopupKind } from "@/lib/pipeline";
+import { useColumnPermission } from "@/hooks/use-permissions";
 
 export type IntakeIcd = { id: string; name: string; location: string | null };
 
@@ -14,6 +15,10 @@ type Props = {
   defaultRef?: string | null;
   defaultTansad?: string | null;
   defaultUcr?: string | null;
+  /** Prefill for the Release popup (D-073). */
+  defaultEfdReceipt?: string | null;
+  defaultAmount?: number | null;
+  defaultRemarks?: string | null;
   /** Called with the validated intake payload to commit the advance. */
   onConfirm: (extra: Record<string, string>) => void;
   onCancel: () => void;
@@ -33,6 +38,12 @@ const inputCls =
  *  - "duty_application": Ref No + TANSAD + UCR (entering Duty Application). Ref No
  *    defaults to the internal auto-generated ref_no but is operator-editable
  *    (OQ-1: editable-with-default).
+ *  - "release": EFD receipt no + amount + remarks, captured at the final
+ *    `release_status → 'Released'` step (D-073). All three are OPTIONAL — the
+ *    popup prompts for the closing paperwork but never blocks a release, since
+ *    a job can legitimately be released before it has been invoiced. A blank
+ *    field sends no key at all, so it leaves the stored value untouched rather
+ *    than nulling a figure entered earlier on the edit form.
  */
 export default function IntakeDialog({
   kind,
@@ -41,6 +52,9 @@ export default function IntakeDialog({
   defaultRef,
   defaultTansad,
   defaultUcr,
+  defaultEfdReceipt,
+  defaultAmount,
+  defaultRemarks,
   onConfirm,
   onCancel,
   isPending,
@@ -50,13 +64,33 @@ export default function IntakeDialog({
   const [ref, setRef] = useState(defaultRef ?? refNo);
   const [tansad, setTansad] = useState(defaultTansad ?? "");
   const [ucr, setUcr] = useState(defaultUcr ?? "");
+  const [efdReceipt, setEfdReceipt] = useState(defaultEfdReceipt ?? "");
+  const [amount, setAmount] = useState(
+    defaultAmount != null ? String(defaultAmount) : "",
+  );
+  const [remarks, setRemarks] = useState(defaultRemarks ?? "");
   const [error, setError] = useState<string | null>(null);
 
+  // `amount` is gated by its own permission group ("Edit financial amounts" /
+  // "See financial amounts"), separate from the pipeline-status write that
+  // authorises the release itself. Hide the input unless this user can both see
+  // and write it — advance_stage() re-checks and would 42501 the whole release
+  // if we sent a key they can't write (CLAUDE.md §3: both layers must agree).
+  const amountPerm = useColumnPermission("consignments", "amount");
+  const canEditAmount = amountPerm.canRead && amountPerm.canWrite;
+
   const isManifest = kind === "manifest";
-  const title = isManifest ? "Manifest details" : "Duty Application details";
-  const subtitle = isManifest
-    ? "Confirm the actual arrival and ICD to start processing."
-    : "Enter the customs references to begin the duty application.";
+  const isRelease = kind === "release";
+  const title = isRelease
+    ? "Release details"
+    : isManifest
+      ? "Manifest details"
+      : "Duty Application details";
+  const subtitle = isRelease
+    ? "Capture the closing paperwork. All fields are optional."
+    : isManifest
+      ? "Confirm the actual arrival and ICD to start processing."
+      : "Enter the customs references to begin the duty application.";
 
   function handleConfirm() {
     setError(null);
@@ -70,6 +104,24 @@ export default function IntakeDialog({
         return;
       }
       onConfirm({ arrival_date: arrivalDate, icd_id: icdId });
+      return;
+    }
+    if (isRelease) {
+      // D-073: all optional. Only send the keys the operator actually filled in
+      // — an omitted key leaves the column as-is (see the migration).
+      const extra: Record<string, string> = {};
+      if (efdReceipt.trim()) extra.efd_receipt_no = efdReceipt.trim();
+      if (remarks.trim()) extra.remarks = remarks.trim();
+      if (canEditAmount && amount.trim()) {
+        // Whole shillings (D-017 — bigint column, no minor unit).
+        const parsed = Number(amount);
+        if (!Number.isInteger(parsed) || parsed < 0) {
+          setError("Amount must be a whole number of shillings, 0 or more.");
+          return;
+        }
+        extra.amount = String(parsed);
+      }
+      onConfirm(extra);
       return;
     }
     // Duty Application: Ref No required, TANSAD required, UCR optional (OQ-2).
@@ -105,7 +157,51 @@ export default function IntakeDialog({
         )}
 
         <div className="space-y-3 mb-4">
-          {isManifest ? (
+          {isRelease ? (
+            <>
+              <div className="space-y-1.5">
+                <label className="block text-sm font-medium text-foreground">
+                  EFD Receipt No
+                </label>
+                <input
+                  type="text"
+                  value={efdReceipt}
+                  onChange={(e) => setEfdReceipt(e.target.value)}
+                  placeholder="e.g. 03429118"
+                  className={inputCls}
+                  autoFocus
+                />
+              </div>
+              {canEditAmount && (
+                <div className="space-y-1.5">
+                  <label className="block text-sm font-medium text-foreground">
+                    Amount (TZS)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    placeholder="Whole shillings"
+                    className={inputCls}
+                  />
+                </div>
+              )}
+              <div className="space-y-1.5">
+                <label className="block text-sm font-medium text-foreground">
+                  Remarks
+                </label>
+                <textarea
+                  value={remarks}
+                  onChange={(e) => setRemarks(e.target.value)}
+                  rows={3}
+                  placeholder="Any closing notes"
+                  className={`${inputCls} resize-none`}
+                />
+              </div>
+            </>
+          ) : isManifest ? (
             <>
               <div className="space-y-1.5">
                 <label className="block text-sm font-medium text-foreground">
@@ -193,9 +289,14 @@ export default function IntakeDialog({
             type="button"
             onClick={handleConfirm}
             disabled={isPending}
-            className="flex-1 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50 transition-opacity"
+            className={[
+              "flex-1 rounded-lg px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50 transition-opacity",
+              // Green to match the release affordances elsewhere (D-049): the
+              // card button and the drop zone.
+              isRelease ? "bg-green-600" : "bg-primary text-primary-foreground",
+            ].join(" ")}
           >
-            {isPending ? "Saving…" : "Confirm"}
+            {isPending ? "Saving…" : isRelease ? "Release ✓" : "Confirm"}
           </button>
         </div>
       </div>

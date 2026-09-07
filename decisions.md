@@ -1403,3 +1403,95 @@ UI guards align with the DB: `stage-action-menu.tsx` now gates on `useColumnPerm
 **Migrations:** `20260713120000_consignment_nature_and_intake.sql` (enum + 3 columns + per-column perm seed, idempotent) and `20260713120500_advance_stage_nature_and_intake.sql` (`create or replace advance_stage()` with p_extra + TBS skip; also folds in the latent assessment `Closed→Accepted` fix). `src/types/supabase.ts` regenerated.
 
 **Verification surface:** V-NATURE in `validation.md`. Key checks: create → lands in New; Manifest popup gates arrival+ICD; Duty popup gates ref+tansad (ucr optional, ref editable); Transit/Export skip both TBS columns with duty still Waiting; `p_extra` non-whitelisted key rejected; operator can write the new columns without 42501.
+
+---
+
+## D-072 — `/consignments` grid reads through the TanStack Query cache (completes D-065 step 4)
+
+**Date:** 2026-07-28
+**Status:** Active. Completes the rollout D-065 scheduled but never finished.
+
+**Context.** D-065 mounted the `QueryClientProvider` and set a two-step rollout: "Activity feed first (lowest risk — already client-fetched), then the consignments list (extract `listConsignmentsAction` as the shared `queryFn`)." Only step 1 shipped. The `/consignments` grid — the screen staff live in — remained pure RSC props + `router.push()`, so **every** year tab, client/stage filter, sort-header click, search, and pager click was a full server round-trip with zero caching. Re-selecting a filter viewed seconds earlier re-ran the whole chain. Given the ~310ms Supabase RTT recorded in `permissions-cache.ts`, that is the single most-repeated avoidable wait in the app.
+
+**Decision.**
+
+1. **Extract the grid query into `listConsignmentsAction`** (`src/server/actions/consignments-list.ts`), taking a `ListView` (= `ListParams` + `page`) and returning `{ rows, total, error }`. The page's server component calls it for SSR; the client calls the identical action for every later view change. One code path ⇒ the SSR frame and every cached refetch filter identically, matching the D-056 guarantee already shared with the export route.
+
+2. **View state moves into the client**, keyed by `queryKeys.consignments.list(view)`. `initialData` seeds only the key the server actually rendered — gated on `buildListSearch(view) === buildListSearch(seedView)`, where `seedView` is held in `useState` so it stays the server's view for the component's lifetime and the seed can never be misapplied to a different filter combination. `placeholderData: keepPreviousData` preserves the D-043 "stale rows stay visible, fading" feel, now backed by cache rather than a round-trip.
+
+3. **URL sync via `window.history.replaceState`, not `router.replace`.** The URL must stay shareable/bookmarkable, but `router.replace()` would re-run the RSC tree and re-fetch precisely what we just cached — defeating the change. A `popstate` listener re-derives the view from the URL so back/forward still work. The server component reads search params only on a fresh load, which is exactly when they should win.
+
+4. **Filter controls change from `<Link>`/`router.push` to state patches.** Year tabs and pager become `<button>`s calling `patchView()`; any filter change resets to page 1. This **partially supersedes D-043**: the `<a>`→`<Link>` fix and the opacity/"Updating…" affordances remain, but `useTransition` is replaced by TanStack's `isFetching` — the same visual contract, driven by the query rather than a navigation.
+
+5. **Realtime is wired in** via `useConsignmentsRealtime()`. Previously the grid had no live-update path at all (only the kanban/triage shell did); another user's change now invalidates the consignments keys and TanStack refetches just the mounted one.
+
+**Auth.** `listConsignmentsAction` is a server action, i.e. an independently callable endpoint, so it carries its own `getServerPermissions()` gate before querying — mirroring the export route. Row-level access is still RLS through the user-bound client (D-026); the gate only rejects anonymous callers early. Errors return in-band (`{ rows: [], total: 0, error }`) rather than throwing, so a failed refetch shows the grid's existing error banner instead of blanking the screen.
+
+**Trade-offs.**
+- **`revalidatePath("/consignments")` no longer refreshes the grid for the actor** — the data now comes from the client cache. Closed by the `useInvalidateConsignments` addendum below.
+- **Search is still submit-driven** (unchanged from D-056) and each distinct `q` is still one server round-trip on first use. Debouncing + `pg_trgm` indexing is separate, unaddressed work.
+- Cache size is bounded by `gcTime: 5min` (D-065); a staff member cycling filters holds at most a handful of 50-row pages.
+
+**Verification surface:** V-LIST-CACHE in `validation.md`. Unit tests: `tests/unit/consignments-list.test.ts` (10 cases) cover `buildListSearch` page-1 omission, filter inclusion/omission, key stability, and the `buildListSearch ⇄ parseListParams` round-trip — the invariant the `initialData` seed check depends on.
+
+### D-072 addendum — every client-side consignment mutation invalidates the cache
+
+**Date:** 2026-07-28 (same session; closes the follow-up D-072 opened.)
+
+**Context.** D-072 moved the grid onto the TanStack cache, which broke the assumption that `revalidatePath("/consignments")` refreshes the list. For the user who made a change it now does nothing useful: `initialData` only seeds a key with no cache entry, so a previously-visited view keeps serving its cached rows for up to `staleTime` (30s). Realtime covers *other* users, but `useConsignmentsRealtime` only mounts on `/consignments` and `/` — an operator advancing a stage from the detail page or a form has no subscription at all, so their own edit could be invisible on their next visit to the list.
+
+**Decision.** One shared hook, `src/hooks/use-invalidate-consignments.ts`, returning a memoised callback that invalidates `queryKeys.consignments.all` (covering list + detail + pipeline keys in a single call). Wired into all seven client-side mutation sites:
+
+| Site | Mutation | When |
+|---|---|---|
+| `components/stage-action-menu.tsx` | `advanceStageAction` | after success |
+| `components/force-stage-dialog.tsx` | `forceSetStageAction` | after success |
+| `kanban-board.tsx` (drag/advance) | `advanceStageAction` | after success |
+| `kanban-board.tsx` (mark released) | `advanceStageAction` | after success |
+| `consignments/[id]/consignment-detail.tsx` | `softDeleteConsignmentAction` | after success |
+| `consignments/[id]/consignment-detail.tsx` | `duplicateConsignmentAction` | before call (redirects) |
+| `consignments/[id]/edit/edit-consignment-form.tsx` | `editConsignmentAction` | before call (redirects) |
+| `consignments/new/new-consignment-form.tsx` | `createConsignmentAction` | before call (redirects) |
+
+**Why "before" is safe for the three redirecting actions.** `duplicate`/`edit`/`create` end in `redirect()`, so the awaited call never resolves and there is no post-success hook to attach to. Invalidating first is correct because `invalidateQueries` defaults to `refetchType: "active"`: mounted queries refetch immediately, unmounted ones are only *flagged* stale and refetch when next mounted. The grid is unmounted on all three screens, so nothing refetches early and no pre-mutation rows can be re-cached. The three redirecting cases wrap their action inside `useActionState` rather than calling the hook in an effect, keeping the invalidation on the submit path.
+
+**Typing note.** The wrappers annotate `prev` with `Parameters<typeof action>[0]`, not `Awaited<ReturnType<...>>` — these actions accept a nullable previous state but return non-nullable, so the return type rejects `useActionState`'s `null` initial value.
+
+**Not changed: the EFD actions.** `efd.ts`'s `revalidateAll()` includes `revalidatePath("/consignments")`, but those actions only write `efd_records` and the `efd_record_consignments` link table — no column in `CONSIGNMENT_SELECT`. Adding an invalidation there would refetch the grid for data it does not display. Left alone deliberately; revisit if the grid ever surfaces EFD linkage.
+
+**Verification surface:** V-LIST-CACHE gains the "actor's own mutation" checks.
+
+---
+
+## D-074 — Excel-style Pipeline Matrix is the desktop-first operational view
+
+**Date:** 2026-09-08
+**Status:** Active. User-requested. Refines D-005 (pipeline board) and D-045 (mobile triage).
+
+**Context.** The original drag-and-drop Kanban makes a single stage easy to work, but it hides the rest of a consignment's clearance history in separate columns. KDL staff are already fluent in the shared tracker workbook, where one shipment is one row and the full pipeline is read left to right. The supplied `tmp/demo-pipeline-matrix.html` confirms that staff need a familiar operational matrix, not a generic card board, as the primary desktop surface.
+
+**Decision.**
+
+1. **Desktop Pipeline defaults to an Excel-style matrix.** It fixes the consignment identity columns while horizontally scrolling the ten pipeline stages, so a user can scan a complete job without opening it. The matrix retains the board's live data, permissions, server actions, optimistic updates, stage-history/audit trail, and guarded intake dialogs; this is a presentation change, not a new workflow or schema.
+2. **Stage cells use an explicit three-state language.** Completed stages show their real completed value with a check; exactly one active stage exposes an amber `Action →` control; future stages are a quiet dot. Labels and icons accompany colour, so the status does not depend on colour alone.
+3. **The top of the matrix carries the workbook-style operational summary from the approved reference.** Active, action-needed, externally waiting, and released counts answer the scan questions before users read individual rows. Existing All, Action Needed, Stuck, Released filters and text search stay immediately above the grid.
+4. **The card Kanban remains available as a clearly labelled optional desktop view during the staff transition.** This preserves the established drag workflow while the matrix becomes the daily default. Mobile remains on the D-045 triage view: a ten-stage horizontal worksheet is not usable at that width.
+
+**Trade-off.** The matrix gives up direct drag movement in its primary view in favour of the safer, more discoverable per-row advance action. The optional Kanban preserves drag-and-drop for staff who still prefer it. No database migration, permission change, or state-machine change is required.
+
+**Verification surface.** Add V-PIPELINE-MATRIX to `validation.md`: exercise each filter, search, keyboard activation of the active-stage button, stage intake/release dialogs, admin force action, sticky identity columns, dark theme, and the desktop/mobile view split.
+
+---
+
+## D-075 — Pipeline Matrix rows use a stable arrival-date order, never pipeline order
+
+**Date:** 2026-09-08
+**Status:** Active. User-requested. Refines D-074.
+
+**Context.** The initial Matrix implementation flattened the Kanban's `byStage` buckets. That made rows appear in pipeline-stage order and caused a consignment to jump to a different part of the worksheet after an advance, which conflicts with how staff read the legacy Excel tracker.
+
+**Decision.** The Matrix sorts the complete row set chronologically by the **estimated arrival date**, ascending, with actual arrival as the fallback for historical records that pre-date estimated arrival. Records with no usable arrival date follow dated records. `ref_no` is the deterministic tie-breaker. Pipeline status and `updated_at` never participate in this order, so normal stage advances retain the row's worksheet position. The Kanban continues to group cards by stage because grouping is its purpose; this rule applies only to the Excel Matrix.
+
+**Trade-off.** A historical record that had neither date and later receives its first actual-arrival date can gain its chronological position on the next full refresh. New consignments carry an estimated arrival date from intake, so normal day-to-day stage advances do not reorder them.
+
+**Verification surface.** V-PIPELINE-MATRIX must prove that differently-staged rows sort by date and a stage-only optimistic update leaves the ordering unchanged.
